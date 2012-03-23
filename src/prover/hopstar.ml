@@ -1,73 +1,97 @@
 open Printf
+open Format
 open Llvm
 open Syntax.LLVMsyntax
 open Cfg_core
+(*open Verif_llvm*)
 
-let verif_list verif_fun l =
-  List.fold_left (fun b x -> b && (verif_fun x)) true l
+let program_file_name = ref ""
+let logic_file_name = ref "logic"
+let spec_file_name = ref "specs"
+let absrules_file_name = ref "abs"
 
-let cfg_node_of_cmd = function
-  | Coq_insn_bop (id, bop, sz, value, value') -> Cfg_core.mk_node Core.Nop_stmt_core
-  | Coq_insn_fbop (id, fbop, floating_point, value, value') -> Cfg_core.mk_node Core.Nop_stmt_core
-  | Coq_insn_extractvalue (id, typ, value, list_const) -> Cfg_core.mk_node Core.Nop_stmt_core
-  | Coq_insn_insertvalue (id, typ, value, typ', value', list_const) -> Cfg_core.mk_node Core.Nop_stmt_core
-  | Coq_insn_malloc (id, typ, value, align) -> Cfg_core.mk_node Core.Nop_stmt_core
-  | Coq_insn_free (id, typ, value) -> Cfg_core.mk_node Core.Nop_stmt_core
-  | Coq_insn_alloca (id, typ, value, align) -> Cfg_core.mk_node Core.Nop_stmt_core
-  | Coq_insn_load (id, typ, value, align) -> Cfg_core.mk_node Core.Nop_stmt_core
-  | Coq_insn_store (id, typ, value, value', align) -> Cfg_core.mk_node Core.Nop_stmt_core
-  | Coq_insn_gep (id, inbounds, typ, value, list_sz_value) -> Cfg_core.mk_node Core.Nop_stmt_core
-  | Coq_insn_trunc (id, truncop, typ, value, typ') -> Cfg_core.mk_node Core.Nop_stmt_core
-  | Coq_insn_ext (id, extop, typ, value, typ') -> Cfg_core.mk_node Core.Nop_stmt_core
-  | Coq_insn_cast (id, castop, typ, value, typ') -> Cfg_core.mk_node Core.Nop_stmt_core
-  | Coq_insn_icmp (id, cond, typ, value, value') -> Cfg_core.mk_node Core.Nop_stmt_core
-  | Coq_insn_fcmp (id, fcond, floating_point, value, value') -> Cfg_core.mk_node Core.Nop_stmt_core
-  | Coq_insn_select (id, value, typ, value', value'') -> Cfg_core.mk_node Core.Nop_stmt_core
-  | Coq_insn_call (id, noret, clattrs, typ, value, params) -> Cfg_core.mk_node Core.Nop_stmt_core
+let set_logic_file_name n =
+  logic_file_name := n
 
-let cfg_nodes_of_cmds cmds =
-  let cfg_nodes = List.map cfg_node_of_cmd cmds in
-  Cfg_core.stmts_to_cfg cfg_nodes;
-  cfg_nodes
+let set_spec_file_name n =
+  spec_file_name := n
 
-let verif_block fid = function
-  | Coq_block_intro (l, phinodes, cmds, terminator) ->
-    let cfg_nodes = cfg_nodes_of_cmds cmds in
-    let spec = Spec.mk_spec [] [Psyntax.P_False] Spec.ClassMap.empty in
-    let log = {Psyntax.seq_rules = []; Psyntax.rw_rules = []; Psyntax.consdecl = []; Psyntax.dummy = ();} in
-    Symexec.verify fid cfg_nodes spec log log
+let set_absrules_file_name n =
+  absrules_file_name := n
 
-let verif_fdef = function
-  | Coq_fdef_intro (Coq_fheader_intro (fnattrs, typ, id, args, varg), blocks) ->
-    verif_list (verif_block id) blocks
+let set_program_file_name n =
+  program_file_name := n
 
-let verif_product = function
-  | Coq_product_gvar _ -> true (* TODO: gvar *)
-  | Coq_product_fdec _ -> true
-  | Coq_product_fdef fdef -> verif_fdef fdef
+let arg_list = Config.args_default @ [
+  ("-f", Arg.String(set_program_file_name ), "program file name");
+  ("-l", Arg.String(set_logic_file_name ), "logic file name");
+  ("-s", Arg.String(set_spec_file_name ), "spec file name");
+  ("-a", Arg.String(set_absrules_file_name ), "abstraction rules file name");
+]
 
-let verif_module = function
-  | Coq_module_intro (lay, ndts, prods) ->
-    verif_list verif_product prods
+let main () =
+  let usage_msg = "Usage: -l <logic_file_name>  "^
+    "-a <abstraction_file_name>  -s <spec_file_name>  "^
+    "-f <class_file_program>" in
+  Arg.parse
+    arg_list
+    (fun s -> Format.eprintf "WARNING: Ignored argument %s.@." s)
+    usage_msg;
 
-let main in_filename =
+  if !program_file_name="" then
+    failwith ("Program file name not specified. Can't continue....\n"^usage_msg^"\n");
+
   let ic = create_context () in
-  let imbuf = MemoryBuffer.of_file in_filename in
+  let imbuf = MemoryBuffer.of_file !program_file_name in
   let im = Llvm_bitreader.parse_bitcode ic imbuf in
   let ist = SlotTracker.create_of_module im in
-  
-  (* Llvm_pretty_printer.travel_module ist im; *)
+
+  Llvm_pretty_printer.travel_module ist im;
   let coqim = Llvm2coq.translate_module false ist im in
   (* Coq_pretty_printer.travel_module coqim; *)
- 
-  print_string "bouarf\n";
 
-  print_string ("mama says "^(if (verif_module coqim) then "yes" else "no")^"\n");
+  if !logic_file_name="" && not !Config.specs_template_mode then
+    eprintf "@\nLogic file name not specified. Can't continue....\n %s \n" usage_msg
+  else if !spec_file_name="" && not !Config.specs_template_mode then
+    eprintf "@\nSpecification file name not specified. Can't continue....\n %s \n" usage_msg
+  else if !absrules_file_name="" && not !Config.specs_template_mode then
+    eprintf "@\nAbstraction rules file name not specified. Can't continue....\n %s \n" usage_msg
+  else (
+    let signals = (if Sys.os_type="Win32" then [] else [Sys.sigint; Sys.sigquit; Sys.sigterm]) in
+    List.iter
+      (fun s ->  Sys.set_signal s (Sys.Signal_handle (fun x -> Symexec.pp_dotty_transition_system (); exit x)))
+      signals;
+    if !Config.smt_run then Smt.smt_init();
+      (* Load abstract interpretation plugins *)
+    List.iter (fun file_name -> Plugin_manager.load_plugin file_name) !Config.abs_int_plugins;       
 
+    let l1,l2,cn = Load_logic.load_logic !logic_file_name in
+    let logic = {Psyntax.empty_logic with Psyntax.seq_rules=l1; Psyntax.rw_rules=l2; Psyntax.consdecl=cn} in
+
+    let l1,l2,cn = Load_logic.load_abstractions !absrules_file_name in
+    let abs_rules = {Psyntax.empty_logic with Psyntax.seq_rules=l1; Psyntax.rw_rules=l2; Psyntax.consdecl=cn} in
+
+    let spec_list = [] in
+
+    let verdict = Verif_llvm.verif_module logic abs_rules spec_list coqim in
+    print_string ("mama says "^(if verdict then "yes" else "no")^"\n");
+    Symexec.pp_dotty_transition_system ());
+    
   SlotTracker.dispose ist;
   dispose_module im
 
-let () = match Sys.argv with
-  | [| _; in_filename |] -> main in_filename
-  | _ -> main "Input.bc"
 
+let _ =
+  System.set_signal_handlers ();
+  let mf = {
+    mark_open_tag = (function
+      | "b" -> System.terminal_red (* bad *)
+      | "g" -> System.terminal_green (* good *)
+      | _ -> assert false);
+    mark_close_tag = (fun _ -> System.terminal_white);
+    print_open_tag = (fun _ -> ());
+    print_close_tag = (fun _ -> ())} in
+  set_formatter_tag_functions mf;
+  pp_set_formatter_tag_functions err_formatter mf;
+  set_tags true; pp_set_tags err_formatter true;
+  main ()
