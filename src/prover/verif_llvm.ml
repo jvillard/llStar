@@ -6,8 +6,19 @@ open Psyntax
 
 let implement_this s = failwith ("Not implemented: "^s)
 
-let spec_of_fun_id fid =
-  Spec.mk_spec [] (mkEQ(Arg_var(Spec.ret_v1),Arg_op("numeric_const",[Arg_string "0"]))) Spec.ClassMap.empty
+let rec spec_of_fun_id spec_list fid = match spec_list with
+  | Logic_spec.Funspec(i, spec)::ss when "@"^i = fid -> spec
+  | _::ss -> spec_of_fun_id ss fid
+  | [] -> failwith ("spec for "^fid^" not found.")
+  
+(*
+  if fid = "@malloc" then
+    let ret = Arg_var(Spec.ret_v1) in
+    let e = Vars.freshe () in
+    Spec.mk_spec [] [P_SPred("field", [ret; Arg_string "ptr";Arg_var e])] Spec.ClassMap.empty
+  else
+    Spec.mk_spec [] (mkEQ(Arg_var(Spec.ret_v1),Arg_op("numeric_const",[Arg_string "1664"]))) Spec.ClassMap.empty
+*)
 
 let rec args_of_const = function
   | Coq_const_zeroinitializer (typ) -> implement_this "zeroinitializer"
@@ -20,7 +31,8 @@ let rec args_of_const = function
     Arg_op("nil",[])
   | Coq_const_arr (typ, list_const) -> implement_this "arr"
   | Coq_const_struct (list_const) -> implement_this "struct"
-  | Coq_const_gid (typ, id) -> implement_this "gid"
+  | Coq_const_gid (typ, id) ->
+    Arg_var (Vars.concretep_str id)
   | Coq_const_truncop (truncop, const, typ) -> implement_this "truncop"
   | Coq_const_extop (extop, const, typ) -> implement_this "extop"
   | Coq_const_castop (castop, const, typ) -> implement_this "castop"
@@ -40,12 +52,12 @@ let args_of_value = function
   | Coq_value_id (id) -> Arg_var (Vars.concretep_str id)
   | Coq_value_const (const) -> args_of_const const
 
-
+let args_of_param ((typ, attributes), value) = args_of_value value
 
 let verif_list verif_fun l =
   List.fold_left (fun b x -> b && (verif_fun x)) true l
 
-let cfg_node_of_cmd = function
+let cfg_node_of_cmd spec_list = function
   | Coq_insn_bop (id, bop, sz, value, value') -> mk_node Core.Nop_stmt_core
   | Coq_insn_fbop (id, fbop, floating_point, value, value') -> mk_node Core.Nop_stmt_core
   | Coq_insn_extractvalue (id, typ, value, list_const) -> mk_node Core.Nop_stmt_core
@@ -77,21 +89,30 @@ let cfg_node_of_cmd = function
   | Coq_insn_gep (id, inbounds, typ, value, list_sz_value) -> mk_node Core.Nop_stmt_core
   | Coq_insn_trunc (id, truncop, typ, value, typ') -> mk_node Core.Nop_stmt_core
   | Coq_insn_ext (id, extop, typ, value, typ') -> mk_node Core.Nop_stmt_core
-  | Coq_insn_cast (id, castop, typ, value, typ') -> mk_node Core.Nop_stmt_core
+  | Coq_insn_cast (id, castop, typ, value, typ') ->
+    let post = mkEQ(Arg_var(Spec.ret_v1), args_of_value value) in
+    let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
+    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
   | Coq_insn_icmp (id, cond, typ, value, value') -> mk_node Core.Nop_stmt_core
   | Coq_insn_fcmp (id, fcond, floating_point, value, value') -> mk_node Core.Nop_stmt_core
   | Coq_insn_select (id, value, typ, value', value'') -> mk_node Core.Nop_stmt_core
-  | Coq_insn_call (id, noret, clattrs, typ, value, params) -> mk_node Core.Nop_stmt_core
+  | Coq_insn_call (id, noret, clattrs, typ, value, params) ->
+    match value with
+      |	Coq_value_const (Coq_const_gid (typ,fid)) ->
+	let spec = spec_of_fun_id spec_list fid in
+	mk_node (Core.Assignment_core ([Vars.concretep_str id], spec, List.map args_of_param params))
+      | _ -> implement_this "fancy function call"
 
-let cfg_nodes_of_cmds cmds =
-  List.map cfg_node_of_cmd cmds
 
-let cfg_nodes_of_block = function
+let cfg_nodes_of_cmds spec_list cmds =
+  List.map (cfg_node_of_cmd spec_list) cmds
+
+let cfg_nodes_of_block spec_list = function
   | Coq_block_intro (l, phinodes, cmds, terminator) ->
     (* insert label command from the block's label l, followed by the sequence
        of commands of the block *)
     let label_node = mk_node (Core.Label_stmt_core l) in
-    let body_nodes = cfg_nodes_of_cmds cmds in
+    let body_nodes = cfg_nodes_of_cmds spec_list cmds in
     let terminator_stmts = match terminator with
       | Coq_insn_return (id, typ, value) ->
 	let p0 = Arg_var(Vars.concretep_str ("@parameter"^(string_of_int 0)^":")) in
@@ -108,14 +129,14 @@ let cfg_nodes_of_block = function
     in
     label_node::(body_nodes@(List.map mk_node terminator_stmts))
 
-let cfg_nodes_of_blocks bs =
-  let ns = List.fold_left (fun ns b -> ns@(cfg_nodes_of_block b)) [] bs in
+let cfg_nodes_of_blocks spec_list bs =
+  let ns = List.fold_left (fun ns b -> ns@(cfg_nodes_of_block spec_list b)) [] bs in
   stmts_to_cfg ns; ns
 
 let verif_fdef logic abs_rules spec_list = function
   | Coq_fdef_intro (Coq_fheader_intro (fnattrs, typ, id, args, varg), blocks) ->
-    let cfg_nodes = cfg_nodes_of_blocks blocks in
-    let spec = spec_of_fun_id id in
+    let cfg_nodes = cfg_nodes_of_blocks spec_list blocks in
+    let spec = spec_of_fun_id spec_list id in
     Symexec.verify id cfg_nodes spec logic abs_rules
 
 let verif_product logic abs_rules spec_list = function

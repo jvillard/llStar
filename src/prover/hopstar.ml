@@ -47,6 +47,10 @@ let main () =
   let ist = SlotTracker.create_of_module im in
 
   Llvm_pretty_printer.travel_module ist im;
+  print_string ("\n"^
+"=== End of LLVM bitcode ========================================================\n");
+  print_string ("\n"^
+"=== Start Proof ================================================================\n");
   let coqim = Llvm2coq.translate_module false ist im in
   (* Coq_pretty_printer.travel_module coqim; *)
 
@@ -71,10 +75,16 @@ let main () =
     let l1,l2,cn = Load_logic.load_abstractions !absrules_file_name in
     let abs_rules = {Psyntax.empty_logic with Psyntax.seq_rules=l1; Psyntax.rw_rules=l2; Psyntax.consdecl=cn} in
 
-    let spec_list = [] in
+    let spec_list = Load.import_flatten
+      Cli_utils.specs_dirs            
+      !spec_file_name
+      (Logic_parser.spec_file Logic_lexer.token) in
+    let spec_list = List.flatten spec_list in
 
     let verdict = Verif_llvm.verif_module logic abs_rules spec_list coqim in
-    print_string ("mama says "^(if verdict then "yes" else "no")^"\n");
+  print_string ("\n"^
+"=== End Proof ==================================================================\n");
+    print_string ("\nmama says "^(if verdict then "yes" else "no")^"\n");
     Symexec.pp_dotty_transition_system ());
     
   SlotTracker.dispose ist;
