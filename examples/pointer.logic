@@ -1,0 +1,114 @@
+/*************************************
+ * Simple subtraction rules 
+ *************************************/
+
+rule pointer_getelementptr_deref:
+| pointer(?r,?pp,?p,pointer_type(?tp),?vp) * !eltptr(?x,?p,jump(nil(),?j))
+|- pointer(?s,?q,?x,?t,?v)
+if
+| !eltptr(?x,?vp,?j) |- pointer(?r,?q,?x,?t,?v) * ?r=?s
+
+/*
+  If you have a pointer for the same object 
+  on both sides of an implication, add the 
+  pointer to the matched pointers, and require 
+  that proof obligation that there values 
+  are the same.  
+
+  The "without" clause prevents the matching
+  if we already know the pointers have different 
+  values.  
+ */
+rule pointer_remove1:
+| pointer(?r,?p,?x,?t,?v) |-  pointer(?s,?q,?x,?t,?w)
+without
+  ?v!=?w
+if
+  pointer(?r,?p,?x,?t,?v) | |- ?v=?w * ?r=?s * ?p=?q
+
+
+/*************************************
+ * rules for contradictions 
+ *************************************/
+
+/*
+  If two pointers for the same object with the 
+  same name exists in an assumption, then there
+  is a contradiction and the proof is complete.
+ */ 
+rule pointer_pointer_contradiction1 :
+  pointer(?r,?p,?x,?t,?v) * pointer(?s,?q,?x,?u,?w) | |- 
+if
+
+/*
+  If we have an assumption of a pointer, root, or parent
+  for null then we have a contradiction.
+ */
+rule pointer_nil_contradiction : 
+  pointer(?r,?p,nil(),?t,?v) | |- 
+if
+
+rule root_nil_contradiction : 
+  pointer(nil(),?p,?x,?t,?v) | |- 
+if
+
+rule parent_nil_contradiction : 
+  pointer(?r,nil(),?x,?t,?v) | |- 
+if
+
+/**************************************
+ *  Rules for failed proofs
+ **************************************/
+
+/*
+  If we need to prove that pointer exists for null
+  then we are going to fail, unless we can find 
+  a contradiction.
+ */
+rule pointer_nil_failed :
+  | |- pointer(?r,?p,nil(),?t,?v) 
+if
+  | |- pointer(?r,?p,nil(),?t,?v) * False
+
+rule root_nil_failed :
+  | |- pointer(nil(),?p,?x,?t,?v) 
+if
+  | |- pointer(nil(),?p,?x,?t,?v) * False
+
+rule parent_nil_failed :
+  | |- pointer(?r,nil(),?x,?t,?v) 
+if
+  | |- pointer(?r,nil(),?x,?t,?v) * False
+
+/*
+  If we need to match two pointers which have 
+  distinct values or types, then we need to search for a 
+  contradiction (False).
+ */
+/*
+rule pointer_pointer_no_match : 
+  | ?y!=?t * pointer(?r,?x,?f,?y) |-  pointer(?s,?x,?g,?t) 
+if
+  | ?y!=?t * pointer(?r,?x,?f,?y) |-  pointer(?s,?x,?g,?t) * False
+
+rule pointer_types_no_match : 
+  | ?f!=?g * pointer(?r,?x,?f,?y) |-  pointer(?s,?x,?g,?t) 
+if
+  | ?f!=?g * pointer(?r,?x,?f,?y) |-  pointer(?s,?x,?g,?t) * False
+*/
+
+
+rule pointer_not_null :
+  pointer(?r,?p,?x,?t,?v) | |- ?x!=nil()
+if
+  | |-
+
+rule root_not_null :
+  pointer(?r,?p,?x,?t,?v) | |- ?r!=nil()
+if
+  | |-
+
+rule parent_not_null :
+  pointer(?r,?p,?x,?t,?v) | |- ?p!=nil()
+if
+  | |-

@@ -81,7 +81,8 @@ let main () =
       (Logic_parser.spec_file Logic_lexer.token) in
     let spec_list = List.flatten spec_list in
 
-    let verdict = Verif_llvm.verif_module logic abs_rules spec_list coqim in
+    Config.set_symb_debug false;
+    let verdict = Verify_llvm.go logic abs_rules spec_list coqim in
   print_string ("\n"^
 "=== End Proof ==================================================================\n");
     print_string ("\nmama says "^(if verdict then "yes" else "no")^"\n");

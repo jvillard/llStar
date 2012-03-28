@@ -8,9 +8,9 @@ f:
 
 malloc:
   {}
-  {field($ret_v1, "ptr", _x)}
+  {pointer($ret_v1, $ret_v1, $ret_v1, _t, _x)}
 
 free:
-  {field(@parameter0:, "ptr", _x)}
+  {pointer(@paramater0:, @parameter0:, @parameter0:,  _t, _x)}
   {}
 
