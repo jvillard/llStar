@@ -33,7 +33,7 @@ let env_add_gvar gvar =
 
 let env_add_logic_seq_rules sr  =
   ()
-  (* env.logic <- { env.logic with seq_rules = env.logic.seq_rules@sr }*)
+  (* env.logic <- { env.logic with seq_rules = env.logic.seq_rules@sr } *)
 
 let implement_this s = failwith ("Not implemented: "^s)
 

@@ -3,10 +3,25 @@
  *************************************/
 
 rule pointer_getelementptr_deref:
-| pointer(?r,?pp,?p,pointer_type(?tp),?vp) * !eltptr(?x,?p,jump(nil(),?j))
+| pointer(?r,?pp,?p,pointer_type(?tp),?vp) * !eltptr(?x,?p,jump(numeric_const("0"),?j))
 |- pointer(?s,?q,?x,?t,?v)
 if
 | !eltptr(?x,?vp,?j) |- pointer(?r,?q,?x,?t,?v) * ?r=?s
+
+rule prout_getelementptr_deref:
+| pointer(?r,?pp,?p,named_type("struct.prout"),?vp) * !eltptr(?x,?p,jump(numeric_const("0"),?j))
+|- pointer(?s,?q,?x,?t,?v)
+if
+| pointer(?r,?p,?p,pointer_type(pointer_type(integer_type())),?vp)
+* pointer(?r,?p,builtin_plus(?p,numeric_const("1")),
+  pointer_type(pointer_type(named_type("struct.prout"))),?vp)
+* !eltptr(?x,?p,?j) |- pointer(?r,?q,?x,?t,?v) * ?r=?s
+
+
+rule jump_end_eq:
+| !eltptr(?x,?y,jump_end()) |-
+if
+| ?x = ?y |-
 
 /*
   If you have a pointer for the same object 
@@ -20,11 +35,11 @@ if
   values.  
  */
 rule pointer_remove1:
-| pointer(?r,?p,?x,?t,?v) |-  pointer(?s,?q,?x,?t,?w)
+| pointer(?r,?p,?x,?t,?v) |-  pointer(?s,?q,?x,?u,?w)
 without
   ?v!=?w
 if
-  pointer(?r,?p,?x,?t,?v) | |- ?v=?w * ?r=?s * ?p=?q
+  pointer(?r,?p,?x,?t,?v) | |- ?v=?w * ?r=?s * ?p=?q * ?t=?u
 
 
 /*************************************

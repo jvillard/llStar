@@ -9,7 +9,6 @@ struct two {
 struct prout {
   int *data;
   struct prout *next;
-  struct two two;
 };
 
 int f(int a) {
@@ -17,8 +16,6 @@ int f(int a) {
   int b;
   struct two *t;
 
-  (&b)[0] = 999888777;
-  
   s.data = &b;
 
   p = malloc(sizeof(struct prout));
@@ -31,8 +28,8 @@ int f(int a) {
   free(p->data);
 
 
-  t = &(p->two);
-  t->a = 4444;
+  // t = &(p->two);
+  // t->a = 4444;
 
   free(p);
   return b;
