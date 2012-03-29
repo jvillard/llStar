@@ -8,9 +8,8 @@ f:
 
 malloc:
   {}
-  {pointer($ret_v1, _x) * malloc($ret_v1,@parameter0:)}
+  {malloc_block($ret_v1)}
 
 free:
-  {pointer(@parameter0:, _x) * malloc(@parameter0:,_s)}
+  {malloc_block(@parameter0:)}
   {}
-

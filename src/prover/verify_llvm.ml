@@ -173,45 +173,53 @@ let rec spred_of_typ ptr = function
   | Coq_typ_namedt tname as ptr_typ ->
     let ptr_typ_args = args_of_typ ptr_typ in
     let e = Arg_var (Vars.freshe ()) in
-    let pointer = mkSPred ("pointer", [ptr; e]) in
-    let typepp = mkPPred ("type", [ptr; ptr_typ_args]) in
-    pconjunction pointer typepp
+    let pointer = mkSPred ("pointer", [ptr; ptr_typ_args; e]) in
+    pointer
   | Coq_typ_pointer t as ptr_typ ->
     let ptr_typ_args = args_of_typ ptr_typ in
     let e = Arg_var (Vars.freshe ()) in
-    let pointer = mkSPred ("pointer", [ptr; e]) in
-    let typepp = mkPPred ("type", [ptr; ptr_typ_args]) in
-    pconjunction typepp
-      (mkStar pointer (spred_of_typ e t))
+    let pointer = mkSPred ("pointer", [ptr; ptr_typ_args; e]) in
+    pointer
   | Coq_typ_struct typs as ptr_typ ->
     let ptr_typ_args = args_of_typ ptr_typ in
     let e = Arg_var (Vars.freshe ()) in
-    let pointer = mkSPred ("pointer", [ptr; e]) in
-    let typepp = mkPPred ("type", [ptr; ptr_typ_args]) in
-    pconjunction typepp
-      (mkStar pointer (spred_of_list_typ e typs))
+    let pointer = mkSPred ("pointer", [ptr; ptr_typ_args; e]) in
+    mkStar pointer (spred_of_list_typ e typs)
   | Coq_typ_array _ -> implement_this "SPred of array type"
 and spred_of_list_typ ptr = function
   | Nil_list_typ -> mkEmpty
   | Cons_list_typ (t, l) ->
     let ptr_typ_args = args_of_typ t in
     let e = Arg_var (Vars.freshe ()) in
-    let pointer = mkSPred ("pointer", [ptr; e]) in
-    let typepp = mkPPred ("type", [ptr; ptr_typ_args]) in
-    pconjunction typepp
-      (mkStar pointer (spred_of_list_typ e l))
+    let pointer = mkSPred ("pointer", [ptr; ptr_typ_args; e]) in
+    mkStar pointer (spred_of_list_typ e l)
 
 let ppred_of_gep typ x ptr lsv =
-  let rec jump_chain_of_list_sz_value = function
-  | Nil_list_sz_value -> Arg_op ("jump_end", [])
+  let jump_end = Arg_op ("jump_end", []) in
+  let rec jump_chain_of_list_sz_value typ = function
+  | Nil_list_sz_value -> jump_end
   | Cons_list_sz_value(sz, value, list_sz_value) ->
+    let n =
     match value with
-      | Coq_value_const(Coq_const_int (sz, coq_Int)) ->
-	let n = string_of_coq_Int coq_Int in
-	Arg_op ("jump", [Arg_op ("numeric_const", [Arg_string n]);
-			 jump_chain_of_list_sz_value list_sz_value])
+      | Coq_value_const(Coq_const_int (sz, coq_Int)) -> string_of_coq_Int coq_Int
       | _ -> failwith "non-constant value in break_up_aggregate" in
-  let jump_chain = jump_chain_of_list_sz_value lsv in
+    match typ with
+      | Coq_typ_int _ 
+      | Coq_typ_floatpoint _
+      | Coq_typ_void
+      | Coq_typ_label
+      | Coq_typ_opaque
+      | Coq_typ_metadata
+      | Coq_typ_struct _
+      | Coq_typ_function _ -> implement_this "weird gep"
+      | Coq_typ_namedt name ->
+	Arg_op ("jump_named", [Arg_string name; Arg_op ("numeric_const", [Arg_string n]);
+			       jump_end])
+      | Coq_typ_pointer t ->
+	Arg_op ("jump_ptr", [Arg_op ("numeric_const", [Arg_string n]);
+			     jump_chain_of_list_sz_value t list_sz_value])
+      | Coq_typ_array _ -> implement_this "array aggregate" in
+  let jump_chain = jump_chain_of_list_sz_value typ lsv in
   mkPPred ("eltptr", [x; ptr; jump_chain])
 
 let verify_list verify_fun l =
@@ -228,21 +236,17 @@ let cfg_node_of_cmd = function
     let x = Arg_var (Vars.concretep_str id) in
     let e = Arg_var (Vars.freshe ()) in
     let t = args_of_typ (Coq_typ_pointer typ) in
-    let typepp = mkPPred ("type", [x; t]) in
-    let alloca = mkPPred ("alloca", [x; t]) in
-    let pointer = mkSPred ("pointer", [x; e]) in
-    let post = pconjunction alloca
-      (pconjunction typepp
-	 (mkStar pointer (spred_of_typ e typ))) in
+    let alloca = mkSPred ("alloca", [x; t]) in
+    let pointer = mkSPred ("pointer", [x; t; e]) in
+    let post = mkStar alloca (mkStar pointer (spred_of_typ e typ)) in
     let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
     mk_node (Core.Assignment_core ([], spec, []))
   | Coq_insn_load (id, typ, ptr_v, align) ->
     let e = Arg_var (Vars.freshe ()) in
     let ptr = args_of_value ptr_v in
     let ptr_typ = args_of_typ (Coq_typ_pointer typ) in
-    let typepp = mkPPred ("type", [ptr; ptr_typ]) in
-    let pointer = mkSPred ("pointer", [ptr; e]) in
-    let pre = pconjunction typepp pointer in
+    let pointer = mkSPred ("pointer", [ptr; ptr_typ; e]) in
+    let pre = pointer in
     let post = pconjunction (mkEQ(ret_arg, e)) pointer in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     mk_node (Core.Assignment_core ([Vars.concretep_str id], spec, []))
@@ -251,25 +255,35 @@ let cfg_node_of_cmd = function
     let e = Arg_var (Vars.freshe ()) in
     let v = args_of_value value in
     let ptr_typ = args_of_typ (Coq_typ_pointer typ) in
-    let typepp = mkPPred ("type", [ptr; ptr_typ]) in
-    let pointer_pre = mkSPred ("pointer", [ptr; e]) in
-    let pointer_post = mkSPred ("pointer", [ptr; v]) in
-    let pre = pconjunction typepp pointer_pre in
+    let pointer_pre = mkSPred ("pointer", [ptr; ptr_typ; e]) in
+    let pointer_post = mkSPred ("pointer", [ptr; ptr_typ; v]) in
+    let pre = pointer_pre in
     let post = pointer_post in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     mk_node (Core.Assignment_core ([], spec, []))
   | Coq_insn_gep (id, inbounds, typ, value, list_sz_value) ->
-    let post = ppred_of_gep typ ret_arg (args_of_value value) list_sz_value in
+    let post = ppred_of_gep (Coq_typ_pointer typ) ret_arg (args_of_value value) list_sz_value in
     let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
     mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
   | Coq_insn_trunc (id, truncop, typ, value, typ') -> mk_node Core.Nop_stmt_core
   | Coq_insn_ext (id, extop, typ, value, typ') -> mk_node Core.Nop_stmt_core
+  | Coq_insn_cast (id, Coq_castop_bitcast, Coq_typ_pointer(Coq_typ_int i), value, Coq_typ_pointer typ') when i=8 ->
+    (* hack to handle malloc + bitcast. Let's hope for the best... *)
+    let v = args_of_value value in
+    let e = Arg_var (Vars.freshe ()) in
+    let ptr_typ = args_of_typ (Coq_typ_pointer typ') in
+    let void_pointer = mkSPred ("malloc_block", [v]) in
+    let cast_pointer = mkSPred ("pointer", [ret_arg; ptr_typ; e]) in
+    let malloced = mkSPred ("malloced", [ret_arg; args_of_typ typ']) in
+    let pre = void_pointer in
+    let post = pconjunction (mkEQ(ret_arg, v))
+      (mkStar malloced (mkStar cast_pointer (spred_of_typ e typ'))) in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
   | Coq_insn_cast (id, castop, typ, value, typ') ->
     let v = args_of_value value in
-    let typepp_pre = mkPPred ("type", [v; args_of_typ typ]) in
-    let typepp_post = mkPPred ("type", [ret_arg; args_of_typ typ']) in
-    let pre = typepp_pre in
-    let post = pconjunction (mkEQ(ret_arg, v)) typepp_post in
+    let pre = mkEmpty in
+    let post = mkEQ(ret_arg, v) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
   | Coq_insn_icmp (id, cond, typ, value, value') -> mk_node Core.Nop_stmt_core
@@ -278,10 +292,7 @@ let cfg_node_of_cmd = function
   | Coq_insn_call (id, noret, clattrs, typ, value, params) ->
     match (value, typ) with
       |	(Coq_value_const (Coq_const_gid (typ,fid)), Coq_typ_function (ret_typ, param_typs, varg)) ->
-	let spec = spec_of_fun_id fid in
-	let typepp_post = mkPPred ("type", [ret_arg; args_of_typ ret_typ]) in
-	let call_spec =
-	  { spec with Spec.post = pconjunction typepp_post spec.Spec.post } in
+	let call_spec = spec_of_fun_id fid in
 	mk_node (Core.Assignment_core ([Vars.concretep_str id],
 				       call_spec,
 				       List.map args_of_param params))

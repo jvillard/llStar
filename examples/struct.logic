@@ -3,24 +3,77 @@
  *************************************/
 
 rule pointer_getelementptr_deref:
-| pointer(?p,?vp) * !type(?p,pointer_type(?tp)) * !eltptr(?x,?p,jump(numeric_const("0"),?j))
-|- pointer(?x,?v)
+| pointer(?p,pointer_type(?tp),?vp) * !eltptr(?x,?p,jump_ptr(numeric_const("0"),?j))
+|- pointer(?x,?t,?v)
 without
   ?p=?x
 if
-| pointer(?p,?vp) * !eltptr(?x,?vp,?j) |- pointer(?x,?v)
+| pointer(?p,pointer_type(?tp),?vp) * !eltptr(?x,?vp,?j) |- pointer(?x,?t,?v)
 
 rule prout_getelementptr_deref:
-| pointer(?p,?vp) * !type(?p,named_type("struct.prout")) * !eltptr(?x,?p,jump(?n,?j))
-|- pointer(?x,?v)
+| pointer(?p,named_type("struct.prout"),?vp) * !eltptr(?x,?p,jump_named("struct.prout",?n,?j))
+|- pointer(?x,?t,?v)
 without
   ?p=?x
 if
-| pointer(?p,field(numeric_const("0"),?vp))
-* pointer(builtin_plus(?p,numeric_const("1")),field(numeric_const("1"),?vp))
-* !type(?p,pointer_type(pointer_type(integer_type())))
-* !type(builtin_plus(?p,numeric_const("1")),pointer_type(pointer_type(named_type("struct.prout"))))
-* !eltptr(?x,builtin_plus(?p,?n),?j) |- pointer(?x,?v)
+| pointer(?p,pointer_type(pointer_type(integer_type())),field(numeric_const("0"),?vp))
+* pointer(builtin_plus(?p,numeric_const("1")),pointer_type(pointer_type(named_type("struct.prout"))),field(numeric_const("1"),?vp))
+* !eltptr(?x,builtin_plus(?p,?n),?j) |- pointer(?x,?t,?v)
+
+/* the struct prout was already unfolded */
+rule prout_getelementptr_deref20:
+| pointer(?p,pointer_type(pointer_type(integer_type())),?vp)
+* !eltptr(?x,?p,jump_named("struct.prout",numeric_const("0"),?j))
+|- pointer(?x,?t,?v)
+without
+  ?p=?x
+if
+| pointer(?p,pointer_type(pointer_type(integer_type())),?vp)
+* !eltptr(?x,?p,?j) |- pointer(?x,?t,?v)
+
+rule prout_getelementptr_deref21:
+| pointer(builtin_plus(?p,numeric_const("1")),pointer_type(pointer_type(named_type("struct.prout"))),?vp)
+* !eltptr(?x,?p,jump_named("struct.prout",numeric_const("1"),?j))
+|- pointer(?x,?t,?v)
+without
+  ?p=?x
+if
+| pointer(builtin_plus(?p,numeric_const("1")),pointer_type(pointer_type(named_type("struct.prout"))),?vp)
+* !eltptr(?x,builtin_plus(?p,numeric_const("1")),?j) |- pointer(?x,?t,?v)
+
+
+/* rules for rebuilding a malloc block */
+rule int_to_malloc:
+| malloced(?mb, integer_type()) * pointer(?mb,pointer_type(integer_type()),?v)
+|- malloc_block(?mb)
+if
+malloced(?mb, integer_type()) * pointer(?mb,integer_type(),?v) | |-
+
+rule prout_to_malloc:
+| malloced(?mb, named_type("struct.prout"))
+* pointer(?mb,pointer_type(named_type("struct.prout")),?sp)
+* pointer(?sp,named_type("struct.prout"),?v)
+|- malloc_block(?mb)
+if
+  malloced(?mb, named_type("struct.prout"))
+* pointer(?mb,pointer_type(named_type("struct.prout")),?sp)
+* pointer(?sp,named_type("struct.prout"),?v)
+| |-
+
+rule unfolded_prout_to_malloc:
+| malloced(?mb, named_type("struct.prout"))
+* pointer(?mb,pointer_type(named_type("struct.prout")),?sp)
+* pointer(?sp,pointer_type(pointer_type(integer_type())),?v0)
+* pointer(builtin_plus(?sp,numeric_const("1")),pointer_type(pointer_type(named_type("struct.prout"))),?v1)
+|- malloc_block(?mb)
+if
+  malloced(?mb, named_type("struct.prout"))
+* pointer(?mb,pointer_type(named_type("struct.prout")),?sp)
+* pointer(?sp,pointer_type(pointer_type(integer_type())),?v0)
+* pointer(builtin_plus(?sp,numeric_const("1")),pointer_type(pointer_type(named_type("struct.prout"))),?v1)
+| |-
+
+
 
 rewrite data_field_of_prout:
   field(numeric_const("0"),struct(?data,?next)) = ?data
@@ -51,11 +104,11 @@ if
   values.  
  */
 rule pointer_remove1:
-| pointer(?x,?v) |-  pointer(?x,?w)
+| pointer(?x,?t,?v) |-  pointer(?x,?t,?w)
 without
   ?v!=?w
 if
-  pointer(?x,?v) | |- ?v=?w
+  pointer(?x,?t,?v) | |- ?v=?w
 
 
 /*************************************
@@ -68,7 +121,7 @@ if
   is a contradiction and the proof is complete.
  */ 
 rule pointer_pointer_contradiction1 :
-  pointer(?r,?p,?x,?t,?v) * pointer(?s,?q,?x,?u,?w) | |- 
+  pointer(?x,?t,?v) * pointer(?x,?u,?w) | |- 
 if
 
 /*
@@ -76,7 +129,7 @@ if
   for null then we have a contradiction.
  */
 rule pointer_nil_contradiction : 
-  pointer(nil(),?v) | |- 
+  pointer(nil(),?t,?v) | |- 
 if
 
 
@@ -90,9 +143,9 @@ if
   a contradiction.
  */
 rule pointer_nil_failed :
-  | |- pointer(nil(),?v) 
+  | |- pointer(nil(),?t,?v) 
 if
-  | |- pointer(nil(),?v) * False
+  | |- pointer(nil(),?t,?v) * False
 
 /*
   If we need to match two pointers which have 
@@ -113,6 +166,6 @@ if
 
 
 rule pointer_not_null :
-  pointer(?x,?v) | |- ?x!=nil()
+  pointer(?x,?t,?v) | |- ?x!=nil()
 if
   | |-
