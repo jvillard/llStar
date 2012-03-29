@@ -38,9 +38,6 @@ int f(int a) {
 int main() {
   int x,*y;
 
-  x = 0;
-  x = (int) (((float) x)+1.0f);
-
   x = f(1664);
 
   

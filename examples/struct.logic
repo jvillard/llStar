@@ -3,24 +3,36 @@
  *************************************/
 
 rule pointer_getelementptr_deref:
-| pointer(?r,?pp,?p,pointer_type(?tp),?vp) * !eltptr(?x,?p,jump(numeric_const("0"),?j))
-|- pointer(?s,?q,?x,?t,?v)
+| pointer(?p,?vp) * !type(?p,pointer_type(?tp)) * !eltptr(?x,?p,jump(numeric_const("0"),?j))
+|- pointer(?x,?v)
 without
   ?p=?x
 if
-| !eltptr(?x,?vp,?j) |- pointer(?r,?q,?x,?t,?v) * ?r=?s
+| pointer(?p,?vp) * !eltptr(?x,?vp,?j) |- pointer(?x,?v)
 
 rule prout_getelementptr_deref:
-| pointer(?r,?pp,?p,named_type("struct.prout"),?vp) * !eltptr(?x,?p,jump(numeric_const("0"),?j))
-|- pointer(?s,?q,?x,?t,?v)
+| pointer(?p,?vp) * !type(?p,named_type("struct.prout")) * !eltptr(?x,?p,jump(?n,?j))
+|- pointer(?x,?v)
 without
   ?p=?x
 if
-| pointer(?r,?p,?p,pointer_type(pointer_type(integer_type())),?vp)
-* pointer(?r,?p,builtin_plus(?p,numeric_const("1")),
-  pointer_type(pointer_type(named_type("struct.prout"))),?vp)
-* !eltptr(?x,?p,?j) |- pointer(?r,?q,?x,?t,?v) * ?r=?s
+| pointer(?p,field(numeric_const("0"),?vp))
+* pointer(builtin_plus(?p,numeric_const("1")),field(numeric_const("1"),?vp))
+* !type(?p,pointer_type(pointer_type(integer_type())))
+* !type(builtin_plus(?p,numeric_const("1")),pointer_type(pointer_type(named_type("struct.prout"))))
+* !eltptr(?x,builtin_plus(?p,?n),?j) |- pointer(?x,?v)
 
+rewrite data_field_of_prout:
+  field(numeric_const("0"),struct(?data,?next)) = ?data
+
+rewrite next_field_of_prout:
+  field(numeric_const("1"),struct(?data,?next)) = ?next
+
+rewrite sizeof_prout:
+  sizeof(named_type("struct.prout")) = numeric_const("8")
+
+rewrite sizeof_int:
+  sizeof(integer_type()) = numeric_const("4")
 
 rule jump_end_eq:
 | !eltptr(?x,?y,jump_end()) |-
@@ -39,11 +51,11 @@ if
   values.  
  */
 rule pointer_remove1:
-| pointer(?r,?p,?x,?t,?v) |-  pointer(?s,?q,?x,?u,?w)
+| pointer(?x,?v) |-  pointer(?x,?w)
 without
   ?v!=?w
 if
-  pointer(?r,?p,?x,?t,?v) | |- ?v=?w * ?r=?s * ?p=?q * ?t=?u
+  pointer(?x,?v) | |- ?v=?w
 
 
 /*************************************
@@ -64,16 +76,9 @@ if
   for null then we have a contradiction.
  */
 rule pointer_nil_contradiction : 
-  pointer(?r,?p,nil(),?t,?v) | |- 
+  pointer(nil(),?v) | |- 
 if
 
-rule root_nil_contradiction : 
-  pointer(nil(),?p,?x,?t,?v) | |- 
-if
-
-rule parent_nil_contradiction : 
-  pointer(?r,nil(),?x,?t,?v) | |- 
-if
 
 /**************************************
  *  Rules for failed proofs
@@ -85,19 +90,9 @@ if
   a contradiction.
  */
 rule pointer_nil_failed :
-  | |- pointer(?r,?p,nil(),?t,?v) 
+  | |- pointer(nil(),?v) 
 if
-  | |- pointer(?r,?p,nil(),?t,?v) * False
-
-rule root_nil_failed :
-  | |- pointer(nil(),?p,?x,?t,?v) 
-if
-  | |- pointer(nil(),?p,?x,?t,?v) * False
-
-rule parent_nil_failed :
-  | |- pointer(?r,nil(),?x,?t,?v) 
-if
-  | |- pointer(?r,nil(),?x,?t,?v) * False
+  | |- pointer(nil(),?v) * False
 
 /*
   If we need to match two pointers which have 
@@ -118,16 +113,6 @@ if
 
 
 rule pointer_not_null :
-  pointer(?r,?p,?x,?t,?v) | |- ?x!=nil()
-if
-  | |-
-
-rule root_not_null :
-  pointer(?r,?p,?x,?t,?v) | |- ?r!=nil()
-if
-  | |-
-
-rule parent_not_null :
-  pointer(?r,?p,?x,?t,?v) | |- ?p!=nil()
+  pointer(?x,?v) | |- ?x!=nil()
 if
   | |-
