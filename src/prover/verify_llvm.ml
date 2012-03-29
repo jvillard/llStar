@@ -23,6 +23,12 @@ let env = {
   result = true;
 }
 
+let int_of_coq_Int n =
+  Int64.to_int (APInt.get_sext_value n)
+
+let string_of_coq_Int n =
+  string_of_int (int_of_coq_Int n)
+
 let ret_arg = Arg_var(Spec.ret_v1)
 
 let env_add_namedts ndts =
@@ -88,7 +94,7 @@ let argsbop_of_bop = function
 let rec args_of_const = function
   | Coq_const_zeroinitializer (typ) -> implement_this "zeroinitializer"
   | Coq_const_int (sz, coq_Int) ->
-    Arg_op("numeric_const",[Arg_string(APInt.to_string coq_Int)])
+    Arg_op("numeric_const",[Arg_string(string_of_coq_Int coq_Int)])
   | Coq_const_floatpoint (floating_point, coq_Float) ->
     Arg_op("numeric_const",[])
   | Coq_const_undef (typ) -> implement_this "undef"
@@ -187,17 +193,17 @@ and spred_of_list_typ root parent ptr = function
       (spred_of_list_typ root ptr e l)
 
 let ppred_of_gep typ x ptr lsv =
-  let rec jump_op_of_list_sz_value = function
+  let rec jump_chain_of_list_sz_value = function
   | Nil_list_sz_value -> Arg_op ("jump_end", [])
   | Cons_list_sz_value(sz, value, list_sz_value) ->
     match value with
       | Coq_value_const(Coq_const_int (sz, coq_Int)) ->
-	let n = APInt.to_string coq_Int in
+	let n = string_of_coq_Int coq_Int in
 	Arg_op ("jump", [Arg_op ("numeric_const", [Arg_string n]);
-			 jump_op_of_list_sz_value list_sz_value])
+			 jump_chain_of_list_sz_value list_sz_value])
       | _ -> failwith "non-constant value in break_up_aggregate" in
-  let jump_op = jump_op_of_list_sz_value lsv in
-  mkPPred ("eltptr", [x; ptr; jump_op])
+  let jump_chain = jump_chain_of_list_sz_value lsv in
+  mkPPred ("eltptr", [x; ptr; jump_chain])
 
 let rec break_up_aggregate id root ptr_typ ptr = function
   | Nil_list_sz_value ->
@@ -219,8 +225,8 @@ let rec break_up_aggregate id root ptr_typ ptr = function
       | Coq_typ_pointer (t) -> (
 	match value with
 	  | Coq_value_const(Coq_const_int (sz, coq_Int)) ->
-	    print_string ("blark "^(APInt.to_string coq_Int)^"\n");
-	    let n = int_of_string (APInt.to_string coq_Int) in
+	    print_string ("blark "^(string_of_coq_Int coq_Int)^"\n");
+	    let n = int_of_coq_Int coq_Int in
 	    let ptr_typ = args_of_typ (Coq_typ_pointer t) in
 	    let e = Vars.freshe () in
 	    P_SPred("pointer", [root; ptr; ptr_typ; Arg_var e])::
@@ -244,8 +250,8 @@ let rec break_up_aggregate id root ptr_typ ptr = function
 	    )@(aux (n-1) tail) in
 	match value with
 	  | Coq_value_const(Coq_const_int (sz, coq_Int)) ->
-	    print_string ("blerk "^(APInt.to_string coq_Int)^"\n");
-	    let n = int_of_string (APInt.to_string coq_Int) in
+	    print_string ("blerk "^(string_of_coq_Int coq_Int)^"\n");
+	    let n = int_of_coq_Int coq_Int in
 	    aux n typs
 	  | _ -> failwith "non-constant value in break_up_aggregate"
       )
@@ -357,7 +363,7 @@ let verify_module = function
   | Coq_module_intro (lay, ndts, prods) ->
     env_add_namedts ndts;
     let fold_unfold_logic = List.fold_left
-      (fun logics (Coq_namedt_intro (id, typ)) -> logic_of_namedt id typ)
+      (fun logics (Coq_namedt_intro (id, typ)) -> logics@(logic_of_namedt id typ))
       []
       ndts in
     env_add_logic_seq_rules fold_unfold_logic;
