@@ -1,0 +1,37 @@
+rewrite data_field_of_prout:
+  field(numeric_const("0"),struct(?data,?next)) = ?data
+
+rewrite next_field_of_prout:
+  field(numeric_const("1"),struct(?data,?next)) = ?next
+
+rule prout_getelementptr_deref:
+| pointer(?p,named_type("struct.prout"),?vp) * !eltptr(?x,?p,jump_named("struct.prout",?n,?j))
+|- pointer(?x,?t,?v)
+without
+  ?p=?x
+if
+| pointer(?p,pointer_type(pointer_type(integer_type())),field(numeric_const("0"),?vp))
+* pointer(builtin_plus(?p,numeric_const("1")),pointer_type(pointer_type(named_type("struct.prout"))),field(numeric_const("1"),?vp))
+* !eltptr(?x,builtin_plus(?p,?n),?j) |- pointer(?x,?t,?v)
+
+
+/* the struct prout was already unfolded */
+rule prout_getelementptr_deref20:
+| pointer(?p,pointer_type(pointer_type(integer_type())),?vp)
+* !eltptr(?x,?p,jump_named("struct.prout",numeric_const("0"),?j))
+|- pointer(?x,?t,?v)
+without
+  ?p=?x
+if
+| pointer(?p,pointer_type(pointer_type(integer_type())),?vp)
+* !eltptr(?x,?p,?j) |- pointer(?x,?t,?v)
+
+rule prout_getelementptr_deref21:
+| pointer(builtin_plus(?p,numeric_const("1")),pointer_type(pointer_type(named_type("struct.prout"))),?vp)
+* !eltptr(?x,?p,jump_named("struct.prout",numeric_const("1"),?j))
+|- pointer(?x,?t,?v)
+without
+  ?p=?x
+if
+| pointer(builtin_plus(?p,numeric_const("1")),pointer_type(pointer_type(named_type("struct.prout"))),?vp)
+* !eltptr(?x,builtin_plus(?p,numeric_const("1")),?j) |- pointer(?x,?t,?v)

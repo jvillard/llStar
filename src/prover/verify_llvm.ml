@@ -134,7 +134,7 @@ let logic_of_namedt name typ =
   let typs = match typ with
     | Coq_typ_struct l -> l
     | _ -> implement_this "named type that is not a struct" in
-  let rec unfolded_form p v offset = function
+  let rec unfolded_form p off_to_val offset = function
     | Nil_list_typ -> mkEmpty
     | Cons_list_typ (t, l) ->
       let off = string_of_int offset in
@@ -142,8 +142,8 @@ let logic_of_namedt name typ =
 	(mkPointer
 	   (Arg_op ("builtin_plus", [p; Arg_op("numeric_const", [Arg_string off])]))
 	   (Arg_op ("pointer_type", [args_of_typ t]))
-	   (Arg_op ("field", [Arg_op ("numeric_const", [Arg_string off]); v])))
-	(unfolded_form p v (offset + 1) l) in
+	   (off_to_val off))
+	(unfolded_form p off_to_val (offset + 1) l) in
   let any_var x = Arg_var (Vars.AnyVar (0, x)) in
   let p = any_var "p" in
   let vp = any_var "vp" in
@@ -153,10 +153,12 @@ let logic_of_namedt name typ =
   let t = any_var "t" in
   let v = any_var "v" in
   let target_pointer = mkPointer x t v in
-  let unfolded_pointers = unfolded_form p vp 0 typs in
   let eltptr_concl = mkPPred ("eltptr", [x; p; Arg_op ("jump_named", [Arg_string name; n; j])]) in
   let eltptr_prem = mkPPred ("eltptr", [x; Arg_op ("builtin_plus", [p;n]); j]) in
 
+  let unfolded_pointers = unfolded_form p
+    (fun offset -> Arg_op ("field", [Arg_op ("numeric_const", [Arg_string offset]); vp]))
+    0 typs in
   let conclusion_lhs =
     pconjunction
       (mkPointer p (Arg_op ("named_type", [Arg_string name])) vp)
@@ -169,17 +171,14 @@ let logic_of_namedt name typ =
   let without = mkEQ (p,x) in
   let geteltptr_rule = (conclusion, [[premise]], "geteltptr_"^name, (without, []), []) in
 
-  let rec unfolded_form p v offset = function
-    | Nil_list_typ -> mkEmpty
-    | Cons_list_typ (t, l) ->
-      let off = string_of_int offset in
-      mkStar
-	(mkPointer
-	   (Arg_op ("builtin_plus", [p; Arg_op("numeric_const", [Arg_string off])]))
-	   (Arg_op ("pointer_type", [args_of_typ t]))
-	   v)
-	(unfolded_form p v (offset + 1) l) in
-  let unfolded_pointers = unfolded_form p vp 0 typs in
+
+  let unfolded_pointers = unfolded_form p (fun off -> any_var ("v"^off)) 0 typs in
+  let named_pointer = mkPointer p (Arg_op ("named_type", [Arg_string name])) vp in
+  let conclusion = (mkEmpty, unfolded_pointers, named_pointer, mkEmpty) in
+  let premise = (unfolded_pointers, mkEmpty, mkEmpty, mkEmpty) in
+  let fold_rule = (conclusion, [[premise]], "fold_"^name, ([], []), []) in
+
+  let unfolded_pointers = unfolded_form p (fun _ -> vp) 0 typs in
   let rec geteltptr_defer_rules offset = function
     | [] -> []
     | p::tl ->
@@ -189,7 +188,7 @@ let logic_of_namedt name typ =
        "geteltptr_defer_"^name^(string_of_int offset),
        (without, []), [])::(geteltptr_defer_rules (offset+1) tl) in
 
-  geteltptr_rule::(geteltptr_defer_rules 0 unfolded_pointers)
+  geteltptr_rule::fold_rule::(geteltptr_defer_rules 0 unfolded_pointers)
 
 let rec spred_of_typ ptr = function
   | Coq_typ_int _

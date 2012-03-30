@@ -20,8 +20,8 @@ int f(int a) {
 
   p = malloc(sizeof(struct prout));
   p->data = malloc(sizeof(int));
-  *(p->data) = a;
   p->next = p;
+  *(p->next->data) = a;
 
   b = *((*p).data);
   
@@ -32,7 +32,7 @@ int f(int a) {
   t->a = 4444;
   t->a = 4445;
 
-  //free(t);
+  free(t);
   free(p);
   return b;
 }
@@ -46,12 +46,6 @@ int main() {
   y = malloc(sizeof(int));
   *y = 1665;
   free(y);
-
-  /*
-  z = malloc(sizeof(struct prout));
-  z->data = *y;
-  free(z);
-  */
 
   return x;
 }

@@ -10,39 +10,10 @@ without
 if
 | pointer(?p,pointer_type(?tp),?vp) * !eltptr(?x,?vp,?j) |- pointer(?x,?t,?v)
 
-/*
-rule prout_getelementptr_deref:
-| pointer(?p,named_type("struct.prout"),?vp) * !eltptr(?x,?p,jump_named("struct.prout",?n,?j))
-|- pointer(?x,?t,?v)
-without
-  ?p=?x
+rule jump_end_eq:
+| !eltptr(?x,?y,jump_end()) |-
 if
-| pointer(?p,pointer_type(pointer_type(integer_type())),field(numeric_const("0"),?vp))
-* pointer(builtin_plus(?p,numeric_const("1")),pointer_type(pointer_type(named_type("struct.prout"))),field(numeric_const("1"),?vp))
-* !eltptr(?x,builtin_plus(?p,?n),?j) |- pointer(?x,?t,?v)
-
-
-/* the struct prout was already unfolded */
-rule prout_getelementptr_deref20:
-| pointer(?p,pointer_type(pointer_type(integer_type())),?vp)
-* !eltptr(?x,?p,jump_named("struct.prout",numeric_const("0"),?j))
-|- pointer(?x,?t,?v)
-without
-  ?p=?x
-if
-| pointer(?p,pointer_type(pointer_type(integer_type())),?vp)
-* !eltptr(?x,?p,?j) |- pointer(?x,?t,?v)
-
-rule prout_getelementptr_deref21:
-| pointer(builtin_plus(?p,numeric_const("1")),pointer_type(pointer_type(named_type("struct.prout"))),?vp)
-* !eltptr(?x,?p,jump_named("struct.prout",numeric_const("1"),?j))
-|- pointer(?x,?t,?v)
-without
-  ?p=?x
-if
-| pointer(builtin_plus(?p,numeric_const("1")),pointer_type(pointer_type(named_type("struct.prout"))),?vp)
-* !eltptr(?x,builtin_plus(?p,numeric_const("1")),?j) |- pointer(?x,?t,?v)
-*/
+| ?x = ?y |-
 
 /* rules for rebuilding a malloc block */
 rule int_to_malloc:
@@ -51,48 +22,12 @@ rule int_to_malloc:
 if
 malloced(?mb, integer_type()) * pointer(?mb,integer_type(),?v) | |-
 
-rule prout_to_malloc:
-| malloced(?mb, named_type("struct.prout"))
-* pointer(?mb,pointer_type(named_type("struct.prout")),?sp)
-* pointer(?sp,named_type("struct.prout"),?v)
+rule remove_malloc_block:
+| malloced(?mb, named_type(?t))
 |- malloc_block(?mb)
 if
-  malloced(?mb, named_type("struct.prout"))
-* pointer(?mb,pointer_type(named_type("struct.prout")),?sp)
-* pointer(?sp,named_type("struct.prout"),?v)
-| |-
-
-rule unfolded_prout_to_malloc:
-| malloced(?mb, named_type("struct.prout"))
-* pointer(?mb,pointer_type(named_type("struct.prout")),?sp)
-* pointer(?sp,pointer_type(pointer_type(integer_type())),?v0)
-* pointer(builtin_plus(?sp,numeric_const("1")),pointer_type(pointer_type(named_type("struct.prout"))),?v1)
-|- malloc_block(?mb)
-if
-  malloced(?mb, named_type("struct.prout"))
-* pointer(?mb,pointer_type(named_type("struct.prout")),?sp)
-* pointer(?sp,pointer_type(pointer_type(integer_type())),?v0)
-* pointer(builtin_plus(?sp,numeric_const("1")),pointer_type(pointer_type(named_type("struct.prout"))),?v1)
-| |-
-
-
-
-rewrite data_field_of_prout:
-  field(numeric_const("0"),struct(?data,?next)) = ?data
-
-rewrite next_field_of_prout:
-  field(numeric_const("1"),struct(?data,?next)) = ?next
-
-rewrite sizeof_prout:
-  sizeof(named_type("struct.prout")) = numeric_const("8")
-
-rewrite sizeof_int:
-  sizeof(integer_type()) = numeric_const("4")
-
-rule jump_end_eq:
-| !eltptr(?x,?y,jump_end()) |-
-if
-| ?x = ?y |-
+| |- pointer(?mb,pointer_type(named_type(?t)),?sp)
+* pointer(?sp,named_type(?t),?v)
 
 /*
   If you have a pointer for the same object 
