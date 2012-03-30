@@ -31,6 +31,8 @@ let string_of_coq_Int n =
 
 let ret_arg = Arg_var(Spec.ret_v1)
 
+let mkPointer ptr ptr_typ v = mkSPred ("pointer", [ptr; ptr_typ; v])
+
 let env_add_namedts ndts =
   env.namedts <- List.map (function Coq_namedt_intro (i,t) -> (i,t)) ndts@(env.namedts)
 
@@ -38,8 +40,7 @@ let env_add_gvar gvar =
   ()
 
 let env_add_logic_seq_rules sr  =
-  ()
-  (* env.logic <- { env.logic with seq_rules = env.logic.seq_rules@sr } *)
+  env.logic <- { env.logic with seq_rules = env.logic.seq_rules@sr }
 
 let implement_this s = failwith ("Not implemented: "^s)
 
@@ -129,38 +130,66 @@ let args_of_value = function
 
 let args_of_param ((typ, attributes), value) = args_of_value value
 
-let logic_of_namedt name = function
-  | Coq_typ_int _ 
-  | Coq_typ_floatpoint _
-  | Coq_typ_void
-  | Coq_typ_label
-  | Coq_typ_opaque
-  | Coq_typ_namedt _
-  | Coq_typ_metadata
-  | Coq_typ_function _
-  | Coq_typ_pointer _ -> []
-  | Coq_typ_struct (typs) -> []
-  (*   let rec aux n = function *)
-  (*     | Nil_list_typ -> *)
-  (* 	if n>=0 then *)
-  (* 	  failwith "out of struct break_up_aggregate?" *)
-  (* 	else [] *)
-  (*     | Cons_list_typ(typ, tail) -> *)
-  (* 	(if n <> 0 then *)
-  (* 	    let ptr_typ = args_of_typ (Coq_typ_pointer typ) in *)
-  (* 	    let e = Vars.freshe () in *)
-  (* 	    [P_SPred("pointer", [root; ptr; ptr_typ; Arg_var e])] *)
-  (* 	 else *)
-  (* 	    break_up_aggregate id root typ ptr list_sz_value *)
-  (* 	)@(aux (n-1) tail) in *)
-  (*   match value with *)
-  (*     | Coq_value_const(Coq_const_int (sz, coq_Int)) -> *)
-  (* 	print_string ("blerk "^(APInt.to_string coq_Int)^"\n"); *)
-  (* 	let n = int_of_string (APInt.to_string coq_Int) in *)
-  (* 	aux n typs *)
-  (*     | _ -> failwith "non-constant value in break_up_aggregate" *)
-  (* ) *)
-  | Coq_typ_array _ -> implement_this "array aggregate"
+let logic_of_namedt name typ =
+  let typs = match typ with
+    | Coq_typ_struct l -> l
+    | _ -> implement_this "named type that is not a struct" in
+  let rec unfolded_form p v offset = function
+    | Nil_list_typ -> mkEmpty
+    | Cons_list_typ (t, l) ->
+      let off = string_of_int offset in
+      mkStar
+	(mkPointer
+	   (Arg_op ("builtin_plus", [p; Arg_op("numeric_const", [Arg_string off])]))
+	   (Arg_op ("pointer_type", [args_of_typ t]))
+	   (Arg_op ("field", [Arg_op ("numeric_const", [Arg_string off]); v])))
+	(unfolded_form p v (offset + 1) l) in
+  let any_var x = Arg_var (Vars.AnyVar (0, x)) in
+  let p = any_var "p" in
+  let vp = any_var "vp" in
+  let x = any_var "x" in
+  let n = any_var "n" in
+  let j = any_var "j" in
+  let t = any_var "t" in
+  let v = any_var "v" in
+  let target_pointer = mkPointer x t v in
+  let unfolded_pointers = unfolded_form p vp 0 typs in
+  let eltptr_concl = mkPPred ("eltptr", [x; p; Arg_op ("jump_named", [Arg_string name; n; j])]) in
+  let eltptr_prem = mkPPred ("eltptr", [x; Arg_op ("builtin_plus", [p;n]); j]) in
+
+  let conclusion_lhs =
+    pconjunction
+      (mkPointer p (Arg_op ("named_type", [Arg_string name])) vp)
+      eltptr_concl in
+  let conclusion_rhs = target_pointer in
+  let conclusion = (mkEmpty, conclusion_lhs, conclusion_rhs, mkEmpty) in
+  let premise_lhs = pconjunction unfolded_pointers eltptr_prem in
+  let premise_rhs = target_pointer in
+  let premise = (mkEmpty, premise_lhs, premise_rhs, mkEmpty) in
+  let without = mkEQ (p,x) in
+  let geteltptr_rule = (conclusion, [[premise]], "geteltptr_"^name, (without, []), []) in
+
+  let rec unfolded_form p v offset = function
+    | Nil_list_typ -> mkEmpty
+    | Cons_list_typ (t, l) ->
+      let off = string_of_int offset in
+      mkStar
+	(mkPointer
+	   (Arg_op ("builtin_plus", [p; Arg_op("numeric_const", [Arg_string off])]))
+	   (Arg_op ("pointer_type", [args_of_typ t]))
+	   v)
+	(unfolded_form p v (offset + 1) l) in
+  let unfolded_pointers = unfolded_form p vp 0 typs in
+  let rec geteltptr_defer_rules offset = function
+    | [] -> []
+    | p::tl ->
+      let conclusion = (mkEmpty, pconjunction [p] eltptr_concl, target_pointer, mkEmpty) in
+      let premise = (mkEmpty, pconjunction [p] eltptr_prem, target_pointer, mkEmpty) in
+      (conclusion, [[premise]],
+       "geteltptr_defer_"^name^(string_of_int offset),
+       (without, []), [])::(geteltptr_defer_rules (offset+1) tl) in
+
+  geteltptr_rule::(geteltptr_defer_rules 0 unfolded_pointers)
 
 let rec spred_of_typ ptr = function
   | Coq_typ_int _

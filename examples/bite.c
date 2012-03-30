@@ -28,9 +28,11 @@ int f(int a) {
   free(p->data);
 
 
-  // t = &(p->two);
-  // t->a = 4444;
+  t = malloc(sizeof(struct two));
+  t->a = 4444;
+  t->a = 4445;
 
+  //free(t);
   free(p);
   return b;
 }
