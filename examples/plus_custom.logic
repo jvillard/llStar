@@ -1,0 +1,21 @@
+/*************************************
+ * Extends logic rules for addition. *
+ *************************************/
+
+/** Rewriting rules. **/
+
+/*
+  Addition of neutral element.
+      x + 0 = x.
+*/
+rewrite plus_zero_second:
+/*  (?x + numeric_const("0")) = ?x*/
+  builtin_plus(?x, numeric_const("0")) = ?x
+
+/*
+  Addition of neutral element.
+      0 + x = x.
+*/
+rewrite plus_zero_first:
+/*  (numeric_const("0") + ?x) = ?x*/
+  builtin_plus(numeric_const("0"), ?x) = ?x

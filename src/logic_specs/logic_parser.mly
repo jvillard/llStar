@@ -135,7 +135,7 @@ let parse_warning s =
 %type <Psyntax.rules Load.importoption list> rule_file
 
 %start spec_file
-%type <Logic_spec.funspecs Load.importoption list> spec_file
+%type <Logic_spec.funspec Load.importoption list> spec_file
 
 %start question_file
 %type <Psyntax.question list> question_file
@@ -394,11 +394,9 @@ rule_file:
 /* Specifications */
 
 spec_file:
-  | spec_file_aux { [NormalEntry $1] }
-
-spec_file_aux:
-  | identifier COLON spec spec_file_aux { (Funspec($1, $3))::$4 }
-  | /* empty */ { [] }
+  | IMPORT STRING_CONSTANT SEMICOLON spec_file  { ImportEntry($2)::$4 }
+  | identifier COLON spec spec_file { NormalEntry(Funspec($1, $3))::$4 }
+  | EOF { [] }
 
 spec:
   | L_BRACE formula R_BRACE L_BRACE formula R_BRACE exp_posts  { {pre=$2;post=$5;excep=$7} }

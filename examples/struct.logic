@@ -3,12 +3,12 @@
  *************************************/
 
 rule pointer_getelementptr_deref:
-| pointer(?p,pointer_type(?tp),?vp) * !eltptr(?x,?p,jump_ptr(numeric_const("0"),?j))
-|- pointer(?x,?t,?v)
+  | pointer(?p,pointer_type(?tp),?vp) * !eltptr(?x,?p,jump_ptr(numeric_const("0"),?j))
+  |- pointer(?x,?t,?v)
 without
   ?p=?x
 if
-| pointer(?p,pointer_type(?tp),?vp) * !eltptr(?x,?vp,?j) |- pointer(?x,?t,?v)
+  | pointer(?p,pointer_type(?tp),?vp) * !eltptr(?x,?vp,?j) |- pointer(?x,?t,?v)
 
 rule jump_end_eq:
 | !eltptr(?x,?y,jump_end()) |-

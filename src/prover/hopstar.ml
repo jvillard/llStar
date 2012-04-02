@@ -23,10 +23,10 @@ let set_program_file_name n =
   program_file_name := n
 
 let arg_list = Config.args_default @ [
-  ("-f", Arg.String(set_program_file_name ), "program file name");
-  ("-l", Arg.String(set_logic_file_name ), "logic file name");
-  ("-s", Arg.String(set_spec_file_name ), "spec file name");
-  ("-a", Arg.String(set_absrules_file_name ), "abstraction rules file name");
+  ("-f", Arg.String(set_program_file_name), "program file name");
+  ("-l", Arg.String(set_logic_file_name), "logic file name");
+  ("-s", Arg.String(set_spec_file_name), "spec file name");
+  ("-a", Arg.String(set_absrules_file_name), "abstraction rules file name");
 ]
 
 let main () =
@@ -79,9 +79,7 @@ let main () =
       Cli_utils.specs_dirs            
       !spec_file_name
       (Logic_parser.spec_file Logic_lexer.token) in
-    let spec_list = List.flatten spec_list in
 
-    Config.set_symb_debug false;
     let verdict = Verify_llvm.go logic abs_rules spec_list coqim in
   print_string ("\n"^
 "=== End Proof ==================================================================\n");
