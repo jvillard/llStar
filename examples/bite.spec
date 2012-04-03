@@ -2,7 +2,7 @@ import "stdlib.spec";
 
 main:
    {}
-   {$ret_v1 = numeric_const("1664")}
+   {$ret_v1 = builtin_mult(numeric_const("32"),numeric_const("52"))}
 
 f:
    {@parameter0: = _a}

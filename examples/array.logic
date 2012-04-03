@@ -1,5 +1,3 @@
-import "cmp.logic";
-
 rule array_getelementptr:
   | array(?a,?s,?e,?sz,array_type(?ta),?va) * !eltptr(?x,?a,jump_array(?n,?j))
   |- pointer(?x,?t,?v)
@@ -21,7 +19,7 @@ without
 if
   pointer(builtin_plus(?a,?s),pointer_type(?ta),?vx) |
  |- array(?a,builtin_plus(?s,numeric_const("1")),?e,?sz,array_type(?ta),?va)
-  * ?s < ?e
+  * !LT(?s,?e)
 
 rule ptr_array_mid:
   | pointer(builtin_plus(?a,?x),pointer_type(?ta),?vx)
@@ -32,8 +30,8 @@ if
   pointer(builtin_plus(?a,?x),pointer_type(?ta),?vx) |
  |- array(?a,?s,?x,?sz,array_type(?ta),?va)
   * array(?a,builtin_plus(?x,numeric_const("1")),?e,?sz,array_type(?ta),?va)
-  * ?x < ?e
-  * ?x >= ?s
+  * !LT(?x, ?e)
+  * !GE(?x, ?s)
 
 
 rule subarray_mid:
@@ -45,8 +43,8 @@ if
   array(?a,?s,?e,?sz,array_type(?ta),?v) |
  |-  array(?a,?ss,?s,?sz,array_type(?ta),?va)
    * array(?a,builtin_plus(?e,"1"),?ee,?sz,array_type(?ta),?va)
-   * ?s>=?ss
-   * ?e<?ee
+   * !GE(?s,?ss)
+   * !LT(?e,?ee)
 
 rule subarray_end:
   | array(?a,?s,?e,?sz,array_type(?ta),?v)
@@ -56,7 +54,7 @@ without
 if
   array(?a,?s,?e,?sz,array_type(?ta),?v) |
  |- array(?a,?ss,?s,?sz,array_type(?ta),?va)
-   * ?s>=?ss
+   * !GE(?s,?ss)
 
 
 rule array_remove1:
