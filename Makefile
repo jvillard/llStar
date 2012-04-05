@@ -8,8 +8,8 @@ export CORESTAR_HOME
 SRC_DIRS=src corestar_src
 MAINS=hopstar
 LIBS=llvm llvm_executionengine llvm_bitreader llvm_target dynlink str unix
-LFLAGS=-cc,g++,-I,$(HOME)/local/lib/ocaml,-cclib,-lffi#,-cclib,-L/home/jvillard/local/lib
-CFLAGS=-I,$(HOME)/local/lib/ocaml
+LFLAGS=-cc,g++,-I,/usr/lib/ocaml/llvm-3.0,-cclib,-lffi
+CFLAGS=-I,/usr/lib/ocaml/llvm-3.0
 OB_FLAGS=-cflags -dtypes -lflags $(LFLAGS) -cflags $(CFLAGS)
 
 # section with stuff that shouldn't change often

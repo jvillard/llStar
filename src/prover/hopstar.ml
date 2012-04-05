@@ -1,9 +1,7 @@
 open Printf
 open Format
 open Llvm
-open Syntax.LLVMsyntax
 open Cfg_core
-(*open Verif_llvm*)
 
 let program_file_name = ref ""
 let logic_file_name = ref "logic"
@@ -44,15 +42,12 @@ let main () =
   let ic = create_context () in
   let imbuf = MemoryBuffer.of_file !program_file_name in
   let im = Llvm_bitreader.parse_bitcode ic imbuf in
-  let ist = SlotTracker.create_of_module im in
 
-  Llvm_pretty_printer.travel_module ist im;
+  dump_module im;
   print_string ("\n"^
 "=== End of LLVM bitcode ========================================================\n");
   print_string ("\n"^
 "=== Start Proof ================================================================\n");
-  let coqim = Llvm2coq.translate_module false ist im in
-  (* Coq_pretty_printer.travel_module coqim; *)
 
   if !logic_file_name="" && not !Config.specs_template_mode then
     eprintf "@\nLogic file name not specified. Can't continue....\n %s \n" usage_msg
@@ -80,13 +75,12 @@ let main () =
       !spec_file_name
       (Logic_parser.spec_file Logic_lexer.token) in
 
-    let verdict = Verify_llvm.go logic abs_rules spec_list coqim in
+    let verdict = Verify_llvm.go logic abs_rules spec_list im in
   print_string ("\n"^
 "=== End Proof ==================================================================\n");
     print_string ("\nmama says "^(if verdict then "yes" else "no")^"\n");
     Symexec.pp_dotty_transition_system ());
-    
-  SlotTracker.dispose ist;
+
   dispose_module im
 
 

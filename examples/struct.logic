@@ -3,7 +3,7 @@
  *************************************/
 
 rule pointer_getelementptr_deref:
-  | pointer(?p,pointer_type(?tp),?vp) * !eltptr(?x,?p,jump_ptr(numeric_const("0"),?j))
+  | pointer(?p,pointer_type(?tp),?vp) * !eltptr(?x,?p,jump(numeric_const("0"),?j))
   |- pointer(?x,?t,?v)
 without
   ?p=?x

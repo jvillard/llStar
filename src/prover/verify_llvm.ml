@@ -1,6 +1,7 @@
 open Printf
 open Llvm
-open Syntax.LLVMsyntax
+open Llvm.TypeKind
+open Llvm.ValueKind
 open Cfg_core
 open Psyntax
 open Logic_spec
@@ -9,8 +10,8 @@ type verify_env = {
   mutable logic: Psyntax.logic;
   mutable abs_rules: Psyntax.logic;
   mutable specs: funspec list;
-  mutable namedts: (id * typ) list;
-  mutable gvars: id list; (* TODO: wrong *)
+  mutable gvars: (args * args) list; (* TODO: wrong *)
+  mutable idMap: (llvalue * string) list;
   mutable result: bool;
 }
 
@@ -18,28 +19,38 @@ let env = {
   logic = empty_logic;
   abs_rules = empty_logic;
   specs = [];
-  namedts = [];
   gvars = [];
+  idMap = [];
   result = true;
 }
 
-let int_of_coq_Int n =
-  Int64.to_int (APInt.get_sext_value n)
-
-let string_of_coq_Int n =
-  string_of_int (int_of_coq_Int n)
+let value_id v =
+  let id = value_name v in
+  if id = "" then
+    try
+      List.assoc v env.idMap
+    with Not_found ->
+      let id = "%"^(string_of_int (List.length env.idMap)) in
+      env.idMap <- (v, id)::env.idMap;
+      id
+  else id
 
 let ret_arg = Arg_var(Spec.ret_v1)
 
-let mkPointer ptr ptr_typ v = mkSPred ("pointer", [ptr; ptr_typ; v])
+let args_num_0 = Arg_op("numeric_const",[Arg_string "0"])
+let args_num_1 = Arg_op("numeric_const",[Arg_string "1"])
+
+let mkPointer ptr ptr_t v = mkSPred ("pointer", [ptr; ptr_t; v])
+let mkArray ptr start_idx end_idx size array_t v =
+  mkSPred ("array", [ptr; start_idx; end_idx; size; array_t; v])
 
 let mkEmptySpec = Spec.mk_spec mkEmpty mkEmpty Spec.ClassMap.empty
 
-let env_add_namedts ndts =
-  env.namedts <- List.map (function Coq_namedt_intro (i,t) -> (i,t)) ndts@(env.namedts)
-
 let env_add_gvar gvar =
-  ()
+  print_string ("Adding global variable "^(value_id gvar)^" with type:");
+  print_string (string_of_lltype (type_of gvar));
+  print_string "\nand value:\n";
+  dump_value gvar
 
 let env_add_logic_seq_rules sr  =
   env.logic <- { env.logic with seq_rules = env.logic.seq_rules@sr }
@@ -48,105 +59,323 @@ let implement_this s = failwith ("Not implemented: "^s)
 
 let spec_of_fun_id fid =
   let rec aux = function
-    | Logic_spec.Funspec(i, spec)::ss when "@"^i = fid -> spec
+    | Logic_spec.Funspec(i, spec)::ss when i = fid -> spec
     | _::ss -> aux ss
-    | [] -> mkEmptySpec in
+    | [] -> print_endline ("WARN: no spec found for "^fid); mkEmptySpec in
   aux env.specs
 
-let rec args_of_typ = function
-    | Coq_typ_int s ->
-      Arg_op("integer_type", [])
-    | Coq_typ_floatpoint f10 ->
-      Arg_op("float_type", [])
-    | Coq_typ_void ->
-      Arg_op("void",[])
-    | Coq_typ_label -> implement_this "label type"
-    | Coq_typ_metadata -> implement_this "metadata type"
-    | Coq_typ_array (s, t) ->
-      Arg_op("array_type", [args_of_typ t])
-    | Coq_typ_function (t, l, v) when not v ->
-      Arg_op("function_type", args_of_typ t::(args_of_list_typ l))
-    | Coq_typ_function (t, l, v) -> (* v is true *)
-      implement_this "function type with varg"
-    | Coq_typ_struct l ->
-      Arg_op("struct_type", args_of_list_typ l)
-    | Coq_typ_pointer t ->
-      Arg_op("pointer_type", [args_of_typ t])
-    | Coq_typ_opaque ->
-      Arg_op("opaque_type", [])
-    | Coq_typ_namedt i ->
-      Arg_op("named_type", [Arg_string i])
-and args_of_list_typ = function
-    | Nil_list_typ -> []
-    | Cons_list_typ (t, l) -> args_of_typ t::(args_of_list_typ l)
+let rec args_of_type t = match (classify_type t) with
+  | Void -> Arg_op("void_type",[])
+  | Float
+  | Double
+  | X86fp80
+  | Fp128
+  | Ppc_fp128 -> Arg_op("float_type", [])
+  | Label -> implement_this "label type"
+  | Integer -> Arg_op("integer_type", [])
+  | TypeKind.Function ->
+    let ret_type = return_type t in
+    let par_types = param_types t in
+    Arg_op("function_type", args_of_type ret_type::(args_of_type_array par_types))
+  | Struct -> (
+    match struct_name t with
+      | None ->
+	print_string "UNUSUAL: unnamed struct\n";
+	let elts_types = struct_element_types t in
+	Arg_op("struct_type", args_of_type_array elts_types)
+      | Some n ->
+	Arg_op("named_type", [Arg_string n])
+  )
+  | Array ->
+    let elt_t = element_type t in
+    Arg_op("array_type", [args_of_type elt_t])
+  | Pointer ->
+    let elt_t = element_type t in
+    Arg_op("pointer_type", [args_of_type elt_t])
+  | Vector ->
+    let elt_t = element_type t in
+    Arg_op("vector_type", [args_of_type elt_t])
+  | Metadata -> implement_this "metadata type"
+and args_of_type_array ta =
+  Array.to_list (Array.map args_of_type ta)
 
-let argsbop_of_bop = function
-  | Coq_bop_add -> "builtin_plus"
-  | Coq_bop_sub -> "builtin_minus"
-  | Coq_bop_mul -> "builtin_mult"
-  | Coq_bop_udiv
-  | Coq_bop_sdiv
-  | Coq_bop_urem
-  | Coq_bop_srem 
-  | Coq_bop_shl
-  | Coq_bop_lshr
-  | Coq_bop_ashr
-  | Coq_bop_and
-  | Coq_bop_or
-  | Coq_bop_xor -> "bop_undet"
+let args_of_int_const v = match int64_of_const v with
+  | Some i -> Arg_op("numeric_const", [Arg_string(Int64.to_string i)])
+  | None -> Arg_var (Vars.freshe ())
 
-let rec args_of_const = function
-  | Coq_const_zeroinitializer (typ) -> implement_this "zeroinitializer"
-  | Coq_const_int (sz, coq_Int) ->
-    Arg_op("numeric_const",[Arg_string(string_of_coq_Int coq_Int)])
-  | Coq_const_floatpoint (floating_point, coq_Float) ->
-    Arg_op("numeric_const",[])
-  | Coq_const_undef (typ) -> implement_this "undef"
-  | Coq_const_null (typ) ->
-    Arg_op("nil",[])
-  | Coq_const_arr (typ, list_const) -> implement_this "arr"
-  | Coq_const_struct (list_const) -> implement_this "struct"
-  | Coq_const_gid (typ, id) ->
-    Arg_var (Vars.concretep_str id)
-  | Coq_const_truncop (truncop, const, typ) -> implement_this "truncop"
-  | Coq_const_extop (extop, const, typ) -> implement_this "extop"
-  | Coq_const_castop (castop, const, typ) -> implement_this "castop"
-  | Coq_const_gep (inbounds, const, list_const) ->
-    Arg_op("getelementpointer", args_of_const const::(args_of_list_const list_const))
-  | Coq_const_select (const, const', const'') -> implement_this "select"
-  | Coq_const_icmp (cond, const, const') -> implement_this "icmp"
-  | Coq_const_fcmp (fcond, const, const') -> implement_this "fcmp"
-  | Coq_const_extractvalue (const, list_const) -> implement_this "extractvalue"
-  | Coq_const_insertvalue (const, const', list_const) -> implement_this "insertvalue"
-  | Coq_const_bop (bop, const, const') ->
-    let abop = argsbop_of_bop bop in
-    Arg_op(abop, [args_of_const const; args_of_const const'])
-  | Coq_const_fbop (fbop, const, const') -> implement_this "fbop"
-and args_of_list_const = function
-  | Nil_list_const -> []
-  | Cons_list_const (const, list_const) ->
-    args_of_const const::(args_of_list_const list_const)
-    
-let args_of_value = function
-  | Coq_value_id (id) -> Arg_var (Vars.concretep_str id)
-  | Coq_value_const (const) -> args_of_const const
+let args_of_value v = match classify_value v with
+  | NullValue -> args_num_0
+  | Argument -> Arg_var (Vars.concretep_str (value_id v))
+  | BasicBlock -> implement_this "value is a basic block"
+  | InlineAsm -> implement_this "value is inlined assembly"
+  | MDNode -> implement_this "value is a metadata node"
+  | MDString -> implement_this "value is a metadata string"
+  | BlockAddress -> implement_this "value is a block address"
+  | ConstantAggregateZero -> implement_this "value is an aggregate 0"
+  | ConstantArray -> implement_this "value is an array"
+  | ConstantExpr -> implement_this "value is an expression"
+  | ConstantFP -> implement_this "value is floating point"
+  | ConstantInt -> args_of_int_const v
+  | ConstantPointerNull -> args_num_0
+  | ConstantStruct -> implement_this "value is a struct"
+  | ConstantVector -> implement_this "value is a vector"
+  | Function -> implement_this "value is a function"
+  | GlobalAlias -> implement_this "value is a global alias"
+  | GlobalVariable -> Arg_var (Vars.concretep_str (value_id v))
+  | UndefValue -> Arg_op("undef", [])
+  | Instruction op -> Arg_var (Vars.concretep_str (value_id v))
 
-let args_of_param ((typ, attributes), value) = args_of_value value
+let rec spred_of_type ptr t = match (classify_type t) with
+  | Void
+  | Float
+  | Double
+  | X86fp80
+  | Fp128
+  | Ppc_fp128
+  | Label
+  | Integer -> mkEmpty
+  | TypeKind.Function -> (* stupid name conflict with ValueKind *)
+    implement_this "SPred of function type"
+  | Struct
+  | Pointer ->
+    let ptr_t = args_of_type t in
+    let e = Arg_var (Vars.freshe ()) in
+    mkPointer ptr ptr_t e
+  | Array ->
+    let ptr_t = args_of_type t in
+    let size = Arg_op ("numeric_const", [Arg_string (string_of_int (array_length t))]) in
+    let e = Arg_var (Vars.freshe ()) in
+    let start = Arg_op ("numeric_const", [Arg_string "0"]) in
+    mkArray ptr start size size ptr_t e
+  | Vector -> implement_this "SPred of vector"
+  | Metadata -> implement_this "SPred of metadata"
 
-let logic_of_namedt name typ =
-  let typs = match typ with
-    | Coq_typ_struct l -> l
-    | _ -> implement_this "named type that is not a struct" in
-  let rec unfolded_form p off_to_val offset = function
-    | Nil_list_typ -> mkEmpty
-    | Cons_list_typ (t, l) ->
-      let off = string_of_int offset in
-      mkStar
-	(mkPointer
-	   (Arg_op ("builtin_plus", [p; Arg_op("numeric_const", [Arg_string off])]))
-	   (Arg_op ("pointer_type", [args_of_typ t]))
-	   (off_to_val off))
-	(unfolded_form p off_to_val (offset + 1) l) in
+
+let ppred_of_gep x ptr lidx =
+  let rec jump_chain_of_lidx = function
+    | [] -> Arg_op ("jump_end", [])
+    | idx::tl ->
+      let args_idx = args_of_value idx in
+      Arg_op ("jump", [args_idx; jump_chain_of_lidx tl]) in
+  let jump_chain = jump_chain_of_lidx lidx in
+  mkPPred ("eltptr", [x; ptr; jump_chain])
+
+let cfg_node_of_instr instr = match instr_opcode instr with
+  (* Terminator Instructions *)
+  | Opcode.Ret ->
+    if num_operands instr != 0 then
+      let ret_val = operand instr 0 in
+      let p0 = Arg_var(Vars.concretep_str ("@parameter"^(string_of_int 0)^":")) in
+      let post = mkEQ(ret_arg, p0) in
+      let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
+      mk_node (Core.Assignment_core  ([], spec, [args_of_value ret_val]))
+    else mk_node (Core.End)
+  | Opcode.Br ->
+    (* this is how you get a block's label using the ocaml bindings... *)
+    let label_of_bblock b =
+      let l = value_id (value_of_block b) in
+      if l = "" then
+	(* if this ever shows up, we need to give a fresh label to the
+	   target block *)
+	print_string "FIXME: branch to a block with no label";
+      l in
+    if num_operands instr = 1 then
+      (* Unconditional branch instr *)
+      let next_label = label_of_bblock (block_of_value (operand instr 0)) in
+      mk_node (Core.Goto_stmt_core [next_label])
+    else
+      (* Conditional branch instr, num_operands instr = 3 *)
+      let then_label = label_of_bblock (block_of_value (operand instr 1)) in
+      let else_label = label_of_bblock (block_of_value (operand instr 2)) in
+      (* TODO: implement cond *)
+      mk_node (Core.Goto_stmt_core [then_label;else_label])
+  | Opcode.Switch -> implement_this "switch instruction"
+  | Opcode.IndirectBr -> implement_this "indirect branch"
+  | Opcode.Invoke -> implement_this "Invoke block terminator"
+  | Opcode.Invalid2 -> failwith "\"Invalid\" instruction"
+  | Opcode.Unreachable ->
+    (* if llvm thinks it's unreachable, let's tell hopstar by assuming False *)
+    let spec = Spec.mk_spec [] mkFalse Spec.ClassMap.empty in
+    mk_node (Core.Assignment_core ([],spec,[]))
+  | Opcode.Invalid -> failwith "\"Invalid\" instruction"
+  (* Standard Binary Operators *)
+  | Opcode.Add
+  | Opcode.FAdd
+  | Opcode.Sub
+  | Opcode.FSub
+  | Opcode.Mul
+  | Opcode.FMul
+  | Opcode.UDiv
+  | Opcode.SDiv
+  | Opcode.FDiv
+  | Opcode.URem
+  | Opcode.SRem
+  | Opcode.FRem -> implement_this "bop instr"
+  (* Logical Operators *)
+  | Opcode.Shl
+  | Opcode.LShr
+  | Opcode.AShr
+  | Opcode.And
+  | Opcode.Or
+  | Opcode.Xor -> implement_this "bitwise op instr"
+  (* Memory Operators *)
+  | Opcode.Alloca ->
+    let id = value_id instr in
+    let t = type_of instr in
+    let x = Arg_var (Vars.concretep_str id) in
+    let e = Arg_var (Vars.freshe ()) in
+    let ptr_t = args_of_type t in
+    let pointed_type = element_type t in
+    let alloca = mkSPred ("alloca", [x; ptr_t]) in
+    let pointer = mkPointer x ptr_t e in
+    let post = mkStar alloca (mkStar pointer (spred_of_type e pointed_type)) in
+    let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
+    mk_node (Core.Assignment_core ([], spec, []))
+  | Opcode.Load ->
+    let id = value_id instr in
+    (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00225 *)
+    let ptr_v = operand instr 0 in
+    let e = Arg_var (Vars.freshe ()) in
+    let ptr = args_of_value ptr_v in
+    let ptr_t = args_of_type (type_of ptr_v) in
+    let pointer = mkPointer ptr ptr_t e in
+    let pre = pointer in
+    let post = pconjunction (mkEQ(ret_arg, e)) pointer in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    mk_node (Core.Assignment_core ([Vars.concretep_str id], spec, []))
+  | Opcode.Store ->
+    (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00343 *)
+    let value = operand instr 0 in
+    (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00346 *)
+    let ptr_v = operand instr 1 in
+    let t = type_of ptr_v in
+    let ptr = args_of_value ptr_v in
+    let e = Arg_var (Vars.freshe ()) in
+    let v = args_of_value value in
+    let ptr_t = args_of_type t in
+    let pointer_pre = mkPointer ptr ptr_t e in
+    let pointer_post = mkPointer ptr ptr_t v in
+    let pre = pointer_pre in
+    let post = pointer_post in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    mk_node (Core.Assignment_core ([], spec, []))
+  | Opcode.GetElementPtr ->
+    let id = value_id instr in
+    (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00788 *)
+    let value = operand instr 0 in
+    (* jump indices are in operands 1 to (num_operands instr) of instr *)
+    let max_op = num_operands instr in
+    let rec jlist_from_op i =
+      if i = max_op then []
+      else operand instr i::(jlist_from_op (i+1)) in
+    let jump_indices = jlist_from_op 1 in
+    let post = ppred_of_gep ret_arg (args_of_value value) jump_indices  in
+    let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
+    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
+  (* Cast Operators *)
+  | Opcode.Trunc
+  | Opcode.ZExt
+  | Opcode.SExt
+  | Opcode.FPToUI
+  | Opcode.FPToSI
+  | Opcode.UIToFP
+  | Opcode.SIToFP
+  | Opcode.FPTrunc
+  | Opcode.FPExt
+  | Opcode.PtrToInt
+  | Opcode.IntToPtr ->
+    let id = value_id instr in
+    let value = operand instr 0 in
+    let v = args_of_value value in
+    let pre = mkEmpty in
+    let post = mkEQ(ret_arg, v) in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
+  | Opcode.BitCast ->
+    (* hack to handle malloc + bitcast. Let's hope for the best... *)
+    (* TODO: should only fire when the source type is void *)
+    (* TODO: really, we should identify mallocs with more accuracy
+       (LLVM knows about them, but then translates them away...) *)
+    let id = value_id instr in
+    let value = operand instr 0 in
+    (* let t = type_of value in *)
+    let t' = type_of instr in
+    let v = args_of_value value in
+    let e = Arg_var (Vars.freshe ()) in
+    let ptr_t = args_of_type t' in
+    let void_pointer = mkSPred ("malloc_block", [v]) in
+    let cast_pointer = mkPointer ret_arg ptr_t e in
+    let malloced = mkSPred ("malloced", [ret_arg; args_of_type t']) in
+    let pre = void_pointer in
+    let post = pconjunction (mkEQ(ret_arg, v))
+      (mkStar malloced (mkStar cast_pointer (spred_of_type e (element_type t')))) in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
+   (* Other Operators *)
+  | Opcode.ICmp -> implement_this "icmp instr"
+  | Opcode.FCmp -> implement_this "fcmp instr"
+  | Opcode.PHI -> implement_this "phi instr"
+  | Opcode.Call ->
+    let id = value_id instr in
+    (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l01339 *)
+    let fun_called = operand instr (num_operands instr - 1) in
+    let fid = value_id fun_called in
+    (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l01237 *)
+    let max_param_idx = num_operands instr - 1 in
+    let rec params_from_idx i =
+      if i = max_param_idx then []
+      else operand instr i::(params_from_idx (i+1)) in
+    let params = params_from_idx 0 in
+    let call_spec = spec_of_fun_id fid in
+    mk_node (Core.Assignment_core ([Vars.concretep_str id],
+				   call_spec,
+				   List.map args_of_value params))
+  | Opcode.Select -> implement_this "select instr"
+  | Opcode.UserOp1 -> implement_this "userop1 instr"
+  | Opcode.UserOp2 -> implement_this "userop2 instr"
+  | Opcode.VAArg -> implement_this "va arg instr"
+  | Opcode.ExtractElement -> implement_this "extract element instr"
+  | Opcode.InsertElement -> implement_this "insert element instr"
+  | Opcode.ShuffleVector -> implement_this "shuffle vector instr"
+  | Opcode.ExtractValue -> implement_this "extract value instr"
+  | Opcode.InsertValue -> implement_this "instert value instr"
+  | Opcode.Fence -> implement_this "fence instr"
+  | Opcode.AtomicCmpXchg -> implement_this "atomic cmp xchange instr"
+  | Opcode.AtomicRMW -> implement_this "atomic RMW instr"
+  | Opcode.Resume -> implement_this "resume instr"
+  | Opcode.LandingPad -> mk_node Core.Nop_stmt_core
+  | Opcode.Unwind -> implement_this "unwind"
+
+let cfg_nodes_of_block b =
+    (* insert label command from the block's label l, followed by the sequence
+       of commands of the block *)
+    let l = value_id (value_of_block b) in
+    let label_node = if l = "" then mk_node Core.Nop_stmt_core
+      else mk_node (Core.Label_stmt_core l) in
+    let body_nodes = fold_right_instrs (fun i cfgs -> cfg_node_of_instr i::cfgs) b [] in
+    label_node::body_nodes
+
+let verify_function f =
+  let id = value_id f in
+  if not (is_declaration f) then
+    print_string ("verifying "^id^"\n");
+    let cfg_nodes = fold_left_blocks (fun ns b -> ns@(cfg_nodes_of_block b)) [] f in
+    let spec = spec_of_fun_id id in
+    env.result <- env.result &&
+    (Symexec.verify id cfg_nodes spec env.logic env.abs_rules)
+
+let verify_module m =
+  iter_globals env_add_gvar m;
+  iter_functions verify_function m
+
+let logic_of_named_struct (name,t) =
+  let types = struct_element_types t in
+  let subpointer p off_to_val offset t =
+    let off = string_of_int offset in
+    (mkPointer
+       (Arg_op ("builtin_plus", [p; Arg_op("numeric_const", [Arg_string off])]))
+       (Arg_op ("pointer_type", [args_of_type t]))
+       (off_to_val off)) in
   let any_var x = Arg_var (Vars.AnyVar (0, x)) in
   let p = any_var "p" in
   let vp = any_var "vp" in
@@ -156,32 +385,42 @@ let logic_of_namedt name typ =
   let t = any_var "t" in
   let v = any_var "v" in
   let target_pointer = mkPointer x t v in
-  let eltptr_concl = mkPPred ("eltptr", [x; p; Arg_op ("jump_named", [Arg_string name; n; j])]) in
+  let eltptr_concl = mkPPred ("eltptr", [x; p; Arg_op ("jump", [n; j])]) in
   let eltptr_prem = mkPPred ("eltptr", [x; Arg_op ("builtin_plus", [p;n]); j]) in
 
-  let unfolded_pointers = unfolded_form p
-    (fun offset -> Arg_op ("field", [Arg_op ("numeric_const", [Arg_string offset]); vp]))
-    0 typs in
+  let subpointers =
+    Array.mapi
+      (subpointer p (fun offset -> Arg_op ("field", [Arg_op ("numeric_const", [Arg_string offset]); vp])))
+      types in
+  let unfolded_form = Array.fold_right (fun p f -> mkStar p f) subpointers mkEmpty in
   let conclusion_lhs =
     pconjunction
       (mkPointer p (Arg_op ("named_type", [Arg_string name])) vp)
       eltptr_concl in
   let conclusion_rhs = target_pointer in
   let conclusion = (mkEmpty, conclusion_lhs, conclusion_rhs, mkEmpty) in
-  let premise_lhs = pconjunction unfolded_pointers eltptr_prem in
+  let premise_lhs = pconjunction unfolded_form eltptr_prem in
   let premise_rhs = target_pointer in
   let premise = (mkEmpty, premise_lhs, premise_rhs, mkEmpty) in
   let without = mkEQ (p,x) in
   let geteltptr_rule = (conclusion, [[premise]], "geteltptr_"^name, (without, []), []) in
 
 
-  let unfolded_pointers = unfolded_form p (fun off -> any_var ("v"^off)) 0 typs in
+  let subpointers =
+    Array.mapi
+      (subpointer p (fun off -> any_var ("v"^off)))
+      types in
+  let unfolded_form = Array.fold_right (fun p f -> mkStar p f) subpointers mkEmpty in
   let named_pointer = mkPointer p (Arg_op ("named_type", [Arg_string name])) vp in
-  let conclusion = (mkEmpty, unfolded_pointers, named_pointer, mkEmpty) in
-  let premise = (unfolded_pointers, mkEmpty, mkEmpty, mkEmpty) in
+  let conclusion = (mkEmpty, unfolded_form, named_pointer, mkEmpty) in
+  let premise = (unfolded_form, mkEmpty, mkEmpty, mkEmpty) in
   let fold_rule = (conclusion, [[premise]], "fold_"^name, ([], []), []) in
 
-  let unfolded_pointers = unfolded_form p (fun _ -> vp) 0 typs in
+  let subpointers =
+    Array.mapi
+      (subpointer p (fun _ -> vp))
+      types in
+  let unfolded_form = Array.fold_right (fun p f -> mkStar p f) subpointers mkEmpty in
   let rec geteltptr_defer_rules offset = function
     | [] -> []
     | p::tl ->
@@ -191,229 +430,62 @@ let logic_of_namedt name typ =
        "geteltptr_defer_"^name^(string_of_int offset),
        (without, []), [])::(geteltptr_defer_rules (offset+1) tl) in
 
-  geteltptr_rule::fold_rule::(geteltptr_defer_rules 0 unfolded_pointers)
-
-let rec spred_of_typ ptr = function
-  | Coq_typ_int _
-  | Coq_typ_floatpoint _
-  | Coq_typ_void
-  | Coq_typ_label
-  | Coq_typ_opaque
-  | Coq_typ_metadata
-  | Coq_typ_function _ -> mkEmpty
-  | Coq_typ_namedt tname as ptr_typ ->
-    let ptr_typ_args = args_of_typ ptr_typ in
-    let e = Arg_var (Vars.freshe ()) in
-    let pointer = mkSPred ("pointer", [ptr; ptr_typ_args; e]) in
-    pointer
-  | Coq_typ_pointer t as ptr_typ ->
-    let ptr_typ_args = args_of_typ ptr_typ in
-    let e = Arg_var (Vars.freshe ()) in
-    let pointer = mkSPred ("pointer", [ptr; ptr_typ_args; e]) in
-    pointer
-  | Coq_typ_struct _ -> failwith "SPred of unnamed struct type"
-  | Coq_typ_array (sz, typ) as array_typ ->
-    let typ_args = args_of_typ array_typ in
-    let size = Arg_op ("numeric_const", [Arg_string (string_of_int sz)]) in
-    let e = Arg_var (Vars.freshe ()) in
-    let start = Arg_op ("numeric_const", [Arg_string "0"]) in
-    let array = mkSPred ("array", [ptr; start; size; size; typ_args; e]) in
-    array
-and spred_of_list_typ ptr = function
-  | Nil_list_typ -> mkEmpty
-  | Cons_list_typ (t, l) ->
-    let ptr_typ_args = args_of_typ t in
-    let e = Arg_var (Vars.freshe ()) in
-    let pointer = mkSPred ("pointer", [ptr; ptr_typ_args; e]) in
-    mkStar pointer (spred_of_list_typ e l)
-
-let ppred_of_gep typ x ptr lsv =
-  let jump_end = Arg_op ("jump_end", []) in
-  let rec jump_chain_of_list_sz_value typ = function
-  | Nil_list_sz_value -> jump_end
-  | Cons_list_sz_value(sz, value, list_sz_value) ->
-    let n =
-    match value with
-      | Coq_value_const(Coq_const_int (sz, coq_Int)) -> string_of_coq_Int coq_Int
-      | _ -> failwith "non-constant value in break_up_aggregate" in
-    match typ with
-      | Coq_typ_int _ 
-      | Coq_typ_floatpoint _
-      | Coq_typ_void
-      | Coq_typ_label
-      | Coq_typ_opaque
-      | Coq_typ_metadata
-      | Coq_typ_struct _
-      | Coq_typ_function _ -> implement_this "weird gep"
-      | Coq_typ_namedt name ->
-	Arg_op ("jump_named", [Arg_string name; Arg_op ("numeric_const", [Arg_string n]);
-			       jump_end])
-      | Coq_typ_pointer t ->
-	Arg_op ("jump_ptr", [Arg_op ("numeric_const", [Arg_string n]);
-			     jump_chain_of_list_sz_value t list_sz_value])
-      | Coq_typ_array (sz, t) ->
-	Arg_op ("jump_array", [Arg_op ("numeric_const", [Arg_string n]);
-			       jump_chain_of_list_sz_value t list_sz_value]) in
-  let jump_chain = jump_chain_of_list_sz_value typ lsv in
-  mkPPred ("eltptr", [x; ptr; jump_chain])
-
-let verify_list verify_fun l =
-  List.iter verify_fun l
-
-let cfg_node_of_cmd = function
-  | Coq_insn_bop (id, bop, sz, value, value') -> implement_this "bop insn"
-  | Coq_insn_fbop (id, fbop, floating_point, value, value') -> implement_this "fbop insn"
-  | Coq_insn_extractvalue (id, typ, value, list_const) ->
-    implement_this "extract value insn"
-  | Coq_insn_insertvalue (id, typ, value, typ', value', list_const) ->
-    implement_this "insert value insn"
-  | Coq_insn_malloc (id, typ, value, align) ->
-    let x = Arg_var (Vars.concretep_str id) in
-    let e = Arg_var (Vars.freshe ()) in
-    let t = args_of_typ typ in
-    let ptr_t = args_of_typ (Coq_typ_pointer typ) in
-    let malloced = mkSPred ("malloced", [x; t]) in
-    let pointer = mkSPred ("pointer", [x; ptr_t; e]) in
-    let post = mkStar malloced (mkStar pointer (spred_of_typ e typ)) in
-    let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([], spec, []))    
-  | Coq_insn_free (id, Coq_typ_pointer typ, value) ->
-    let x = args_of_value value in
-    let e = Arg_var (Vars.freshe ()) in
-    let t = args_of_typ typ in
-    let ptr_t = args_of_typ (Coq_typ_pointer typ) in
-    let malloced = mkSPred ("malloced", [x; t]) in
-    let pointer = mkSPred ("pointer", [x; ptr_t; e]) in
-    let pre = mkStar malloced (mkStar pointer (spred_of_typ e typ)) in
-    let spec = Spec.mk_spec pre [] Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([], spec, []))    
-  | Coq_insn_free (id, typ, value) -> failwith "free of non-pointer type"
-  | Coq_insn_alloca (id, typ, value, align) ->
-    let x = Arg_var (Vars.concretep_str id) in
-    let e = Arg_var (Vars.freshe ()) in
-    let t = args_of_typ typ in
-    let ptr_t = args_of_typ (Coq_typ_pointer typ) in
-    let alloca = mkSPred ("alloca", [x; t]) in
-    let pointer = mkSPred ("pointer", [x; ptr_t; e]) in
-    let post = mkStar alloca (mkStar pointer (spred_of_typ e typ)) in
-    let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([], spec, []))
-  | Coq_insn_load (id, typ, ptr_v, align) ->
-    let e = Arg_var (Vars.freshe ()) in
-    let ptr = args_of_value ptr_v in
-    let ptr_typ = args_of_typ (Coq_typ_pointer typ) in
-    let pointer = mkSPred ("pointer", [ptr; ptr_typ; e]) in
-    let pre = pointer in
-    let post = pconjunction (mkEQ(ret_arg, e)) pointer in
-    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([Vars.concretep_str id], spec, []))
-  | Coq_insn_store (id, typ, value, ptr_v, align) ->
-    let ptr = args_of_value ptr_v in
-    let e = Arg_var (Vars.freshe ()) in
-    let v = args_of_value value in
-    let ptr_typ = args_of_typ (Coq_typ_pointer typ) in
-    let pointer_pre = mkSPred ("pointer", [ptr; ptr_typ; e]) in
-    let pointer_post = mkSPred ("pointer", [ptr; ptr_typ; v]) in
-    let pre = pointer_pre in
-    let post = pointer_post in
-    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([], spec, []))
-  | Coq_insn_gep (id, inbounds, typ, value, list_sz_value) ->
-    let post = ppred_of_gep (Coq_typ_pointer typ) ret_arg (args_of_value value) list_sz_value in
-    let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
-  | Coq_insn_trunc (id, truncop, typ, value, typ') ->
-    implement_this "trunc insn"
-  | Coq_insn_ext (id, extop, typ, value, typ') ->
-    implement_this "ext insn"
-  | Coq_insn_cast (id, Coq_castop_bitcast, Coq_typ_pointer(Coq_typ_int i), value, Coq_typ_pointer typ') when i=8 ->
-    (* hack to handle malloc + bitcast. Let's hope for the best... *)
-    let v = args_of_value value in
-    let e = Arg_var (Vars.freshe ()) in
-    let ptr_typ = args_of_typ (Coq_typ_pointer typ') in
-    let void_pointer = mkSPred ("malloc_block", [v]) in
-    let cast_pointer = mkSPred ("pointer", [ret_arg; ptr_typ; e]) in
-    let malloced = mkSPred ("malloced", [ret_arg; args_of_typ typ']) in
-    let pre = void_pointer in
-    let post = pconjunction (mkEQ(ret_arg, v))
-      (mkStar malloced (mkStar cast_pointer (spred_of_typ e typ'))) in
-    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
-  | Coq_insn_cast (id, castop, typ, value, typ') ->
-    let v = args_of_value value in
-    let pre = mkEmpty in
-    let post = mkEQ(ret_arg, v) in
-    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
-  | Coq_insn_icmp (id, cond, typ, value, value') ->
-    implement_this "icmp insn"
-  | Coq_insn_fcmp (id, fcond, floating_point, value, value') ->
-    implement_this "fcmp insn"
-  | Coq_insn_select (id, value, typ, value', value'') ->
-    implement_this "select insn"
-  | Coq_insn_call (id, noret, clattrs, typ, value, params) ->
-    match (value, typ) with
-      |	(Coq_value_const (Coq_const_gid (typ,fid)), Coq_typ_function (ret_typ, param_typs, varg)) ->
-	let call_spec = spec_of_fun_id fid in
-	mk_node (Core.Assignment_core ([Vars.concretep_str id],
-				       call_spec,
-				       List.map args_of_param params))
-      | _ -> implement_this "fancy function call"
+  geteltptr_rule::fold_rule::(geteltptr_defer_rules 0 unfolded_form)
 
 
-let cfg_nodes_of_cmds cmds =
-  List.map cfg_node_of_cmd cmds
+let rec collect_named_structs_of_type lns t = match (classify_type t) with
+  | Struct -> (
+    match struct_name t with
+      | None -> lns
+      | Some n ->
+	if List.mem_assoc n lns then lns
+	else
+	  let lns = (n,t)::lns in
+	  Array.fold_left collect_named_structs_of_type lns (struct_element_types t)
+  )
+  | Pointer
+  | Array
+  | Vector -> collect_named_structs_of_type lns (element_type t)
+  | _ -> lns
 
-let cfg_nodes_of_block = function
-  | Coq_block_intro (l, phinodes, cmds, terminator) ->
-    (* insert label command from the block's label l, followed by the sequence
-       of commands of the block *)
-    let label_node = mk_node (Core.Label_stmt_core l) in
-    let body_nodes = cfg_nodes_of_cmds cmds in
-    let terminator_stmts = match terminator with
-      | Coq_insn_return (id, typ, value) ->
-	let p0 = Arg_var(Vars.concretep_str ("@parameter"^(string_of_int 0)^":")) in
-	let post = mkEQ(ret_arg, p0) in
-	let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
-	[Core.Assignment_core  ([], spec, [args_of_value value]); Core.End ]
-      | Coq_insn_return_void (id) -> [Core.End]
-      | Coq_insn_br (id, value, lif, lelse) -> [Core.Goto_stmt_core [lif;lelse]; Core.End] (* TODO: implement cond *)
-      | Coq_insn_br_uncond (id, l) -> [Core.Goto_stmt_core [l]; Core.End]
-      | Coq_insn_unreachable (id) ->
-	(* if llvm thinks it's unreachable, let's tell hopstar by assuming False *)
-	let spec = Spec.mk_spec [] mkFalse Spec.ClassMap.empty in
-	[Core.Assignment_core ([],spec,[]); Core.End]
-    in
-    label_node::(body_nodes@(List.map mk_node terminator_stmts))
+let rec collect_named_structs_of_value lns v = match classify_value v with
+  | Argument -> collect_named_structs_of_type lns (type_of v)
+  | _ ->
+    if is_constant v then lns
+    else (
+      let num_op = num_operands v in
+      let lns = collect_named_structs_of_type lns (type_of v) in
+      let rec collect_from_op lns n =
+	if n = num_op then lns
+	else (
+	  let lns = collect_named_structs_of_value lns (operand v n) in
+	  collect_from_op lns (n+1)) in
+      collect_from_op lns 0
+    )
 
-let cfg_nodes_of_blocks bs =
-  let ns = List.fold_left (fun ns b -> ns@(cfg_nodes_of_block b)) [] bs in
-  stmts_to_cfg ns; ns
+let collect_named_structs_of_block lns b =
+  (* insert label command from the block's label l, followed by the sequence
+     of commands of the block *)
+  fold_left_instrs collect_named_structs_of_value lns b
 
-let verify_fdef = function
-  | Coq_fdef_intro (Coq_fheader_intro (fnattrs, typ, id, args, varg), blocks) ->
-    print_string ("verifying "^id^"\n");
-    let cfg_nodes = cfg_nodes_of_blocks blocks in
-    let spec = spec_of_fun_id id in
-    env.result <- Symexec.verify id cfg_nodes spec env.logic env.abs_rules
+let collect_named_structs_of_function lns f =
+  (* we might need to collect the types from the parameters too here *)
+  fold_left_blocks collect_named_structs_of_block lns f
 
-let verify_product = function
-  | Coq_product_gvar gv -> env_add_gvar gv
-  | Coq_product_fdec _ -> ()
-  | Coq_product_fdef fdef -> verify_fdef fdef
-
-let verify_module = function
-  | Coq_module_intro (lay, ndts, prods) ->
-    env_add_namedts ndts;
-    let fold_unfold_logic = List.fold_left
-      (fun logics (Coq_namedt_intro (id, typ)) -> logics@(logic_of_namedt id typ))
-      []
-      ndts in
-    env_add_logic_seq_rules fold_unfold_logic;
-    verify_list verify_product prods
+let logic_of_module m =
+  (* we only care about the named structs that are used inside functions,
+     so let's collect only those *)
+  let ltf = fold_left_functions collect_named_structs_of_function [] m in
+  List.flatten (List.map logic_of_named_struct ltf)
 
 let go logic abs_rules spec_list m =
-  print_string ("It is on!\n");
+  print_endline "It is on!";
   env.logic <- logic; env.abs_rules <- abs_rules; env.specs <- spec_list;
+  print_endline ("Added specs for "^string_of_int (List.length spec_list)^" functions");
+  print_endline "Adding unfolding logic for named structs...";
+  let l = logic_of_module m in
+  env_add_logic_seq_rules l;
+  print_endline ("Added "^string_of_int (List.length l)^" rules");
+  if false then List.iter (pp_sequent_rule Format.std_formatter) l;
   verify_module m;
   env.result
