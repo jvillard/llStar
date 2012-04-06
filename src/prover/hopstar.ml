@@ -47,7 +47,7 @@ let main () =
   print_string ("\n"^
 "=== End of LLVM bitcode ========================================================\n");
   print_string ("\n"^
-"=== Start Proof ================================================================\n");
+"=== Start Proof ================================================================\n\n");
 
   if !logic_file_name="" && not !Config.specs_template_mode then
     eprintf "@\nLogic file name not specified. Can't continue....\n %s \n" usage_msg

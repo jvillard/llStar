@@ -18,13 +18,13 @@ if
 /* rules for rebuilding a malloc block */
 rule int_to_malloc:
 | malloced(?mb, integer_type()) * pointer(?mb,pointer_type(integer_type()),?v)
-|- malloc_block(?mb)
+|- malloc_blob(?mb,?sz) /* TODO: use sizeof? */
 if
 malloced(?mb, integer_type()) * pointer(?mb,integer_type(),?v) | |-
 
 rule remove_malloc_block:
 | malloced(?mb, named_type(?t))
-|- malloc_block(?mb)
+|- malloc_blob(?mb,?sz)  /* TODO: add sizeofs of all the named structs as hypotheses in the prover? */
 if
 | |- pointer(?mb,pointer_type(named_type(?t)),?sp)
 * pointer(?sp,named_type(?t),?v)

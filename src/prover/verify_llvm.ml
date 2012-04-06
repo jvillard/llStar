@@ -7,6 +7,7 @@ open Psyntax
 open Logic_spec
 
 type verify_env = {
+  mutable target: Llvm_target.TargetData.t;
   mutable logic: Psyntax.logic;
   mutable abs_rules: Psyntax.logic;
   mutable specs: funspec list;
@@ -16,6 +17,7 @@ type verify_env = {
 }
 
 let env = {
+  target = Llvm_target.TargetData.create "";
   logic = empty_logic;
   abs_rules = empty_logic;
   specs = [];
@@ -103,7 +105,44 @@ let args_of_int_const v = match int64_of_const v with
   | Some i -> Arg_op("numeric_const", [Arg_string(Int64.to_string i)])
   | None -> Arg_var (Vars.freshe ())
 
-let args_of_value v = match classify_value v with
+let rec args_of_const_expr v = match constexpr_opcode v with
+  (* TODO: implement floats *)
+  | Opcode.Add
+  | Opcode.FAdd ->
+    let x = args_of_value (operand v 0) in
+    let y = args_of_value (operand v 1) in
+    Arg_op("builtin_plus", [x; y])
+  | Opcode.Sub
+  | Opcode.FSub ->
+    let x = args_of_value (operand v 0) in
+    let y = args_of_value (operand v 1) in
+    Arg_op("builtin_minus", [x; y])
+  | Opcode.Mul
+  | Opcode.FMul ->
+    let x = args_of_value (operand v 0) in
+    let y = args_of_value (operand v 1) in
+    Arg_op("builtin_mult", [x; y])
+  | Opcode.UDiv
+  | Opcode.SDiv
+  | Opcode.FDiv ->
+    let x = args_of_value (operand v 0) in
+    let y = args_of_value (operand v 1) in
+    Arg_op("builtin_div", [x; y])
+  | Opcode.URem
+  | Opcode.SRem
+  | Opcode.FRem ->
+    let x = args_of_value (operand v 0) in
+    let y = args_of_value (operand v 1) in
+    Arg_op("builtin_rem", [x; y])
+  | Opcode.Shl
+  | Opcode.LShr
+  | Opcode.AShr
+  | Opcode.And
+  | Opcode.Or
+  | Opcode.Xor -> Arg_var (Vars.freshe ()) (* TODO: implement *)
+  | _ -> Arg_var (Vars.freshe ()) (* TODO: implement *)
+
+and args_of_value v = match classify_value v with
   | NullValue -> args_num_0
   | Argument -> Arg_var (Vars.concretep_str (value_id v))
   | BasicBlock -> implement_this "value is a basic block"
@@ -113,7 +152,7 @@ let args_of_value v = match classify_value v with
   | BlockAddress -> implement_this "value is a block address"
   | ConstantAggregateZero -> implement_this "value is an aggregate 0"
   | ConstantArray -> implement_this "value is an array"
-  | ConstantExpr -> implement_this "value is an expression"
+  | ConstantExpr -> args_of_const_expr v
   | ConstantFP -> implement_this "value is floating point"
   | ConstantInt -> args_of_int_const v
   | ConstantPointerNull -> args_num_0
@@ -273,6 +312,30 @@ let cfg_node_of_instr instr = match instr_opcode instr with
     let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
     mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
   (* Cast Operators *)
+  | Opcode.BitCast when integer_bitwidth (element_type (type_of (operand instr 0))) = 8 ->
+    (* hack to handle malloc + bitcast. Let's hope for the best... *)
+    (* TODO: really, we should identify mallocs with more accuracy
+       (LLVM knows about them, but then translates them away...) *)
+    (* TODO: only works when the type is sized. Should have a
+       best-scenario (ever so slightly unsound) heuristic for when it
+       isn't (i.e.: assume the malloc blob is of the right size. *)
+    let id = value_id instr in
+    let value = operand instr 0 in
+    let new_t = element_type (type_of instr) in
+    let s = Llvm_target.store_size env.target new_t in
+    let size_of_new_t = Arg_op("numeric_const", [Arg_string(Int64.to_string s)]) in
+    let v = args_of_value value in
+    let e = Arg_var (Vars.freshe ()) in
+    let ptr_t = args_of_type (type_of instr) in
+    let malloc_blob = mkSPred ("malloc_blob", [v;size_of_new_t]) in
+    let cast_pointer = mkPointer ret_arg ptr_t e in
+    let malloced = mkSPred ("malloced", [ret_arg; args_of_type new_t]) in
+    let pre = malloc_blob in
+    let post = pconjunction (mkEQ(ret_arg, v))
+      (mkStar malloced (mkStar cast_pointer (spred_of_type e new_t))) in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
+  | Opcode.BitCast
   | Opcode.Trunc
   | Opcode.ZExt
   | Opcode.SExt
@@ -291,27 +354,7 @@ let cfg_node_of_instr instr = match instr_opcode instr with
     let post = mkEQ(ret_arg, v) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
-  | Opcode.BitCast ->
-    (* hack to handle malloc + bitcast. Let's hope for the best... *)
-    (* TODO: should only fire when the source type is void *)
-    (* TODO: really, we should identify mallocs with more accuracy
-       (LLVM knows about them, but then translates them away...) *)
-    let id = value_id instr in
-    let value = operand instr 0 in
-    (* let t = type_of value in *)
-    let t' = type_of instr in
-    let v = args_of_value value in
-    let e = Arg_var (Vars.freshe ()) in
-    let ptr_t = args_of_type t' in
-    let void_pointer = mkSPred ("malloc_block", [v]) in
-    let cast_pointer = mkPointer ret_arg ptr_t e in
-    let malloced = mkSPred ("malloced", [ret_arg; args_of_type t']) in
-    let pre = void_pointer in
-    let post = pconjunction (mkEQ(ret_arg, v))
-      (mkStar malloced (mkStar cast_pointer (spred_of_type e (element_type t')))) in
-    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
-   (* Other Operators *)
+  (* Other Operators *)
   | Opcode.ICmp -> implement_this "icmp instr"
   | Opcode.FCmp -> implement_this "fcmp instr"
   | Opcode.PHI -> implement_this "phi instr"
@@ -347,22 +390,23 @@ let cfg_node_of_instr instr = match instr_opcode instr with
   | Opcode.Unwind -> implement_this "unwind"
 
 let cfg_nodes_of_block b =
-    (* insert label command from the block's label l, followed by the sequence
-       of commands of the block *)
-    let l = value_id (value_of_block b) in
-    let label_node = if l = "" then mk_node Core.Nop_stmt_core
-      else mk_node (Core.Label_stmt_core l) in
-    let body_nodes = fold_right_instrs (fun i cfgs -> cfg_node_of_instr i::cfgs) b [] in
-    label_node::body_nodes
+  (* insert label command from the block's label l, followed by the sequence
+     of commands of the block *)
+  let l = value_id (value_of_block b) in
+  let label_node = if l = "" then mk_node Core.Nop_stmt_core
+    else mk_node (Core.Label_stmt_core l) in
+  let body_nodes = fold_right_instrs (fun i cfgs -> cfg_node_of_instr i::cfgs) b [] in
+  label_node::body_nodes
 
 let verify_function f =
   let id = value_id f in
-  if not (is_declaration f) then
-    print_string ("verifying "^id^"\n");
+  if not (is_declaration f) then (
+    print_endline ("verifying "^id);
     let cfg_nodes = fold_left_blocks (fun ns b -> ns@(cfg_nodes_of_block b)) [] f in
     let spec = spec_of_fun_id id in
     env.result <- env.result &&
-    (Symexec.verify id cfg_nodes spec env.logic env.abs_rules)
+      (Symexec.verify id cfg_nodes spec env.logic env.abs_rules)
+  )
 
 let verify_module m =
   iter_globals env_add_gvar m;
@@ -480,12 +524,13 @@ let logic_of_module m =
 
 let go logic abs_rules spec_list m =
   print_endline "It is on!";
+  env.target <- Llvm_target.TargetData.create (data_layout m);
   env.logic <- logic; env.abs_rules <- abs_rules; env.specs <- spec_list;
   print_endline ("Added specs for "^string_of_int (List.length spec_list)^" functions");
-  print_endline "Adding unfolding logic for named structs...";
+  print_string "Adding unfolding logic for named structs... ";
   let l = logic_of_module m in
   env_add_logic_seq_rules l;
-  print_endline ("Added "^string_of_int (List.length l)^" rules");
+  print_endline (string_of_int (List.length l)^" rules added");
   if false then List.iter (pp_sequent_rule Format.std_formatter) l;
   verify_module m;
   env.result
