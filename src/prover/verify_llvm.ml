@@ -49,9 +49,9 @@ let mkArray ptr start_idx end_idx size array_t v =
 let mkEmptySpec = Spec.mk_spec mkEmpty mkEmpty Spec.ClassMap.empty
 
 let env_add_gvar gvar =
-  print_string ("Adding global variable "^(value_id gvar)^" with type:");
-  print_string (string_of_lltype (type_of gvar));
-  print_string "\nand value:\n";
+  print_endline ("Adding global variable "^(value_id gvar)^" with type:");
+  print_endline (string_of_lltype (type_of gvar));
+  print_endline "\nand value:";
   dump_value gvar
 
 let env_add_logic_seq_rules sr  =
@@ -493,19 +493,21 @@ let rec collect_named_structs_of_type lns t = match (classify_type t) with
   | _ -> lns
 
 let rec collect_named_structs_of_value lns v = match classify_value v with
+  | NullValue | BasicBlock | InlineAsm | MDNode | MDString | BlockAddress -> lns
+
   | Argument -> collect_named_structs_of_type lns (type_of v)
-  | _ ->
-    if is_constant v then lns
-    else (
-      let num_op = num_operands v in
-      let lns = collect_named_structs_of_type lns (type_of v) in
-      let rec collect_from_op lns n =
-	if n = num_op then lns
-	else (
-	  let lns = collect_named_structs_of_value lns (operand v n) in
-	  collect_from_op lns (n+1)) in
-      collect_from_op lns 0
-    )
+
+  | ConstantAggregateZero | ConstantArray | ConstantExpr | ConstantFP 
+  | ConstantInt | ConstantPointerNull | ConstantStruct | ConstantVector
+  | Function | GlobalAlias | GlobalVariable | UndefValue | Instruction _ ->
+    let num_op = num_operands v in
+    let lns = collect_named_structs_of_type lns (type_of v) in
+    let rec collect_from_op lns n =
+      if n = num_op then lns
+      else (
+	let lns = collect_named_structs_of_value lns (operand v n) in
+	collect_from_op lns (n+1)) in
+    collect_from_op lns 0
 
 let collect_named_structs_of_block lns b =
   (* insert label command from the block's label l, followed by the sequence
