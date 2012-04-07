@@ -11,8 +11,8 @@ type verify_env = {
   mutable logic: Psyntax.logic;
   mutable abs_rules: Psyntax.logic;
   mutable specs: funspec list;
-  mutable gvars: (args * args) list; (* TODO: wrong *)
-  mutable idMap: (llvalue * string) list;
+  mutable gvars: (string * args * args) list; (** global variable: id * type * value *)
+  mutable idMap: (llvalue * string) list; (* TODO: make that a real map *)
   mutable result: bool;
 }
 
@@ -26,12 +26,14 @@ let env = {
   result = true;
 }
 
+(* placeholder for a better way of getting names of unnamed variables *)
 let value_id v =
   let id = value_name v in
   if id = "" then
     try
       List.assoc v env.idMap
     with Not_found ->
+      (* TODO: write a real fresh identifier generator *)
       let id = "%"^(string_of_int (List.length env.idMap)) in
       env.idMap <- (v, id)::env.idMap;
       id
@@ -49,10 +51,7 @@ let mkArray ptr start_idx end_idx size array_t v =
 let mkEmptySpec = Spec.mk_spec mkEmpty mkEmpty Spec.ClassMap.empty
 
 let env_add_gvar gvar =
-  print_endline ("Adding global variable "^(value_id gvar)^" with type:");
-  print_endline (string_of_lltype (type_of gvar));
-  print_endline "\nand value:";
-  dump_value gvar
+  env.gvar <- (value_id gvar, args_of_type (type_of gvar), args_of_value gvar)
 
 let env_add_logic_seq_rules sr  =
   env.logic <- { env.logic with seq_rules = env.logic.seq_rules@sr }
@@ -239,17 +238,45 @@ let cfg_node_of_instr instr = match instr_opcode instr with
   | Opcode.Invalid -> failwith "\"Invalid\" instruction"
   (* Standard Binary Operators *)
   | Opcode.Add
-  | Opcode.FAdd
+  | Opcode.FAdd ->
+    let id = value_id instr in
+    let v1 = args_of_value (operand instr 0) in
+    let v2 = args_of_value (operand instr 1) in
+    let pre = mkEmpty in
+    let post = mkEQ (ret_arg, Arg_op("builtin_plus", [v1; v2])) in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
   | Opcode.Sub
-  | Opcode.FSub
+  | Opcode.FSub ->
+    let id = value_id instr in
+    let v1 = args_of_value (operand instr 0) in
+    let v2 = args_of_value (operand instr 1) in
+    let pre = mkEmpty in
+    let post = mkEQ (ret_arg, Arg_op("builtin_minus", [v1; v2])) in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
   | Opcode.Mul
-  | Opcode.FMul
+  | Opcode.FMul ->
+    let id = value_id instr in
+    let v1 = args_of_value (operand instr 0) in
+    let v2 = args_of_value (operand instr 1) in
+    let pre = mkEmpty in
+    let post = mkEQ (ret_arg, Arg_op("builtin_mult", [v1; v2])) in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
   | Opcode.UDiv
   | Opcode.SDiv
-  | Opcode.FDiv
+  | Opcode.FDiv ->
+    let id = value_id instr in
+    let v1 = args_of_value (operand instr 0) in
+    let v2 = args_of_value (operand instr 1) in
+    let pre = mkEmpty in
+    let post = mkEQ (ret_arg, Arg_op("builtin_div", [v1; v2])) in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
   | Opcode.URem
   | Opcode.SRem
-  | Opcode.FRem -> implement_this "bop instr"
+  | Opcode.FRem -> implement_this "?rem instr"
   (* Logical Operators *)
   | Opcode.Shl
   | Opcode.LShr
@@ -355,7 +382,14 @@ let cfg_node_of_instr instr = match instr_opcode instr with
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
   (* Other Operators *)
-  | Opcode.ICmp -> implement_this "icmp instr"
+  | Opcode.ICmp ->
+    let id = value_id instr in
+    let v1 = args_of_value (operand instr 0) in
+    let v2 = args_of_value (operand instr 1) in
+    let pre = mkEmpty in
+    let post = mkEQ (ret_arg, Arg_op("builtin_eq", [v1; v2])) in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
   | Opcode.FCmp -> implement_this "fcmp instr"
   | Opcode.PHI -> implement_this "phi instr"
   | Opcode.Call ->
