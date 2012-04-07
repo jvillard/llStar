@@ -1,7 +1,7 @@
 open Printf
 open Llvm
-open Llvm.TypeKind
-open Llvm.ValueKind
+open TypeKind
+open ValueKind
 open Cfg_core
 open Psyntax
 open Logic_spec
@@ -49,9 +49,6 @@ let mkArray ptr start_idx end_idx size array_t v =
   mkSPred ("array", [ptr; start_idx; end_idx; size; array_t; v])
 
 let mkEmptySpec = Spec.mk_spec mkEmpty mkEmpty Spec.ClassMap.empty
-
-let env_add_gvar gvar =
-  env.gvar <- (value_id gvar, args_of_type (type_of gvar), args_of_value gvar)
 
 let env_add_logic_seq_rules sr  =
   env.logic <- { env.logic with seq_rules = env.logic.seq_rules@sr }
@@ -441,6 +438,9 @@ let verify_function f =
     env.result <- env.result &&
       (Symexec.verify id cfg_nodes spec env.logic env.abs_rules)
   )
+
+let env_add_gvar gvar =
+  env.gvars <- (value_id gvar, args_of_type (type_of gvar), args_of_value gvar)::env.gvars
 
 let verify_module m =
   iter_globals env_add_gvar m;
