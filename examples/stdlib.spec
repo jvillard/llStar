@@ -1,7 +1,7 @@
 malloc:
   {}
-  {malloc_blob($ret_v1,@parameter0:)}
+  {malloced($ret_v1,@parameter0:) * blob($ret_v1,@parameter0:)}
 
 free:
-  {malloc_blob(@parameter0:,_sz)}
+  {malloced(@parameter0:,_sz) * blob(@parameter0:,_sz)}
   {}

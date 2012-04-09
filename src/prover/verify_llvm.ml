@@ -7,6 +7,7 @@ open Psyntax
 open Logic_spec
 
 type verify_env = {
+  mutable context: llcontext;
   mutable target: Llvm_target.TargetData.t;
   mutable logic: Psyntax.logic;
   mutable abs_rules: Psyntax.logic;
@@ -17,6 +18,7 @@ type verify_env = {
 }
 
 let env = {
+  context = global_context ();
   target = Llvm_target.TargetData.create "";
   logic = empty_logic;
   abs_rules = empty_logic;
@@ -26,7 +28,10 @@ let env = {
   result = true;
 }
 
-(* placeholder for a better way of getting names of unnamed variables *)
+(* placeholder for a better way of getting names of named and unnamed variables *)
+(* Ideally, would get them from the SlotTracker thingy in lib/VMCore/AsmWriter.cpp
+   but it's not in the bindings
+*)
 let value_id v =
   let id = value_name v in
   if id = "" then
@@ -350,13 +355,12 @@ let cfg_node_of_instr instr = match instr_opcode instr with
     let size_of_new_t = Arg_op("numeric_const", [Arg_string(Int64.to_string s)]) in
     let v = args_of_value value in
     let e = Arg_var (Vars.freshe ()) in
-    let ptr_t = args_of_type (type_of instr) in
-    let malloc_blob = mkSPred ("malloc_blob", [v;size_of_new_t]) in
-    let cast_pointer = mkPointer ret_arg ptr_t e in
-    let malloced = mkSPred ("malloced", [ret_arg; args_of_type new_t]) in
-    let pre = malloc_blob in
+    let ptr_new_t = args_of_type (type_of instr) in
+    let blob = mkSPred ("blob", [v;size_of_new_t]) in
+    let cast_pointer = mkPointer ret_arg ptr_new_t e in
+    let pre = blob in
     let post = pconjunction (mkEQ(ret_arg, v))
-      (mkStar malloced (mkStar cast_pointer (spred_of_type e new_t))) in
+      (mkStar cast_pointer (spred_of_type e new_t)) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
   | Opcode.BitCast
@@ -446,13 +450,21 @@ let verify_module m =
   iter_globals env_add_gvar m;
   iter_functions verify_function m
 
+
+(** Outputs logical rules to teach CoreStar how to fold and unfold a
+    named struct of name @name and type @t. *)
 let logic_of_named_struct (name,t) =
+  (* first, let's define a bunch of stuff that will be useful for more or
+     less all the rules *)
   let types = struct_element_types t in
+  let args_t = args_of_type t in
+  let args_ptr_t = args_of_type (pointer_type t) in
+  let i8_ptr_t = args_of_type (pointer_type (i8_type (global_context ()))) in
   let subpointer p off_to_val offset t =
     let off = string_of_int offset in
     (mkPointer
        (Arg_op ("builtin_plus", [p; Arg_op("numeric_const", [Arg_string off])]))
-       (Arg_op ("pointer_type", [args_of_type t]))
+       (Arg_op ("pointer_type", [args_t]))
        (off_to_val off)) in
   let any_var x = Arg_var (Vars.AnyVar (0, x)) in
   let p = any_var "p" in
@@ -460,12 +472,13 @@ let logic_of_named_struct (name,t) =
   let x = any_var "x" in
   let n = any_var "n" in
   let j = any_var "j" in
-  let t = any_var "t" in
+  let st = any_var "st" in
   let v = any_var "v" in
-  let target_pointer = mkPointer x t v in
+  let target_pointer = mkPointer x st v in
   let eltptr_concl = mkPPred ("eltptr", [x; p; Arg_op ("jump", [n; j])]) in
   let eltptr_prem = mkPPred ("eltptr", [x; Arg_op ("builtin_plus", [p;n]); j]) in
 
+  (* TODO: narrate me *)
   let subpointers =
     Array.mapi
       (subpointer p (fun offset -> Arg_op ("field", [Arg_op ("numeric_const", [Arg_string offset]); vp])))
@@ -481,9 +494,9 @@ let logic_of_named_struct (name,t) =
   let premise_rhs = target_pointer in
   let premise = (mkEmpty, premise_lhs, premise_rhs, mkEmpty) in
   let without = mkEQ (p,x) in
-  let geteltptr_rule = (conclusion, [[premise]], "geteltptr_"^name, (without, []), []) in
+  let geteltptr_rule = (conclusion, [[premise]], name^"_geteltptr", (without, []), []) in
 
-
+  (* TODO: narrate me *)
   let subpointers =
     Array.mapi
       (subpointer p (fun off -> any_var ("v"^off)))
@@ -492,24 +505,76 @@ let logic_of_named_struct (name,t) =
   let named_pointer = mkPointer p (Arg_op ("named_type", [Arg_string name])) vp in
   let conclusion = (mkEmpty, unfolded_form, named_pointer, mkEmpty) in
   let premise = (unfolded_form, mkEmpty, mkEmpty, mkEmpty) in
-  let fold_rule = (conclusion, [[premise]], "fold_"^name, ([], []), []) in
+  let fold_rule = (conclusion, [[premise]], name^"_fold", ([], []), []) in
 
+  (* TODO: narrate me *)
   let subpointers =
     Array.mapi
       (subpointer p (fun _ -> vp))
       types in
-  let unfolded_form = Array.fold_right (fun p f -> mkStar p f) subpointers mkEmpty in
-  let rec geteltptr_defer_rules offset = function
+  let rec unfolded_geteltptr_rules offset = function
     | [] -> []
     | p::tl ->
       let conclusion = (mkEmpty, pconjunction [p] eltptr_concl, target_pointer, mkEmpty) in
       let premise = (mkEmpty, pconjunction [p] eltptr_prem, target_pointer, mkEmpty) in
       (conclusion, [[premise]],
-       "geteltptr_defer_"^name^(string_of_int offset),
-       (without, []), [])::(geteltptr_defer_rules (offset+1) tl) in
+       name^"_geteltptr_field"^(string_of_int offset),
+       (without, []), [])::(unfolded_geteltptr_rules (offset+1) tl) in
+  let unfolded_form = Array.fold_right (fun p f -> mkStar p f) subpointers mkEmpty in
+  let unfolded_geteltptr = unfolded_geteltptr_rules 0 unfolded_form in
+  
+  (* blob of full size in the rhs, folded struct in the lhs *)
+  let struct_size =
+    Arg_op("numeric_const",
+	   [Arg_string(Int64.to_string (Llvm_target.store_size env.target t))]) in
+  let struct_pointer = mkPointer x args_t v in
+  let blob = mkSPred ("blob", [x; struct_size]) in
+  let conclusion = (mkEmpty, struct_pointer, blob, mkEmpty) in
+  let premise = (struct_pointer, mkEmpty, mkEmpty, mkEmpty) in
+  let folded_entails_blob =
+    (conclusion, [[premise]], name^"_blob_folded", (without, []), []) in
 
-  geteltptr_rule::fold_rule::(geteltptr_defer_rules 0 unfolded_form)
+  (* blob of the full size in the rhs, unfolded struct in the lhs *)
+  let subpointers =
+    Array.mapi
+      (subpointer p (fun off -> any_var ("v"^off)))
+      types in (* subpointers are reused down below, be careful *)
+  let unfolded_form = Array.fold_right (fun p f -> mkStar p f) subpointers mkEmpty in
+  let blob = mkSPred ("blob", [x; struct_size]) in
+  let conclusion = (mkEmpty, unfolded_form, blob, mkEmpty) in
+  let premise = (unfolded_form, mkEmpty, mkEmpty, mkEmpty) in
+  let unfolded_entails_blob =
+    (conclusion, [[premise]], name^"_blob_unfolded", (without, []), []) in
 
+  (* blob of the size of the first element in the rhs, folded struct in the lhs *)
+  let folded_entails_first_blob =
+    try
+      let t0 = Array.get types 0 in
+      let p0 = Array.get subpointers 0 in
+      let ptl = Array.sub subpointers 1 (Array.length subpointers -1) in
+      let first_elt_size =
+	Arg_op("numeric_const",
+	       [Arg_string(Int64.to_string (Llvm_target.store_size env.target t0))]) in
+      let blob = mkSPred ("blob", [x; first_elt_size]) in
+      let ptr_to_struct = mkPointer x args_ptr_t) p in
+      let struct_ptr = mkPointer p args_t vp in
+      let conclusion = (mkEmpty,  mkStar ptr_to_struct struct_ptr, blob, mkEmpty) in
+      let premise = (p0, Array.fold_right (fun p f -> mkStar p f) ptl mkEmpty,
+		     mkEmpty, mkEmpty) in
+      [(conclusion, [[premise]], name^"_blob_first", (without, []), [])]
+    with Invalid_argument _ -> [] (* Yep, a C struct can have an empty declaration. *) in
+
+  (* blob or pointer in the rhs, geteltptr with raw pointer arithmetic on the lhs *)
+
+  (* return a list of all the rules defined above *)
+  geteltptr_rule::fold_rule::folded_entails_blob::unfolded_entails_blob::folded_entails_first_blob@unfolded_geteltptr
+
+
+(************** Collect all the named structs in a module *)
+(* I wouldn't have had to write this code if findUsedStructTypes from
+   lib/VMCore/Module.cpp was accessible from the OCaml or C
+   bindings
+*)
 
 let rec collect_named_structs_of_type lns t = match (classify_type t) with
   | Struct -> (
@@ -552,6 +617,8 @@ let collect_named_structs_of_function lns f =
   (* we might need to collect the types from the parameters too here *)
   fold_left_blocks collect_named_structs_of_block lns f
 
+(************** /Collect all the named structs in a module *)
+
 let logic_of_module m =
   (* we only care about the named structs that are used inside functions,
      so let's collect only those *)
@@ -560,6 +627,7 @@ let logic_of_module m =
 
 let go logic abs_rules spec_list m =
   print_endline "It is on!";
+  env.context <- module_context m;
   env.target <- Llvm_target.TargetData.create (data_layout m);
   env.logic <- logic; env.abs_rules <- abs_rules; env.specs <- spec_list;
   print_endline ("Added specs for "^string_of_int (List.length spec_list)^" functions");
