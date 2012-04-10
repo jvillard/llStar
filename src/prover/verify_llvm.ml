@@ -46,6 +46,7 @@ let value_id v =
 
 let ret_arg = Arg_var(Spec.ret_v1)
 
+let args_num i = Arg_op("numeric_const",[Arg_string (string_of_int i)])
 let args_num_0 = Arg_op("numeric_const",[Arg_string "0"])
 let args_num_1 = Arg_op("numeric_const",[Arg_string "1"])
 
@@ -191,14 +192,14 @@ let rec spred_of_type ptr t = match (classify_type t) with
   | Metadata -> implement_this "SPred of metadata"
 
 
-let ppred_of_gep x ptr lidx =
+let ppred_of_gep x t ptr lidx =
   let rec jump_chain_of_lidx = function
     | [] -> Arg_op ("jump_end", [])
     | idx::tl ->
       let args_idx = args_of_value idx in
       Arg_op ("jump", [args_idx; jump_chain_of_lidx tl]) in
   let jump_chain = jump_chain_of_lidx lidx in
-  mkPPred ("eltptr", [x; ptr; jump_chain])
+  mkPPred ("eltptr", [x; args_of_type t; ptr; jump_chain])
 
 let cfg_node_of_instr instr = match instr_opcode instr with
   (* Terminator Instructions *)
@@ -337,7 +338,7 @@ let cfg_node_of_instr instr = match instr_opcode instr with
       if i = max_op then []
       else operand instr i::(jlist_from_op (i+1)) in
     let jump_indices = jlist_from_op 1 in
-    let post = ppred_of_gep ret_arg (args_of_value value) jump_indices  in
+    let post = ppred_of_gep ret_arg (type_of value) (args_of_value value) jump_indices  in
     let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
     mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
   (* Cast Operators *)
@@ -460,41 +461,92 @@ let logic_of_named_struct (name,t) =
   let args_t = args_of_type t in
   let args_ptr_t = args_of_type (pointer_type t) in
   let i8_ptr_t = args_of_type (pointer_type (i8_type (global_context ()))) in
-  let subpointer p off_to_val offset t =
-    let off = string_of_int offset in
+  let struct_size =
+    Arg_op("numeric_const",
+	   [Arg_string(Int64.to_string (Llvm_target.store_size env.target t))]) in
+  let subpointer p off_to_val offset subt =
     (mkPointer
-       (Arg_op ("builtin_plus", [p; Arg_op("numeric_const", [Arg_string off])]))
-       (Arg_op ("pointer_type", [args_t]))
-       (off_to_val off)) in
+       (Arg_op ("builtin_plus", [p; args_num offset]))
+       (Arg_op ("pointer_type", [args_of_type subt]))
+       (off_to_val (string_of_int offset))) in
   let any_var x = Arg_var (Vars.AnyVar (0, x)) in
   let p = any_var "p" in
   let vp = any_var "vp" in
   let x = any_var "x" in
-  let n = any_var "n" in
   let j = any_var "j" in
   let st = any_var "st" in
   let v = any_var "v" in
   let target_pointer = mkPointer x st v in
-  let eltptr_concl = mkPPred ("eltptr", [x; p; Arg_op ("jump", [n; j])]) in
-  let eltptr_prem = mkPPred ("eltptr", [x; Arg_op ("builtin_plus", [p;n]); j]) in
 
   (* TODO: narrate me *)
-  let subpointers =
+  (* eltptr_concl and etlptr_prem are also used in the next rule, so be 
+     careful if you modify those *)
+  let subpointers_fields =
     Array.mapi
       (subpointer p (fun offset -> Arg_op ("field", [Arg_op ("numeric_const", [Arg_string offset]); vp])))
       types in
-  let unfolded_form = Array.fold_right (fun p f -> mkStar p f) subpointers mkEmpty in
-  let conclusion_lhs =
-    pconjunction
-      (mkPointer p (Arg_op ("named_type", [Arg_string name])) vp)
-      eltptr_concl in
-  let conclusion_rhs = target_pointer in
-  let conclusion = (mkEmpty, conclusion_lhs, conclusion_rhs, mkEmpty) in
-  let premise_lhs = pconjunction unfolded_form eltptr_prem in
-  let premise_rhs = target_pointer in
-  let premise = (mkEmpty, premise_lhs, premise_rhs, mkEmpty) in
-  let without = mkEQ (p,x) in
-  let geteltptr_rule = (conclusion, [[premise]], name^"_geteltptr", (without, []), []) in
+  let subpointers_indep =
+    Array.mapi
+      (subpointer p (fun offset -> vp))
+      types in
+  let unfolded_form = Array.fold_right (fun p f -> mkStar p f) subpointers_fields mkEmpty in
+  let geteltptr_rule rule_name eltptr_concl eltptr_prem target offset subptr =
+    let conclusion_lhs =
+      pconjunction (eltptr_concl offset)
+	(mkPointer p (Arg_op ("named_type", [Arg_string name])) vp) in
+    let conclusion_rhs = target offset in
+    let conclusion = (mkEmpty, conclusion_lhs, conclusion_rhs, mkEmpty) in
+    let premise_lhs = pconjunction (eltptr_prem offset) unfolded_form in
+    let premise_rhs = target offset in
+    let premise = (mkEmpty, premise_lhs, premise_rhs, mkEmpty) in
+    (conclusion, [[premise]], name^"_"^rule_name^(string_of_int offset), ([], []), []) in
+  let geteltptr_unfold_rule rule_name eltptr_concl eltptr_prem target offset subptr =
+    let conclusion = (mkEmpty, pconjunction (eltptr_concl offset) subptr,
+		      target offset, mkEmpty) in
+    let premise = (mkEmpty, pconjunction (eltptr_prem offset) subptr,
+		   target offset, mkEmpty) in
+    (conclusion, [[premise]], name^"_unfold_"^rule_name^(string_of_int offset),
+     ([], []), []) in
+  let eltptr_struct_concl i =
+    mkPPred ("eltptr", [x; args_t; p; Arg_op ("jump", [args_num i; j])]) in
+  let eltptr_struct_prem i =
+    let ith_t = args_of_type (Array.get types i) in
+    mkPPred ("eltptr", [x; ith_t; Arg_op ("builtin_plus", [p; args_num i]); j]) in
+  let eltptr_raw_concl i =
+    let jump_offset = Int64.to_string (Llvm_target.offset_of_element env.target t i) in
+    mkPPred ("eltptr",
+	     [x; i8_ptr_t; p;
+	      Arg_op ("jump", [Arg_op("numeric_const", [Arg_string jump_offset]); j])]) in
+  let eltptr_raw_prem i =
+    let ith_t = args_of_type (Array.get types i) in
+    mkPPred ("eltptr", [x; ith_t; Arg_op ("builtin_plus", [p; args_num i]); j]) in
+  let target_ptr_fun i = target_pointer in
+  let target_blob_fun i =
+    let ith_elt_size = Llvm_target.store_size env.target (Array.get types i) in
+    let a = Arg_op("numeric_const", [Arg_string(Int64.to_string ith_elt_size)]) in
+    mkSPred ("blob", [x; a]) in
+  let gep_generators =
+    geteltptr_rule "gep_ptr" eltptr_struct_concl eltptr_struct_prem target_ptr_fun
+    ::geteltptr_rule "gep_blob" eltptr_struct_concl eltptr_struct_prem target_blob_fun
+    ::geteltptr_rule "raw_gep_ptr" eltptr_raw_concl eltptr_raw_prem target_ptr_fun
+    ::geteltptr_rule "raw_gep_blob" eltptr_raw_concl eltptr_raw_prem target_blob_fun
+    ::[] in
+  let gep_unfold_generators =
+    geteltptr_unfold_rule "gep_ptr" eltptr_struct_concl eltptr_struct_prem target_ptr_fun
+    ::geteltptr_unfold_rule "gep_blob" eltptr_struct_concl eltptr_struct_prem target_blob_fun
+    ::geteltptr_unfold_rule "raw_gep_ptr" eltptr_raw_concl eltptr_raw_prem target_ptr_fun
+    ::geteltptr_unfold_rule "raw_gep_blob" eltptr_raw_concl eltptr_raw_prem target_blob_fun
+    ::[] in
+  let geteltptr_rules =
+    List.flatten (List.map
+		    (fun gep_gen ->
+		      Array.to_list (Array.mapi gep_gen subpointers_fields))
+		    gep_generators) in
+  let geteltptr_unfold_rules =
+    List.flatten (List.map
+		    (fun gep_gen ->
+		      Array.to_list (Array.mapi gep_gen subpointers_indep))
+		    gep_unfold_generators) in
 
   (* TODO: narrate me *)
   let subpointers =
@@ -502,37 +554,23 @@ let logic_of_named_struct (name,t) =
       (subpointer p (fun off -> any_var ("v"^off)))
       types in
   let unfolded_form = Array.fold_right (fun p f -> mkStar p f) subpointers mkEmpty in
-  let named_pointer = mkPointer p (Arg_op ("named_type", [Arg_string name])) vp in
+  let named_pointer = mkPointer p args_t vp in
   let conclusion = (mkEmpty, unfolded_form, named_pointer, mkEmpty) in
   let premise = (unfolded_form, mkEmpty, mkEmpty, mkEmpty) in
-  let fold_rule = (conclusion, [[premise]], name^"_fold", ([], []), []) in
-
-  (* TODO: narrate me *)
-  let subpointers =
-    Array.mapi
-      (subpointer p (fun _ -> vp))
-      types in
-  let rec unfolded_geteltptr_rules offset = function
-    | [] -> []
-    | p::tl ->
-      let conclusion = (mkEmpty, pconjunction [p] eltptr_concl, target_pointer, mkEmpty) in
-      let premise = (mkEmpty, pconjunction [p] eltptr_prem, target_pointer, mkEmpty) in
-      (conclusion, [[premise]],
-       name^"_geteltptr_field"^(string_of_int offset),
-       (without, []), [])::(unfolded_geteltptr_rules (offset+1) tl) in
-  let unfolded_form = Array.fold_right (fun p f -> mkStar p f) subpointers mkEmpty in
-  let unfolded_geteltptr = unfolded_geteltptr_rules 0 unfolded_form in
+  let fold_struct_rule = (conclusion, [[premise]], name^"_fold", ([], []), []) in
+  let sz = any_var "sz" in
+  let blob =  mkSPred ("blob", [p; sz]) in
+  let conclusion = (mkEmpty, unfolded_form, blob, mkEmpty) in
+  let premise = (unfolded_form, mkEmpty, mkEQ(sz,struct_size), mkEmpty) in
+  let fold_blob_rule = (conclusion, [[premise]], name^"_blob_fold", ([], []), []) in
   
   (* blob of full size in the rhs, folded struct in the lhs *)
-  let struct_size =
-    Arg_op("numeric_const",
-	   [Arg_string(Int64.to_string (Llvm_target.store_size env.target t))]) in
   let struct_pointer = mkPointer x args_t v in
   let blob = mkSPred ("blob", [x; struct_size]) in
   let conclusion = (mkEmpty, struct_pointer, blob, mkEmpty) in
   let premise = (struct_pointer, mkEmpty, mkEmpty, mkEmpty) in
   let folded_entails_blob =
-    (conclusion, [[premise]], name^"_blob_folded", (without, []), []) in
+    (conclusion, [[premise]], name^"_blob_folded", ([], []), []) in
 
   (* blob of the full size in the rhs, unfolded struct in the lhs *)
   let subpointers =
@@ -544,7 +582,7 @@ let logic_of_named_struct (name,t) =
   let conclusion = (mkEmpty, unfolded_form, blob, mkEmpty) in
   let premise = (unfolded_form, mkEmpty, mkEmpty, mkEmpty) in
   let unfolded_entails_blob =
-    (conclusion, [[premise]], name^"_blob_unfolded", (without, []), []) in
+    (conclusion, [[premise]], name^"_blob_unfolded", ([], []), []) in
 
   (* blob of the size of the first element in the rhs, folded struct in the lhs *)
   let folded_entails_first_blob =
@@ -555,19 +593,17 @@ let logic_of_named_struct (name,t) =
       let first_elt_size =
 	Arg_op("numeric_const",
 	       [Arg_string(Int64.to_string (Llvm_target.store_size env.target t0))]) in
-      let blob = mkSPred ("blob", [x; first_elt_size]) in
-      let ptr_to_struct = mkPointer x args_ptr_t) p in
-      let struct_ptr = mkPointer p args_t vp in
+      let blob = mkSPred ("blob", [p; first_elt_size]) in
+      let ptr_to_struct = mkPointer p args_ptr_t x in
+      let struct_ptr = mkPointer x args_t v in
       let conclusion = (mkEmpty,  mkStar ptr_to_struct struct_ptr, blob, mkEmpty) in
       let premise = (p0, Array.fold_right (fun p f -> mkStar p f) ptl mkEmpty,
 		     mkEmpty, mkEmpty) in
-      [(conclusion, [[premise]], name^"_blob_first", (without, []), [])]
+      [(conclusion, [[premise]], name^"_blob_first", ([], []), [])]
     with Invalid_argument _ -> [] (* Yep, a C struct can have an empty declaration. *) in
 
-  (* blob or pointer in the rhs, geteltptr with raw pointer arithmetic on the lhs *)
-
   (* return a list of all the rules defined above *)
-  geteltptr_rule::fold_rule::folded_entails_blob::unfolded_entails_blob::folded_entails_first_blob@unfolded_geteltptr
+  geteltptr_rules@geteltptr_unfold_rules@fold_struct_rule::fold_blob_rule::folded_entails_blob::unfolded_entails_blob::folded_entails_first_blob
 
 
 (************** Collect all the named structs in a module *)

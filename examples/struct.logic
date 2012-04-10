@@ -3,30 +3,37 @@
  *************************************/
 
 rule pointer_getelementptr_deref:
-  | pointer(?p,pointer_type(?tp),?vp) * !eltptr(?x,?p,jump(numeric_const("0"),?j))
+  | pointer(?p,pointer_type(?tp),?vp) * !eltptr(?x,pointer_type(?gept),?p,jump(numeric_const("0"),?j))
   |- pointer(?x,?t,?v)
 without
   ?p=?x
 if
-  | pointer(?p,pointer_type(?tp),?vp) * !eltptr(?x,?vp,?j) |- pointer(?x,?t,?v)
+  | pointer(?p,pointer_type(?tp),?vp) * !eltptr(?x,?gept,?vp,?j) |- pointer(?x,?t,?v)
 
 rule jump_end_eq:
-| !eltptr(?x,?y,jump_end()) |-
+| !eltptr(?x,?t,?y,jump_end()) |-
 if
 | ?x = ?y |-
-
-/* rules for rebuilding a malloc block */
-rule int_to_malloc:
-| pointer(?bp,pointer_type(integer_type()),?v)
-|- blob(?bp,?sz) /* TODO: use sizeof */
-if
-pointer(?bp,pointer_type(integer_type()),?v)| |- ?sz = numeric_const("4")
 
 rule remove_malloced:
 | malloced(?mb, ?n)
 |- malloced(?mb,?m)
 if
 malloced(?mb,?n)| |- ?n = ?m
+
+/* rules for rebuilding a malloc block */
+rule int_blob:
+| pointer(?bp,pointer_type(integer_type()),?v)
+|- blob(?bp,numeric_const("4")) /* TODO: use sizeof */
+if
+pointer(?bp,pointer_type(integer_type()),?v)| |-
+
+rule ptr_blob:
+| pointer(?bp,pointer_type(pointer_type(?t)),?v)
+|- blob(?bp,numeric_const("8")) /* TODO: use sizeof */
+if
+pointer(?bp,pointer_type(pointer_type(?t)),?v)| |-
+
 
 
 
