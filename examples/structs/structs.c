@@ -1,4 +1,4 @@
-// clang -O0 -emit-llvm bite.c -c -o bite.bc
+// clang -O0 -emit-llvm structs.c -c -o structs.bc
 #include <stdlib.h>
 
 struct two {
@@ -6,19 +6,19 @@ struct two {
   int b;
 };
 
-struct prout {
+struct ole {
   int *data;
-  struct prout *next;
+  struct ole *next;
 };
 
 int f(int a) {
-  struct prout *p, s;
+  struct ole *p, s;
   int b;
   struct two *t;
 
   s.data = &b;
 
-  p = malloc(sizeof(struct prout));
+  p = malloc(sizeof(struct ole));
   p->data = malloc(sizeof(int));
   p->next = p;
   *(p->next->data) = a;
