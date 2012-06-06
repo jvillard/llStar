@@ -5,7 +5,8 @@ syntax: glob
 *~
 _build/*
 bin/*
-{src,corestar_src}.subdirs
+corestar_src.subdirs
 corestar_src
 .execution_core.dot
 .proof_file_*.txt
+examples/empty
