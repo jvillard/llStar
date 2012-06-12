@@ -6,27 +6,27 @@ open Cfg_core
 open Psyntax
 open Logic_spec
 
+(** used to catch metadata information in values *)
 exception MetaData of llvalue
 
-module IdMap = 
-  Map.Make
-    (struct
-      type t = llvalue
-      let compare = compare
-     end)
-
+(* a few maps and sets *)
+module IdMap = Map.Make (struct type t = llvalue let compare = compare end)
 module LlvalueSet = Set.Make (struct type t = llvalue let compare = compare end)
 module LltypeSet = Set.Make (struct type t = lltype let compare = compare end)
 
+(** verification environment *)
 type verify_env = {
-  mutable context: llcontext;
-  mutable target: Llvm_target.TargetData.t;
-  mutable logic: Psyntax.logic;
-  mutable abs_rules: Psyntax.logic;
-  mutable specs: funspec list;
+  mutable context: llcontext; (** llvm stuff *)
+  mutable target: Llvm_target.TargetData.t; (** llvm stuff regarding the target *)
+                                            (* we need it to compute type sizes,
+					       alignment and padding *)
+  mutable logic: Psyntax.logic; (** inference rules for logical entailments *)
+  mutable abs_rules: Psyntax.logic; (** abstraction rules for formulas *)
+  mutable specs: funspec list; (** the hoare triples we assume for declared
+				   functions and strive to prove for defined ones  *)
   mutable gvars: (string * args * args) list; (** global variable: id * type * value *)
   mutable idMap: string IdMap.t; (** maps LLVM nameless values to identifiers *)
-  mutable result: bool;
+  mutable result: bool; (** result of the proof. Yes or No only... *)
 }
 
 let env = {
@@ -43,9 +43,9 @@ let env = {
 let warn s =
   print_endline ("WARNING: "^s)
 
-(* placeholder for a better way of getting names of named and unnamed variables
- * Ideally, would get them from the SlotTracker thingy in lib/VMCore/AsmWriter.cpp,
- * but it's not in the ocaml bindings *)
+(** gets names of named and unnamed variables *)
+(* Ideally, we would get them from the SlotTracker thingy in
+   lib/VMCore/AsmWriter.cpp, but it's not in the ocaml bindings... *)
 let value_id v =
   let id = value_name v in
   if id = "" then
@@ -57,7 +57,7 @@ let value_id v =
       id
   else id
 
-(* return value expression *)
+(** return value expression *)
 let ret_arg = Arg_var(Spec.ret_v1)
 
 (* shorthands for integer expressions *)
@@ -65,6 +65,8 @@ let args_num i = Arg_op("numeric_const",[Arg_string (string_of_int i)])
 let args_num_0 = Arg_op("numeric_const",[Arg_string "0"])
 let args_num_1 = Arg_op("numeric_const",[Arg_string "1"])
 
+(* a few functions for creating predicates. Adds a layer of
+   type-safety and avoids catastrophic typos *)
 let mkPointer ptr ptr_t v = mkSPred ("pointer", [ptr; ptr_t; v])
 let mkArray ptr start_idx end_idx size array_t v =
   mkSPred ("array", [ptr; start_idx; end_idx; size; array_t; v])
@@ -74,6 +76,7 @@ let mkEmptySpec = Spec.mk_spec mkEmpty mkEmpty Spec.ClassMap.empty
 let env_add_logic_seq_rules sr  =
   env.logic <- { env.logic with seq_rules = env.logic.seq_rules@sr }
 
+(** We want fewer of these *)
 let implement_this s = failwith ("Not implemented: "^s)
 
 let spec_of_fun_id fid =
@@ -82,6 +85,11 @@ let spec_of_fun_id fid =
     | _::ss -> aux ss
     | [] -> warn ("no spec found for "^fid); mkEmptySpec in
   aux env.specs
+
+
+(* The real stuff begins *)
+
+(* Part I: turning llvm types and values into CoreStar expressions (args) *)
 
 let rec args_of_type t = match (classify_type t) with
   | Void -> Arg_op("void_type",[])
@@ -219,6 +227,8 @@ and args_of_composite_value aggr v =
     else [] in
   Arg_op(aggr, args_of_ops 0)
 
+
+(** compute the predicate describing the shape of an object of type t pointed to by p in memory *)
 let rec spred_of_type ptr t = match (classify_type t) with
   | Void
   | Float
@@ -245,6 +255,7 @@ let rec spred_of_type ptr t = match (classify_type t) with
   | Vector
   | Metadata -> mkEmpty
 
+(** compute the pure predicate corresponding to a getelementpointer instruction *)
 let ppred_of_gep x t ptr lidx =
   let rec jump_chain_of_lidx = function
     | [] -> Arg_op ("jump_end", [])
@@ -254,6 +265,7 @@ let ppred_of_gep x t ptr lidx =
   let jump_chain = jump_chain_of_lidx lidx in
   mkPPred ("eltptr", [x; args_of_type t; ptr; jump_chain])
 
+(** compile an llvm instruction into a CoreStar program *) 
 let cfg_node_of_instr instr = match instr_opcode instr with
   (* Terminator Instructions *)
   | Opcode.Ret ->
@@ -673,6 +685,7 @@ let logic_of_named_struct (name,t) =
    bindings
 *)
 
+(** looks for new named structs in the type t *)
 let rec collect_named_structs_of_type (seen_t, seen_const, lns) t =
   if (LltypeSet.mem t seen_t) then (seen_t, seen_const, lns)
   else
@@ -695,6 +708,7 @@ let rec collect_named_structs_of_type (seen_t, seen_const, lns) t =
     | Vector -> collect_named_structs_of_type (seen_t, seen_const, lns) (element_type t)
     | _ -> (seen_t, seen_const, lns)
 
+(** looks for new named structs in the value v *)
 let rec collect_named_structs_of_value o v =
   let (seen_t, seen_const, lns) = collect_named_structs_of_type o (type_of v) in
   (*  if v is not a constant, then its structs have already been collected explicitly *)
@@ -710,6 +724,7 @@ let rec collect_named_structs_of_value o v =
 	collect_from_op o (n+1)) in
     collect_from_op o 0
 
+(** looks for new named structs in the instruction i *)
 let collect_named_structs_of_instr o i =
   let num_op = num_operands i in
   let o = collect_named_structs_of_type o (type_of i) in
@@ -727,6 +742,7 @@ let collect_named_structs_of_function o f =
   let o = collect_named_structs_of_type o (type_of f) in
   fold_left_blocks collect_named_structs_of_block o f
 
+(** collects all named structs that are referred to by the functions of module m *)
 let collect_named_structs_of_module m =
   (* we only care about the named structs that are used inside functions,
      so let's collect only those *)
@@ -740,6 +756,7 @@ let logic_of_module m =
   let ltf = collect_named_structs_of_module m in
   List.flatten (List.map logic_of_named_struct ltf)
 
+(** dumps the generated fold/unfold logic into a file *)
 let dump_logic_rules rs =
   let file = Sys.getcwd() ^  "/.logic_rules.txt" in
   let rules_out = open_out file in
