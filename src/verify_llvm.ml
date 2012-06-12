@@ -100,7 +100,7 @@ let rec args_of_type t = match (classify_type t) with
   | Fp128
   | Ppc_fp128 -> Arg_op("float_type", [])
   | Label -> Arg_op("label type", [])
-  | Integer -> Arg_op("integer_type", [])
+  | Integer -> Arg_op("integer_type", [args_num (integer_bitwidth t)])
   | TypeKind.Function -> (* silly name clash *)
     let ret_type = return_type t in
     let par_types = param_types t in
@@ -525,6 +525,8 @@ let verify_module m =
   iter_functions verify_function m
 
 
+(* generation of fold/unfold rules for each struct *)
+
 (** Outputs logical rules to teach CoreStar how to fold and unfold a
     named struct of name @name and type @t. *)
 let logic_of_named_struct (name,t) =
@@ -533,15 +535,28 @@ let logic_of_named_struct (name,t) =
   let types = struct_element_types t in
   let args_t = args_of_type t in
   let args_ptr_t = args_of_type (pointer_type t) in
+  (* i8* is llvm for void* *)
   let i8_ptr_t = args_of_type (pointer_type (i8_type (global_context ()))) in
   let struct_size =
     Arg_op("numeric_const",
 	   [Arg_string(Int64.to_string (Llvm_target.store_size env.target t))]) in
-  let subpointer p off_to_val offset subt =
+
+  (** the physical offset inside the struct, as a logical expression *)
+  let offset_of_field i =
+    let offset = Llvm_target.offset_of_element env.target t i in
+    Arg_op("numeric_const", [Arg_string(Int64.to_string offset)]) in
+
+  (** pointer to the field number i.
+    * p: the root of the structure
+    * off_to_val: a function that given a field number gives back the value of that field 
+    * subt: the type of the field number i *)
+  let subpointer p off_to_val i subt =
     (mkPointer
-       (Arg_op ("builtin_plus", [p; args_num offset]))
+       (Arg_op ("builtin_plus", [p; offset_of_field i]))
        (Arg_op ("pointer_type", [args_of_type subt]))
-       (off_to_val (string_of_int offset))) in
+       (off_to_val (string_of_int i))) in
+  
+  (* we need a few variable names in the rules *)
   let any_var x = Arg_var (Vars.AnyVar (0, x)) in
   let p = any_var "p" in
   let vp = any_var "vp" in
@@ -549,11 +564,14 @@ let logic_of_named_struct (name,t) =
   let j = any_var "j" in
   let st = any_var "st" in
   let v = any_var "v" in
+
+  (* our goal will often be x |-(st)-> v *)
   let target_pointer = mkPointer x st v in
 
-  (* TODO: narrate me *)
   (* eltptr_concl and etlptr_prem are also used in the next rule, so be 
      careful if you modify those *)
+
+  (** an array of pointer predicates for each of the fields of the struct *)
   let subpointers_fields =
     Array.mapi
       (subpointer p (fun offset -> Arg_op ("field", [Arg_op ("numeric_const", [Arg_string offset]); vp])))
@@ -562,7 +580,12 @@ let logic_of_named_struct (name,t) =
     Array.mapi
       (subpointer p (fun offset -> vp))
       types in
+  (** and the formula that stars them all together *)
   let unfolded_form = Array.fold_right (fun p f -> mkStar p f) subpointers_fields mkEmpty in
+
+
+  (** rules to evaluate getelementpointer expressions and unfold the structure
+    * at the same time *)
   let geteltptr_rule rule_name eltptr_concl eltptr_prem target offset subptr =
     let conclusion_lhs =
       pconjunction (eltptr_concl offset)
@@ -584,20 +607,15 @@ let logic_of_named_struct (name,t) =
     mkPPred ("eltptr", [x; args_t; p; Arg_op ("jump", [args_num i; j])]) in
   let eltptr_struct_prem i =
     let ith_t = args_of_type (Array.get types i) in
-    mkPPred ("eltptr", [x; ith_t; Arg_op ("builtin_plus", [p; args_num i]); j]) in
+    mkPPred ("eltptr", [x; ith_t; Arg_op ("builtin_plus", [p; offset_of_field i]); j]) in
   let eltptr_raw_concl i =
-    let jump_offset = Int64.to_string (Llvm_target.offset_of_element env.target t i) in
-    mkPPred ("eltptr",
-	     [x; i8_ptr_t; p;
-	      Arg_op ("jump", [Arg_op("numeric_const", [Arg_string jump_offset]); j])]) in
-  let eltptr_raw_prem i =
-    let ith_t = args_of_type (Array.get types i) in
-    mkPPred ("eltptr", [x; ith_t; Arg_op ("builtin_plus", [p; args_num i]); j]) in
+    mkPPred ("eltptr", [x; i8_ptr_t; p; Arg_op ("jump", [offset_of_field i; j])]) in
+  let eltptr_raw_prem = eltptr_struct_prem in
   let target_ptr_fun i = target_pointer in
   let target_blob_fun i =
     let ith_elt_size = Llvm_target.store_size env.target (Array.get types i) in
-    let a = Arg_op("numeric_const", [Arg_string(Int64.to_string ith_elt_size)]) in
-    mkSPred ("blob", [x; a]) in
+    let size_args = Arg_op("numeric_const", [Arg_string(Int64.to_string ith_elt_size)]) in
+    mkSPred ("blob", [x; size_args]) in
   let gep_generators =
     geteltptr_rule "gep_ptr" eltptr_struct_concl eltptr_struct_prem target_ptr_fun
     ::geteltptr_rule "gep_blob" eltptr_struct_concl eltptr_struct_prem target_blob_fun
@@ -627,10 +645,12 @@ let logic_of_named_struct (name,t) =
       (subpointer p (fun off -> any_var ("v"^off)))
       types in
   let unfolded_form = Array.fold_right (fun p f -> mkStar p f) subpointers mkEmpty in
+
   let named_pointer = mkPointer p args_t vp in
   let conclusion = (mkEmpty, unfolded_form, named_pointer, mkEmpty) in
   let premise = (unfolded_form, mkEmpty, mkEmpty, mkEmpty) in
   let fold_struct_rule = (conclusion, [[premise]], name^"_fold", ([], []), []) in
+
   let sz = any_var "sz" in
   let blob =  mkSPred ("blob", [p; sz]) in
   let conclusion = (mkEmpty, unfolded_form, blob, mkEmpty) in
