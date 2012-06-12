@@ -24,8 +24,8 @@ lstar() {
   abs=$file
   f $name.bp
   background_pred=$file
-  echo ../../bin/lstar -l $logic -s $spec -a $abs -b $background_pred -f $name.bc
-  ../../bin/lstar -l $logic -s $spec -a $abs -b $background_pred -f $name.bc
+  echo ../../bin/lstar -l $logic -s $spec -a $abs -b $background_pred -f $name.bc $LSTAR_OPTIONS
+  ../../bin/lstar -l $logic -s $spec -a $abs -b $background_pred -f $name.bc $LSTAR_OPTIONS
   cd -
 }
 

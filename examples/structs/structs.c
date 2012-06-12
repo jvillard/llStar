@@ -6,19 +6,19 @@ struct two {
   int b;
 };
 
-struct prout {
+struct ole {
   int *data;
-  struct prout *next;
+  struct ole *next;
 };
 
 int f(int a) {
-  struct prout *p, s;
+  struct ole *p, s;
   int b;
   struct two *t;
 
   s.data = &b;
 
-  p = malloc(sizeof(struct prout));
+  p = malloc(sizeof(struct ole));
   p->data = malloc(sizeof(int));
   p->next = p;
   *(p->next->data) = a;
@@ -60,13 +60,15 @@ void setifield(struct oneint *s) {
   s->i = 0;
 }
 
-void yay_yay_int(struct ij s) {
+struct ij yay_yay_int(struct ij s) {
   setifield((struct oneint *)&s);
   s.j = 0;
+  return s;
 }
 
 int main() {
   int x,*y;
+  struct ij s;
 
   x = f(1664);
 
@@ -75,5 +77,9 @@ int main() {
   *y = 1665;
   free(y);
 
-  return x;
+  s.i = x;
+  s = yay_yay_int(s);
+  s.j = x;
+
+  return s.j;
 }

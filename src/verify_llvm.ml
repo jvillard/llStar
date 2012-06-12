@@ -6,6 +6,18 @@ open Cfg_core
 open Psyntax
 open Logic_spec
 
+exception MetaData of llvalue
+
+module IdMap = 
+  Map.Make
+    (struct
+      type t = llvalue
+      let compare = compare
+     end)
+
+module LlvalueSet = Set.Make (struct type t = llvalue let compare = compare end)
+module LltypeSet = Set.Make (struct type t = lltype let compare = compare end)
+
 type verify_env = {
   mutable context: llcontext;
   mutable target: Llvm_target.TargetData.t;
@@ -13,39 +25,42 @@ type verify_env = {
   mutable abs_rules: Psyntax.logic;
   mutable specs: funspec list;
   mutable gvars: (string * args * args) list; (** global variable: id * type * value *)
-  mutable idMap: (llvalue * string) list; (* TODO: make that a real map *)
+  mutable idMap: string IdMap.t; (** maps LLVM nameless values to identifiers *)
   mutable result: bool;
 }
 
 let env = {
   context = global_context ();
-  target = Llvm_target.TargetData.create "";
+  target = Llvm_target.TargetData.create ""; (* has to be filled with a legal value later *)
   logic = empty_logic;
   abs_rules = empty_logic;
   specs = [];
   gvars = [];
-  idMap = [];
+  idMap = IdMap.empty;
   result = true;
 }
 
-(* placeholder for a better way of getting names of named and unnamed variables *)
-(* Ideally, would get them from the SlotTracker thingy in lib/VMCore/AsmWriter.cpp
-   but it's not in the bindings
-*)
+let warn s =
+  print_endline ("WARNING: "^s)
+
+(* placeholder for a better way of getting names of named and unnamed variables
+ * Ideally, would get them from the SlotTracker thingy in lib/VMCore/AsmWriter.cpp,
+ * but it's not in the ocaml bindings *)
 let value_id v =
   let id = value_name v in
   if id = "" then
     try
-      List.assoc v env.idMap
+      IdMap.find v env.idMap
     with Not_found ->
-      (* TODO: write a real fresh identifier generator *)
-      let id = "%"^(string_of_int (List.length env.idMap)) in
-      env.idMap <- (v, id)::env.idMap;
+      let id = "%"^(string_of_int (IdMap.cardinal env.idMap + 1)) in
+      env.idMap <- IdMap.add v id env.idMap;
       id
   else id
 
+(* return value expression *)
 let ret_arg = Arg_var(Spec.ret_v1)
 
+(* shorthands for integer expressions *)
 let args_num i = Arg_op("numeric_const",[Arg_string (string_of_int i)])
 let args_num_0 = Arg_op("numeric_const",[Arg_string "0"])
 let args_num_1 = Arg_op("numeric_const",[Arg_string "1"])
@@ -65,26 +80,27 @@ let spec_of_fun_id fid =
   let rec aux = function
     | Logic_spec.Funspec(i, spec)::ss when i = fid -> spec
     | _::ss -> aux ss
-    | [] -> print_endline ("WARN: no spec found for "^fid); mkEmptySpec in
+    | [] -> warn ("no spec found for "^fid); mkEmptySpec in
   aux env.specs
 
 let rec args_of_type t = match (classify_type t) with
   | Void -> Arg_op("void_type",[])
   | Float
+  | Half
   | Double
   | X86fp80
   | Fp128
   | Ppc_fp128 -> Arg_op("float_type", [])
-  | Label -> implement_this "label type"
+  | Label -> Arg_op("label type", [])
   | Integer -> Arg_op("integer_type", [])
-  | TypeKind.Function ->
+  | TypeKind.Function -> (* silly name clash *)
     let ret_type = return_type t in
     let par_types = param_types t in
     Arg_op("function_type", args_of_type ret_type::(args_of_type_array par_types))
   | Struct -> (
-    match struct_name t with
+    if is_opaque t then Arg_op("opaque_type", [])
+    else match struct_name t with
       | None ->
-	print_string "UNUSUAL: unnamed struct\n";
 	let elts_types = struct_element_types t in
 	Arg_op("struct_type", args_of_type_array elts_types)
       | Some n ->
@@ -99,7 +115,7 @@ let rec args_of_type t = match (classify_type t) with
   | Vector ->
     let elt_t = element_type t in
     Arg_op("vector_type", [args_of_type elt_t])
-  | Metadata -> implement_this "metadata type"
+  | Metadata -> raise (MetaData (const_null t))
 and args_of_type_array ta =
   Array.to_list (Array.map args_of_type ta)
 
@@ -108,74 +124,112 @@ let args_of_int_const v = match int64_of_const v with
   | None -> Arg_var (Vars.freshe ())
 
 let rec args_of_const_expr v = match constexpr_opcode v with
-  (* TODO: implement floats *)
-  | Opcode.Add
-  | Opcode.FAdd ->
+  | Opcode.Add ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
     Arg_op("builtin_plus", [x; y])
-  | Opcode.Sub
-  | Opcode.FSub ->
+  | Opcode.Sub ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
     Arg_op("builtin_minus", [x; y])
-  | Opcode.Mul
-  | Opcode.FMul ->
+  | Opcode.Mul ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
     Arg_op("builtin_mult", [x; y])
   | Opcode.UDiv
-  | Opcode.SDiv
-  | Opcode.FDiv ->
+  | Opcode.SDiv ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
     Arg_op("builtin_div", [x; y])
   | Opcode.URem
-  | Opcode.SRem
-  | Opcode.FRem ->
+  | Opcode.SRem ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
     Arg_op("builtin_rem", [x; y])
-  | Opcode.Shl
+  | Opcode.FAdd
+  | Opcode.FSub
+  | Opcode.FMul
+  | Opcode.FDiv
+  | Opcode.FRem ->
+    (* TODO: This is the only safe thing until floats are supported *)
+    Arg_var (Vars.freshe ())    
+  (* TODO@CoreStar: translate bitwise operation to z3 *)  
+  | Opcode.Shl ->
+    let x = args_of_value (operand v 0) in
+    let y = args_of_value (operand v 1) in
+    Arg_op("builtin_shl", [x; y])
   | Opcode.LShr
-  | Opcode.AShr
-  | Opcode.And
-  | Opcode.Or
-  | Opcode.Xor -> Arg_var (Vars.freshe ()) (* TODO: implement *)
-  | _ -> Arg_var (Vars.freshe ()) (* TODO: implement *)
+  | Opcode.AShr ->
+    let x = args_of_value (operand v 0) in
+    let y = args_of_value (operand v 1) in
+    Arg_op("builtin_shr", [x; y])
+  | Opcode.And ->
+    let x = args_of_value (operand v 0) in
+    let y = args_of_value (operand v 1) in
+    Arg_op("builtin_and", [x; y])
+  | Opcode.Or ->
+    let x = args_of_value (operand v 0) in
+    let y = args_of_value (operand v 1) in
+    Arg_op("builtin_or", [x; y])
+  | Opcode.Xor ->
+    let x = args_of_value (operand v 0) in
+    let y = args_of_value (operand v 1) in
+    Arg_op("builtin_xor", [x; y])
+  (* /TODO CoreStar/z3 *)
+  | Opcode.Unwind | Opcode.LandingPad | Opcode.Resume | Opcode.AtomicRMW
+  | Opcode.AtomicCmpXchg | Opcode.Fence | Opcode.InsertValue
+  | Opcode.ExtractValue | Opcode.ShuffleVector | Opcode.InsertElement
+  | Opcode.ExtractElement | Opcode.VAArg | Opcode.UserOp2 | Opcode.UserOp1
+  | Opcode.Select | Opcode.Call | Opcode.PHI | Opcode.FCmp | Opcode.ICmp
+  | Opcode.BitCast | Opcode.IntToPtr | Opcode.PtrToInt | Opcode.FPExt
+  | Opcode.FPTrunc | Opcode.SIToFP | Opcode.UIToFP | Opcode.FPToSI
+  | Opcode.FPToUI | Opcode.SExt | Opcode.ZExt | Opcode.Trunc
+  | Opcode.GetElementPtr | Opcode.Store | Opcode.Load | Opcode.Alloca
+  | Opcode.Unreachable | Opcode.Invalid2 | Opcode.Invoke | Opcode.IndirectBr
+  | Opcode.Switch | Opcode.Br | Opcode.Ret | Opcode.Invalid ->
+    (* TODO: implement *)
+    Arg_var (Vars.freshe ())
 
 and args_of_value v = match classify_value v with
-  | NullValue -> args_num_0
+  | NullValue -> Arg_op("zeroinitializer", [])
   | Argument -> Arg_var (Vars.concretep_str (value_id v))
-  | BasicBlock -> implement_this "value is a basic block"
-  | InlineAsm -> implement_this "value is inlined assembly"
-  | MDNode -> implement_this "value is a metadata node"
-  | MDString -> implement_this "value is a metadata string"
-  | BlockAddress -> implement_this "value is a block address"
-  | ConstantAggregateZero -> implement_this "value is an aggregate 0"
-  | ConstantArray -> implement_this "value is an array"
+  | BasicBlock -> failwith "Invalid bitcode? Unexpected BasickBlock value"
+  | InlineAsm -> Arg_var (Vars.freshe ())
+  | MDNode -> raise (MetaData v)
+  | MDString -> raise (MetaData v)
+  | BlockAddress -> Arg_op("block_addr", [args_of_value (operand v 0)])
+  | ConstantAggregateZero ->  Arg_op("zeroinitializer", [])
+  | ConstantArray -> args_of_composite_value "array" v
   | ConstantExpr -> args_of_const_expr v
-  | ConstantFP -> implement_this "value is floating point"
+  | ConstantFP -> Arg_var (Vars.freshe ())
   | ConstantInt -> args_of_int_const v
-  | ConstantPointerNull -> args_num_0
-  | ConstantStruct -> implement_this "value is a struct"
-  | ConstantVector -> implement_this "value is a vector"
-  | Function -> implement_this "value is a function"
-  | GlobalAlias -> implement_this "value is a global alias"
+  | ConstantPointerNull -> Arg_op("zeroinitializer", [])
+  | ConstantStruct -> args_of_composite_value "struct" v
+  | ConstantVector -> args_of_composite_value "vector" v
+  | Function -> Arg_op("function", [args_of_value (operand v 0)])
+  | GlobalAlias -> implement_this "value is a global alias" (* undocumented? *)
   | GlobalVariable -> Arg_var (Vars.concretep_str (value_id v))
   | UndefValue -> Arg_op("undef", [])
   | Instruction op -> Arg_var (Vars.concretep_str (value_id v))
 
+and args_of_composite_value aggr v =
+  let size = num_operands v in
+  let rec args_of_ops n =
+    if n < size then args_of_value (operand v n)::(args_of_ops (n+1))
+    else [] in
+  Arg_op(aggr, args_of_ops 0)
+
 let rec spred_of_type ptr t = match (classify_type t) with
   | Void
   | Float
+  | Half
   | Double
   | X86fp80
   | Fp128
   | Ppc_fp128
   | Label
   | Integer -> mkEmpty
-  | TypeKind.Function -> (* stupid name conflict with ValueKind *)
+  | TypeKind.Function -> (* silly name conflict with ValueKind *)
     implement_this "SPred of function type"
   | Struct
   | Pointer ->
@@ -188,9 +242,8 @@ let rec spred_of_type ptr t = match (classify_type t) with
     let e = Arg_var (Vars.freshe ()) in
     let start = Arg_op ("numeric_const", [Arg_string "0"]) in
     mkArray ptr start size size ptr_t e
-  | Vector -> implement_this "SPred of vector"
-  | Metadata -> implement_this "SPred of metadata"
-
+  | Vector
+  | Metadata -> mkEmpty
 
 let ppred_of_gep x t ptr lidx =
   let rec jump_chain_of_lidx = function
@@ -214,12 +267,7 @@ let cfg_node_of_instr instr = match instr_opcode instr with
   | Opcode.Br ->
     (* this is how you get a block's label using the ocaml bindings... *)
     let label_of_bblock b =
-      let l = value_id (value_of_block b) in
-      if l = "" then
-	(* if this ever shows up, we need to give a fresh label to the
-	   target block *)
-	print_string "FIXME: branch to a block with no label";
-      l in
+      value_id (value_of_block b) in
     if num_operands instr = 1 then
       (* Unconditional branch instr *)
       let next_label = label_of_bblock (block_of_value (operand instr 0)) in
@@ -394,31 +442,44 @@ let cfg_node_of_instr instr = match instr_opcode instr with
     mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
   | Opcode.FCmp -> implement_this "fcmp instr"
   | Opcode.PHI -> implement_this "phi instr"
-  | Opcode.Call ->
-    let id = value_id instr in
-    (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l01339 *)
-    let fun_called = operand instr (num_operands instr - 1) in
-    let fid = value_id fun_called in
-    (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l01237 *)
-    let max_param_idx = num_operands instr - 1 in
-    let rec params_from_idx i =
-      if i = max_param_idx then []
-      else operand instr i::(params_from_idx (i+1)) in
-    let params = params_from_idx 0 in
-    let call_spec = spec_of_fun_id fid in
-    mk_node (Core.Assignment_core ([Vars.concretep_str id],
-				   call_spec,
-				   List.map args_of_value params))
+  | Opcode.Call -> (
+    try
+      let id = value_id instr in
+      (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l01339 *)
+      let fun_called = operand instr (num_operands instr - 1) in
+      let fid = value_id fun_called in
+      (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l01237 *)
+      let max_param_idx = num_operands instr - 1 in
+      let rec params_from_idx i =
+	if i = max_param_idx then []
+	else args_of_value (operand instr i)::(params_from_idx (i+1)) in
+      let params = params_from_idx 0 in
+      let call_spec = spec_of_fun_id fid in
+      mk_node (Core.Assignment_core ([Vars.concretep_str id],
+				     call_spec,
+				     params))
+    with MetaData _ ->
+      (* a function call with meta-data in its arguments is for debug info *)
+      (* and may be safely ignored *)
+      mk_node Core.Nop_stmt_core)
   | Opcode.Select -> implement_this "select instr"
-  | Opcode.UserOp1 -> implement_this "userop1 instr"
-  | Opcode.UserOp2 -> implement_this "userop2 instr"
-  | Opcode.VAArg -> implement_this "va arg instr"
-  | Opcode.ExtractElement -> implement_this "extract element instr"
-  | Opcode.InsertElement -> implement_this "insert element instr"
-  | Opcode.ShuffleVector -> implement_this "shuffle vector instr"
-  | Opcode.ExtractValue -> implement_this "extract value instr"
-  | Opcode.InsertValue -> implement_this "instert value instr"
-  | Opcode.Fence -> implement_this "fence instr"
+  | Opcode.UserOp1
+  | Opcode.UserOp2 ->
+    warn "Skipping user-defined instruction";
+    mk_node Core.Nop_stmt_core
+  | Opcode.VAArg ->
+    warn "Skipping VAArg instruction";
+    mk_node Core.Nop_stmt_core
+  | Opcode.ExtractElement
+  | Opcode.InsertElement
+  | Opcode.ShuffleVector
+  | Opcode.ExtractValue
+  | Opcode.InsertValue ->
+    warn "Skipping vector instruction";
+    mk_node Core.Nop_stmt_core
+  | Opcode.Fence ->
+    (* this skip is safe since we assume a sequential semantics *)
+    mk_node Core.Nop_stmt_core
   | Opcode.AtomicCmpXchg -> implement_this "atomic cmp xchange instr"
   | Opcode.AtomicRMW -> implement_this "atomic RMW instr"
   | Opcode.Resume -> implement_this "resume instr"
@@ -431,7 +492,7 @@ let cfg_nodes_of_block b =
   let l = value_id (value_of_block b) in
   let label_node = if l = "" then mk_node Core.Nop_stmt_core
     else mk_node (Core.Label_stmt_core l) in
-  let body_nodes = fold_right_instrs (fun i cfgs -> cfg_node_of_instr i::cfgs) b [] in
+  let body_nodes = fold_left_instrs (fun cfgs i -> cfgs@[cfg_node_of_instr i]) [] b in
   label_node::body_nodes
 
 let verify_function f =
@@ -607,59 +668,83 @@ let logic_of_named_struct (name,t) =
 
 
 (************** Collect all the named structs in a module *)
-(* I wouldn't have had to write this code if findUsedStructTypes from
+(* this would not have to exist if findUsedStructTypes from
    lib/VMCore/Module.cpp was accessible from the OCaml or C
    bindings
 *)
 
-let rec collect_named_structs_of_type lns t = match (classify_type t) with
-  | Struct -> (
-    match struct_name t with
-      | None -> lns
-      | Some n ->
-	if List.mem_assoc n lns then lns
-	else
-	  let lns = (n,t)::lns in
-	  Array.fold_left collect_named_structs_of_type lns (struct_element_types t)
-  )
-  | Pointer
-  | Array
-  | Vector -> collect_named_structs_of_type lns (element_type t)
-  | _ -> lns
+let rec collect_named_structs_of_type (seen_t, seen_const, lns) t =
+  if (LltypeSet.mem t seen_t) then (seen_t, seen_const, lns)
+  else
+    let seen_t = LltypeSet.add t seen_t in
+    match (classify_type t) with
+    | Struct -> (
+      match struct_name t with
+	| None ->
+	  (* FIXME: is this right? maybe we should name all structs... *)
+	  (seen_t, seen_const, lns)
+	| Some n ->
+	  if List.mem_assoc n lns then (seen_t, seen_const, lns)
+	  else
+	    let lns = (n,t)::lns in
+	    Array.fold_left collect_named_structs_of_type
+	      (seen_t, seen_const, lns) (struct_element_types t)
+    )
+    | Pointer
+    | Array
+    | Vector -> collect_named_structs_of_type (seen_t, seen_const, lns) (element_type t)
+    | _ -> (seen_t, seen_const, lns)
 
-let rec collect_named_structs_of_value lns v = match classify_value v with
-  | NullValue | BasicBlock | InlineAsm | MDNode | MDString | BlockAddress -> lns
-
-  | Argument -> collect_named_structs_of_type lns (type_of v)
-
-  | ConstantAggregateZero | ConstantArray | ConstantExpr | ConstantFP 
-  | ConstantInt | ConstantPointerNull | ConstantStruct | ConstantVector
-  | Function | GlobalAlias | GlobalVariable | UndefValue | Instruction _ ->
+let rec collect_named_structs_of_value o v =
+  let (seen_t, seen_const, lns) = collect_named_structs_of_type o (type_of v) in
+  (*  if v is not a constant, then its structs have already been collected explicitly *)
+  if (not (is_constant v)) || (LlvalueSet.mem v seen_const) then (seen_t, seen_const, lns)
+  else
+    let seen_const = LlvalueSet.add v seen_const in
+    let o = (seen_t, seen_const, lns) in
     let num_op = num_operands v in
-    let lns = collect_named_structs_of_type lns (type_of v) in
-    let rec collect_from_op lns n =
-      if n = num_op then lns
+    let rec collect_from_op o n =
+      if n = num_op then o
       else (
-	let lns = collect_named_structs_of_value lns (operand v n) in
-	collect_from_op lns (n+1)) in
-    collect_from_op lns 0
+	let o = collect_named_structs_of_value o (operand v n) in
+	collect_from_op o (n+1)) in
+    collect_from_op o 0
 
-let collect_named_structs_of_block lns b =
-  (* insert label command from the block's label l, followed by the sequence
-     of commands of the block *)
-  fold_left_instrs collect_named_structs_of_value lns b
+let collect_named_structs_of_instr o i =
+  let num_op = num_operands i in
+  let o = collect_named_structs_of_type o (type_of i) in
+  let rec collect_from_op o n =
+    if n = num_op then o
+    else (
+      let o = collect_named_structs_of_value o (operand i n) in
+      collect_from_op o (n+1)) in
+  collect_from_op o 0
 
-let collect_named_structs_of_function lns f =
-  (* we might need to collect the types from the parameters too here *)
-  fold_left_blocks collect_named_structs_of_block lns f
+let collect_named_structs_of_block o b =
+  fold_left_instrs collect_named_structs_of_instr o b
+
+let collect_named_structs_of_function o f =
+  let o = collect_named_structs_of_type o (type_of f) in
+  fold_left_blocks collect_named_structs_of_block o f
+
+let collect_named_structs_of_module m =
+  (* we only care about the named structs that are used inside functions,
+     so let's collect only those *)
+  let o = (LltypeSet.empty,LlvalueSet.empty,[]) in
+  let (_, _, ltf) = fold_left_functions collect_named_structs_of_function o m in
+  print_endline ("found "^(string_of_int (List.length ltf))^" struct(s)"); ltf
 
 (************** /Collect all the named structs in a module *)
 
 let logic_of_module m =
-  (* we only care about the named structs that are used inside functions,
-     so let's collect only those *)
-  let ltf = fold_left_functions collect_named_structs_of_function [] m in
+  let ltf = collect_named_structs_of_module m in
   List.flatten (List.map logic_of_named_struct ltf)
+
+let dump_logic_rules rs =
+  let file = Sys.getcwd() ^  "/.logic_rules.txt" in
+  let rules_out = open_out file in
+  let rules_fmt = Format.formatter_of_out_channel rules_out in
+  List.iter (pp_sequent_rule rules_fmt) rs
 
 let go logic abs_rules spec_list m =
   print_endline "It is on!";
@@ -667,10 +752,11 @@ let go logic abs_rules spec_list m =
   env.target <- Llvm_target.TargetData.create (data_layout m);
   env.logic <- logic; env.abs_rules <- abs_rules; env.specs <- spec_list;
   print_endline ("Added specs for "^string_of_int (List.length spec_list)^" functions");
-  print_string "Adding unfolding logic for named structs... ";
+  print_endline "Adding unfolding logic for named structs... ";
   let l = logic_of_module m in
   env_add_logic_seq_rules l;
   print_endline (string_of_int (List.length l)^" rules added");
+  dump_logic_rules l;
   if false then List.iter (pp_sequent_rule Format.std_formatter) l;
   verify_module m;
   env.result
