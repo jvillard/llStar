@@ -23,10 +23,10 @@ malloced(?mb,?n)| |- ?n = ?m
 
 /* rules for rebuilding a malloc block */
 rule int_blob:
-| pointer(?bp,pointer_type(integer_type()),?v)
+| pointer(?bp,pointer_type(integer_type(numeric_const("32"))),?v)
 |- blob(?bp,numeric_const("4")) /* TODO: use sizeof */
 if
-pointer(?bp,pointer_type(integer_type()),?v)| |-
+pointer(?bp,pointer_type(integer_type(numeric_const("32"))),?v)| |-
 
 rule ptr_blob:
 | pointer(?bp,pointer_type(pointer_type(?t)),?v)

@@ -20,7 +20,7 @@ int f(int a) {
 
   p = malloc(sizeof(struct ole));
   p->data = malloc(sizeof(int));
-  p->next = p;
+  *((struct ole **)((void *)p+sizeof(int *))) = p;
   *(p->next->data) = a;
 
   b = *((*p).data);

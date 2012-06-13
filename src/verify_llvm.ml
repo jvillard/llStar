@@ -278,7 +278,7 @@ type fun_env = {
 let empty_fun_env = {
   fun_blk_label = "";
   fun_br_to_orig = (fun br -> br);
-  fun_br_to_dest = (fun br dest -> print_endline "youpla"; dest);
+  fun_br_to_dest = (fun br dest -> dest);
   fun_br_blocks = [];
   fun_phi_nodes = [];
   fun_cur_blk_phi_nodes = [];
@@ -331,15 +331,13 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
       (* the boolean value whose truth we're branching upon *)
       let args_cond = args_of_value (operand instr 0) in
       let assume_then_spec = Spec.mk_spec mkEmpty
-	(mkEQ (args_num_0, args_cond)) Spec.ClassMap.empty in
+	(mkNEQ (args_num_0, args_cond)) Spec.ClassMap.empty in
       let assume_then = mk_node (Core.Assignment_core ([],assume_then_spec,[])) in
       let assume_else_spec = Spec.mk_spec mkEmpty
-	(mkNEQ (args_num_0, args_cond)) Spec.ClassMap.empty in
+	(mkEQ (args_num_0, args_cond)) Spec.ClassMap.empty in
       let assume_else = mk_node (Core.Assignment_core ([],assume_else_spec,[])) in
       let then_label = mk_br_block fun_env then_label_orig assume_then in
       let else_label = mk_br_block fun_env else_label_orig assume_else in
-      print_endline ("+++ "^then_label);
-      print_endline ("+++ "^else_label);
       mk_node (Core.Goto_stmt_core [then_label;else_label])
   | Opcode.Switch -> implement_this "switch instruction"
   | Opcode.IndirectBr -> implement_this "indirect branch"
@@ -497,10 +495,23 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
   (* Other Operators *)
   | Opcode.ICmp ->
     let id = value_id instr in
+    let op = match icmp_predicate instr with
+      | None -> assert false
+      | Some p -> match p with
+	  | Icmp.Eq -> "builtin_eq"
+	  | Icmp.Ne -> "builtin_neq"
+	  | Icmp.Ugt
+	  | Icmp.Sgt -> "builtin_gt"
+	  | Icmp.Uge
+	  | Icmp.Sge -> "builtin_ge"
+	  | Icmp.Ult
+	  | Icmp.Slt -> "builtin_lt"
+	  | Icmp.Ule
+	  | Icmp.Sle -> "builtin_le" in
     let v1 = args_of_value (operand instr 0) in
     let v2 = args_of_value (operand instr 1) in
     let pre = mkEmpty in
-    let post = mkEQ (ret_arg, Arg_op("builtin_eq", [v1; v2])) in
+    let post = mkEQ (ret_arg, Arg_op(op, [v1; v2])) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
   | Opcode.FCmp -> implement_this "fcmp instr"
@@ -571,7 +582,7 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
   | Opcode.LandingPad -> mk_node Core.Nop_stmt_core
   | Opcode.Unwind -> implement_this "unwind"
 
-let rec update_cfg_with_new_phi_blocks bfwd bbwd lsrc = print_endline "bite"; function
+let rec update_cfg_with_new_phi_blocks bfwd bbwd lsrc = function
   | [] -> []
   | x::[] ->
     let y = match x.skind with
@@ -635,14 +646,11 @@ let cfg_nodes_of_function f =
     fold_left_blocks (cfg_nodes_of_block fun_env) [] f in
   print_endline ("*** Found "^(string_of_int (List.length fun_env.fun_br_blocks))^" conditional branchings and "^(string_of_int (List.length fun_env.fun_phi_nodes))^" blocks with phi nodes");
   let lnsl = lab_nodes_list@fun_env.fun_br_blocks in
-  print_endline "prout";
   let phi_cfg = make_phi_blocks fun_env in
-  print_endline "caca";
   let lnsl = List.map
     (fun (l,cfg) ->
       (l, update_cfg_with_new_phi_blocks
 	fun_env.fun_br_to_dest fun_env.fun_br_to_orig l cfg)) lnsl in
-  print_endline "pipi";
   let lnsl = lnsl@phi_cfg in
   List.flatten (List.map snd lnsl)
 
