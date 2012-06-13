@@ -29,6 +29,7 @@ type verify_env = {
   mutable result: bool; (** result of the proof. Yes or No only... *)
 }
 
+(** global environment *)
 let env = {
   context = global_context ();
   target = Llvm_target.TargetData.create ""; (* has to be filled with a legal value later *)
@@ -265,8 +266,41 @@ let ppred_of_gep x t ptr lidx =
   let jump_chain = jump_chain_of_lidx lidx in
   mkPPred ("eltptr", [x; args_of_type t; ptr; jump_chain])
 
+type fun_env = {
+  mutable fun_blk_label: string;
+  mutable fun_br_to_orig: string -> string;
+  mutable fun_br_to_dest: string -> string -> string;
+  mutable fun_br_blocks: (string * cfg_node list) list;
+  mutable fun_phi_nodes: (string * (llbasicblock * (string list * llvalue list)) list) list;
+  mutable fun_cur_blk_phi_nodes: (llbasicblock * (string list * llvalue list)) list;
+}
+
+let empty_fun_env = {
+  fun_blk_label = "";
+  fun_br_to_orig = (fun br -> br);
+  fun_br_to_dest = (fun br dest -> print_endline "youpla"; dest);
+  fun_br_blocks = [];
+  fun_phi_nodes = [];
+  fun_cur_blk_phi_nodes = [];
+}
+
+let mk_br_block fun_env br_label_orig br_assume =
+  let lab_src = fun_env.fun_blk_label in
+  let lab_br = lab_src^"_br_"^br_label_orig in
+  let label_node = mk_node (Core.Label_stmt_core lab_br) in
+  let branch = mk_node (Core.Goto_stmt_core [br_label_orig]) in
+  let br_blocks = fun_env.fun_br_blocks in
+  fun_env.fun_br_blocks <-
+    (lab_br, [label_node; br_assume; branch])::br_blocks;
+  let f = fun_env.fun_br_to_orig in
+  fun_env.fun_br_to_orig <-
+    (fun l ->
+      if l = lab_br then lab_src
+      else f l);
+  lab_br
+
 (** compile an llvm instruction into a CoreStar program *) 
-let cfg_node_of_instr instr = match instr_opcode instr with
+let cfg_node_of_instr fun_env instr = match instr_opcode instr with
   (* Terminator Instructions *)
   | Opcode.Ret ->
     if num_operands instr != 0 then
@@ -286,9 +320,26 @@ let cfg_node_of_instr instr = match instr_opcode instr with
       mk_node (Core.Goto_stmt_core [next_label])
     else
       (* Conditional branch instr, num_operands instr = 3 *)
-      let then_label = label_of_bblock (block_of_value (operand instr 1)) in
-      let else_label = label_of_bblock (block_of_value (operand instr 2)) in
-      (* TODO: implement cond *)
+      (* Since CoreStar doesn't know about conditionals, only about
+	 non-deterministic choice, we have to create new blocks and
+	 place them between the current block and the branch targets
+	 (using the fun_env environment to remember the
+	 indirection). These blocks will assume "cond" and "not cond"
+	 respectively, thus simulating a conditional branching. *)
+      let then_label_orig = label_of_bblock (block_of_value (operand instr 1)) in
+      let else_label_orig = label_of_bblock (block_of_value (operand instr 2)) in
+      (* the boolean value whose truth we're branching upon *)
+      let args_cond = args_of_value (operand instr 0) in
+      let assume_then_spec = Spec.mk_spec mkEmpty
+	(mkEQ (args_num_0, args_cond)) Spec.ClassMap.empty in
+      let assume_then = mk_node (Core.Assignment_core ([],assume_then_spec,[])) in
+      let assume_else_spec = Spec.mk_spec mkEmpty
+	(mkNEQ (args_num_0, args_cond)) Spec.ClassMap.empty in
+      let assume_else = mk_node (Core.Assignment_core ([],assume_else_spec,[])) in
+      let then_label = mk_br_block fun_env then_label_orig assume_then in
+      let else_label = mk_br_block fun_env else_label_orig assume_else in
+      print_endline ("+++ "^then_label);
+      print_endline ("+++ "^else_label);
       mk_node (Core.Goto_stmt_core [then_label;else_label])
   | Opcode.Switch -> implement_this "switch instruction"
   | Opcode.IndirectBr -> implement_this "indirect branch"
@@ -453,7 +504,29 @@ let cfg_node_of_instr instr = match instr_opcode instr with
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
   | Opcode.FCmp -> implement_this "fcmp instr"
-  | Opcode.PHI -> implement_this "phi instr"
+  | Opcode.PHI ->
+    (* We cannot treat phi nodes directly. Instead, we remember the
+       phi nodes of the current block to execute them all the
+       assignments that correspond to the same predecessor block at
+       once (as they should according to their semantics) in separate
+       blocks. We also record the extra indirection between
+       predecessors of the current block and this block. Once all the
+       blocks have been translated, we will update the inter-blocks
+       links to go through the phi nodes. See the
+       "update_cfg_with_new_phi_blocks" function. *)
+    let x = value_id instr in
+    let rec dispatch groups = function
+      | [] -> groups
+      | (v,b)::tl ->
+	try
+	  let (lx,lv) = List.assoc b groups in
+	  let groups = (b,(x::lx,v::lv))::(List.remove_assoc b groups) in
+	  dispatch groups tl
+	with Not_found ->
+	  dispatch ((b,([x],[v]))::groups) tl in
+    let cur_phi_nodes = fun_env.fun_cur_blk_phi_nodes in
+    fun_env.fun_cur_blk_phi_nodes <- dispatch cur_phi_nodes (incoming instr);
+    mk_node Core.Nop_stmt_core
   | Opcode.Call -> (
     try
       let id = value_id instr in
@@ -498,21 +571,90 @@ let cfg_node_of_instr instr = match instr_opcode instr with
   | Opcode.LandingPad -> mk_node Core.Nop_stmt_core
   | Opcode.Unwind -> implement_this "unwind"
 
-let cfg_nodes_of_block b =
+let rec update_cfg_with_new_phi_blocks bfwd bbwd lsrc = print_endline "bite"; function
+  | [] -> []
+  | x::[] ->
+    let y = match x.skind with
+      | Core.Goto_stmt_core [l] ->
+	print_endline ("prout "^lsrc^" -> "^l);
+	mk_node (Core.Goto_stmt_core [bfwd (bbwd lsrc) l])
+      | _ -> x in
+    y::[]
+  | x::y::tl -> x::(update_cfg_with_new_phi_blocks bfwd bbwd lsrc (y::tl))
+
+let make_phi_blocks fun_env =
+  let blocks_of_blk_phi_nodes (lab_target,b) =
+    let block_of_group (b,(lx,lv)) =
+      let lab_src = value_id (value_of_block b) in
+      let lab = lab_src^"_to_"^lab_target in
+      let label_node = mk_node (Core.Label_stmt_core lab) in
+      let equalities =
+	fst (List.fold_left
+	       (fun (f,i) _ ->
+		 let reti = Vars.concretep_str ("$ret_v"^(string_of_int (i+1))) in
+		 let parami = Vars.concretep_str (Symexec.parameter i) in
+		 (pconjunction f (mkEQ (Arg_var(reti), Arg_var(parami))), i+1))
+	       (mkEmpty,0) lx) in
+      let spec = Spec.mk_spec mkEmpty equalities Spec.ClassMap.empty in
+      let xs = List.map Vars.concretep_str lx in
+      let vs = List.map args_of_value lv in
+      let assign = mk_node (Core.Assignment_core (xs,spec,vs)) in
+      let branch = mk_node (Core.Goto_stmt_core [lab_target]) in
+      (lab_src, (lab,[label_node; assign; branch])) in
+    let blocks = List.map block_of_group b in
+    let f = fun_env.fun_br_to_dest in
+    fun_env.fun_br_to_dest <- (fun lsrc ldest ->
+      if (ldest = lab_target) && (List.mem_assoc lsrc blocks) then (
+	print_endline ("updating "^lsrc^" -> "^ldest^" to "^lsrc^" -> "^(fst (List.assoc lsrc blocks)));
+	fst (List.assoc lsrc blocks))
+      else (print_endline ("keeping "^lsrc^" -> "^ldest); f lsrc ldest));
+    List.map snd blocks in
+  List.flatten (List.map blocks_of_blk_phi_nodes fun_env.fun_phi_nodes)
+
+let cfg_nodes_of_block fun_env lnsl b =
   (* insert label command from the block's label l, followed by the sequence
      of commands of the block *)
   let l = value_id (value_of_block b) in
-  let label_node = if l = "" then mk_node Core.Nop_stmt_core
-    else mk_node (Core.Label_stmt_core l) in
-  let body_nodes = fold_left_instrs (fun cfgs i -> cfgs@[cfg_node_of_instr i]) [] b in
-  label_node::body_nodes
+  print_endline ("Processing block "^l);
+  fun_env.fun_blk_label <- l;
+  fun_env.fun_cur_blk_phi_nodes <- [];
+  let label_node = mk_node (Core.Label_stmt_core l) in
+  let body_nodes = fold_left_instrs
+    (fun cfgs i -> cfgs@[cfg_node_of_instr fun_env i]) [] b in
+  if fun_env.fun_cur_blk_phi_nodes <> [] then (
+    let phi_nodes = fun_env.fun_phi_nodes in
+    fun_env.fun_phi_nodes <- (l, fun_env.fun_cur_blk_phi_nodes)::phi_nodes;);
+  lnsl@[(l,label_node::body_nodes)]
+
+let cfg_nodes_of_function f =
+  let fun_env = empty_fun_env in
+  (* it would be more efficient to fold_right here, but then the
+     identifiers we generate would be in reversed order, which is
+     confusing in output messages *)
+  let lab_nodes_list =
+    fold_left_blocks (cfg_nodes_of_block fun_env) [] f in
+  print_endline ("*** Found "^(string_of_int (List.length fun_env.fun_br_blocks))^" conditional branchings and "^(string_of_int (List.length fun_env.fun_phi_nodes))^" blocks with phi nodes");
+  let lnsl = lab_nodes_list@fun_env.fun_br_blocks in
+  print_endline "prout";
+  let phi_cfg = make_phi_blocks fun_env in
+  print_endline "caca";
+  let lnsl = List.map
+    (fun (l,cfg) ->
+      (l, update_cfg_with_new_phi_blocks
+	fun_env.fun_br_to_dest fun_env.fun_br_to_orig l cfg)) lnsl in
+  print_endline "pipi";
+  let lnsl = lnsl@phi_cfg in
+  List.flatten (List.map snd lnsl)
 
 let verify_function f =
   let id = value_id f in
   if not (is_declaration f) then (
     print_endline ("verifying "^id);
-    let cfg_nodes = fold_left_blocks (fun ns b -> ns@(cfg_nodes_of_block b)) [] f in
+    let cfg_nodes = cfg_nodes_of_function f in
     let spec = spec_of_fun_id id in
+    stmts_to_cfg cfg_nodes;
+    print_core "totobite" id cfg_nodes;
+    print_icfg_dotty [(cfg_nodes, id)] "totobite";
     env.result <- env.result &&
       (Symexec.verify id cfg_nodes spec env.logic env.abs_rules)
   )
