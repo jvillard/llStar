@@ -1,0 +1,181 @@
+/***************************************
+ * Singly-linked list segments (lseg). *
+ ***************************************/
+
+/**
+ * Empty list segment.
+ */
+equiv lseg_empty:
+  lseg(?i, ?i) <=> ?i = ?i
+
+/*
+  Contradiction (lseg_ne describes non-empty list segment).
+*/
+equiv lseg_ne_empty1:
+  lseg_ne(?i, ?j) => ?i = ?j <=> False
+
+/*
+  Contradiction (lseg_ne describes non-empty list segement).
+*/
+equiv lseg_ne_empty2:
+  lseg_ne(?i, ?i) <=> False
+
+/*
+  Contradiction.
+    A heap cannot split into two part containing the same field.
+*/
+equiv lseg_ne_lseg_ne_contradiction1:
+  lseg_ne(?i, ?j) * lseg_ne(?i, ?k) <=> False
+
+equiv lseg_lseg_contradiction2:
+      lseg_ne(?i, ?m) * lseg_ne(?j, ?n)
+  =>  ?i = ?j <=> False
+
+/*
+  Equivalence.
+   All non-empty "lseg" list segements are converted to "lseg_ne" list segments.
+*/
+equiv lseg_non_empty1:
+  ?i != ?j => lseg(?i, ?j) <=> lseg_ne(?i, ?j)
+
+/*
+  Substraction rules for list segments.
+*/
+rule lseg_app_rollup2:
+  | lseg_ne(?i, ?j) * lseg_ne(?j, ?k)
+    |- lseg_ne(?i, ?k)
+if
+  lseg_ne(?i, ?j) * lseg_ne(?j, ?k) |
+   |- 
+
+rule lseg_app_rollup3:
+  | lseg_ne(?i, ?j) * lseg_ne(?j, ?l) * lseg_ne(?l, ?k)
+    |- lseg_ne(?i, ?k)
+if
+  lseg_ne(?i, ?j) * lseg_ne(?j, ?l) * lseg_ne(?l, ?k) |
+   |- 
+
+rule lseg_app_rollup_trans:
+  | lseg_ne(?i, ?j) * lseg_ne(?j, ?l) * lseg_ne(?m, ?k)
+    |- lseg_ne(?i, ?k)
+if
+  lseg_ne(?i, ?l) | lseg_ne(?m, ?k)
+   |- lseg_ne(?l,?k)
+
+
+/*
+  Equality of non-empty list segments.
+
+  If non-empty list segments with the same first node appear on both sides of
+  the entailment, we split the RHS segment into tail and head according to the
+  inductive case of the "lseg" definition.
+*/
+rule lseg_cons_expand:
+  | lseg_ne(?i, ?j)
+    |- lseg_ne(?i, ?j2)
+if
+  | lseg_ne(?i, ?j)
+    |- node(?i, _n) * lseg(_n, ?j2)
+
+/*
+  Equality of list segment nodes.
+
+  If the RHS contains a node of a LHS list segment, we expand the node on the
+  RHS into its constituent fields. Afterwards the rules lseg_cons_field_lookup
+  can be applied.
+*/
+rule lseg_node_lookup_first:
+  | lseg_ne(?i, ?j) |- node(?i, ?n)
+if
+  | lseg_ne(?i, ?j)
+    |- pointer(?i, numeric_const("8"), _v)
+    * pointer(builtin_plus(?i,numeric_const("8")),numeric_const("8"),?n)
+
+
+/*
+  If we have a field on the RHS of the first node in a non_empty list segment
+  on the LHS, we expand the list segment on the LHS.
+*/
+rule lseg_cons_field_lookup:
+  | lseg_ne(?i, ?j) |- pointer(builtin_plus(?i,numeric_const("8")), ?s, ?v)
+if
+  | lseg(_k, ?j) * node(?i, _k)
+    |- pointer(builtin_plus(?i,numeric_const("8")), ?s, ?v)
+
+/*
+  Expand node.
+
+  If we have a node predicate on the LHS of an implication and the "next"
+  field of the node object appears on the RHS, then we rewrite the node in terms
+  of its constituent fields.
+*/
+rule node_lookup_next:
+  | node(?i, ?n1)
+      |- pointer(builtin_plus(?i,numeric_const("8")),numeric_const("8"),?n2)
+if
+ pointer(builtin_plus(?i,numeric_const("8")),numeric_const("8"),?n1) |
+ pointer(?i,numeric_const("8"),_v)
+ |- ?n1 = ?n2
+
+/** linked list nodes (node). **/
+
+/*
+  Contradiction.
+
+  A node object cannot be null.
+*/
+equiv node_not_nil:
+  node(nil(), ?n) <=>  False
+
+/*
+  Contradiction.
+
+  If two node with the same name exit (on the same side on the entailment),
+  then we have a contradiction (see field_field_contradiction1 for comparison).
+*/
+equiv node_not_eq:
+  node(?x, ?n) * node(?x, ?m) <=> False
+
+/*
+  Collapse to node.
+
+  If all fields of a node object are present on one side, we collapse them to
+  the node predicate.
+*/
+rule node_rollup_left:
+ |pointer(?i,numeric_const("8"),_v) *
+ pointer(builtin_plus(?i,numeric_const("8")),numeric_const("8"),?n)
+ |- 
+if
+  | node(?i, ?n) |-
+
+/*
+  Convert all nodes on LHS to singleton list segments.
+*/
+rule lseg_node_rollup_left:
+  | node(?i, ?n) |- 
+if
+  | lseg_ne(?i, ?n) |- 
+
+/*
+  Equivalence.
+
+  A list segment must be either empty or non-empty.
+*/
+equiv lseg_disj:
+      lseg(?i, ?j)
+  <=> ?i = ?j
+        || lseg_ne(?i, ?j)
+
+rule node_expand_right:
+  | node(?i, ?j1) |- node(?i, ?j2)
+if
+  | node(?i, ?j1)
+    |- pointer(?i,numeric_const("8"),_v) *
+ pointer(builtin_plus(?i,numeric_const("8")),numeric_const("8"),?j2)
+
+rule node_rollup_right:
+  | |- pointer(?i,numeric_const("8"),_v) *
+ pointer(builtin_plus(?i,numeric_const("8")),numeric_const("8"),?j)
+if
+  | |- node(?i, ?j)
