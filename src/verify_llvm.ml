@@ -637,13 +637,22 @@ let verify_module m =
   iter_globals env_add_gvar m;
   iter_functions verify_function m
 
+let mk_simple_seq_rule name (pre_lhs,pre_rhs) (post_lhs, post_rhs) =
+  let conclusion = (mkEmpty, post_lhs, post_rhs, mkEmpty) in
+  let premise = (mkEmpty, pre_lhs, pre_rhs, mkEmpty) in
+  (conclusion, [[premise]], name, ([], []), [])
+
 let gen_seq_rules_of_equiv name (equiv_left, equiv_right) =
-  let conclusion_left = (mkEmpty, equiv_left, mkEmpty, mkEmpty) in
-  let premise_left = (mkEmpty, equiv_right, mkEmpty, mkEmpty) in
-  let conclusion_right = (mkEmpty, mkEmpty, equiv_left, mkEmpty) in
-  let premise_right = (mkEmpty, mkEmpty, equiv_right, mkEmpty) in
-  (conclusion_left, [[premise_left]], name^"_left", ([], []), [])::
-  (conclusion_right, [[premise_right]], name^"_right", ([], []), [])::[]
+  mk_simple_seq_rule (name^"_left") (equiv_right, mkEmpty) (equiv_left, mkEmpty)::
+  mk_simple_seq_rule (name^"_right") (mkEmpty, equiv_right) (mkEmpty, equiv_left)::[]
+
+(** dumps logic rules into a (hardcoded) file *)
+let dump_logic_rules rs =
+  let file = Sys.getcwd() ^  "/.logic_rules.txt" in
+  let rules_out = open_out file in
+  let rules_fmt = Format.formatter_of_out_channel rules_out in
+  List.iter (pp_sequent_rule rules_fmt) rs;
+  close_out rules_out
 
 let add_sizeof_logic_of_type t =
   let args_t = args_of_type t in
@@ -688,7 +697,127 @@ let add_struct_logic_of_type t = match struct_name t with
 	   (Array.mapi subelt_eltptr_rules (struct_element_types t))) in
     env_add_seq_rules eltptr_rules
 
-let add_list_logic_of_type t = ()
+
+let add_list_logic_of_type t name rec_field =
+  (** the physical offset inside the struct, as a logical expression *)
+  let offset_of_field i =
+    let offset = Llvm_target.offset_of_element env.target t i in
+    Arg_op("numeric_const", [Arg_string(Int64.to_string offset)]) in
+
+  let args_sizeof_field i =
+    args_sizeof (Array.get (struct_element_types t) i) in
+
+  (* a few definitions to make the rule definitions more readable *)
+  let mk_rec_field root value =
+    if rec_field = 0 then
+      mkPointer root (args_sizeof_field rec_field) value
+    else
+      let offset = Arg_op ("builtin_plus", [root; offset_of_field rec_field]) in
+      mkPointer offset (args_sizeof_field rec_field) value in
+
+  let mk_field_pointer i root value =
+    if i = 0 then
+      mkPointer root (args_sizeof_field i) value
+    else
+      let offset = Arg_op ("builtin_plus", [root; offset_of_field i]) in
+      mkPointer offset (args_sizeof_field i) value in
+
+  let fresh_field_values =
+    Array.map (fun _ -> Arg_var (Vars.freshe ())) (struct_element_types t) in
+
+  let mk_unfolded_struct root fw_value =
+    let mk_field i subelt_t =
+      let ptr =
+	if i = 0 then root
+	else Arg_op ("builtin_plus", [root; offset_of_field i]) in
+      let value =
+	if i = rec_field then fw_value
+	else Array.get fresh_field_values i in
+      mkPointer ptr (args_sizeof subelt_t) value in
+    let pointers = Array.mapi mk_field (struct_element_types t) in
+    Array.fold_left (fun f p -> mkStar f p) mkEmpty pointers in
+
+  let mk_lseg b e = mkSPred ("lseg", [b;e]) in
+  let mk_lseg_ne b e = mkSPred ("lseg_ne", [b;e]) in
+  let mk_node ptr value = mkSPred ("node", [ptr; value]) in
+
+  let i_var = Arg_var (Vars.AnyVar (0, "i")) in
+  let j_var = Arg_var (Vars.AnyVar (0, "j")) in
+  let n_var = Arg_var (Vars.AnyVar (0, "n")) in
+  let n2_var = Arg_var (Vars.AnyVar (0, "n2")) in
+
+  (** Expand node.
+
+    If we have a node predicate on the LHS of an implication and one of the
+    fields of the node object appears on the RHS, then we rewrite the node in terms
+    of its constituent fields. *)
+  let mk_expand_node_rule i subelt_type =
+    if i = rec_field then
+      (mk_simple_seq_rule "node_lookup_next"
+	 (mk_unfolded_struct i_var n_var, mk_rec_field i_var n2_var)
+	 (mk_node i_var n_var, mk_rec_field i_var n2_var))
+    else
+      (mk_simple_seq_rule ("node_lookup_field_"^(string_of_int i))
+	 (mk_unfolded_struct i_var n_var, mk_field_pointer i i_var n2_var)
+	 (mk_node i_var n_var, mk_field_pointer i i_var n2_var)) in
+
+  let expand_node_rules =
+    let rules_array = Array.mapi mk_expand_node_rule (struct_element_types t) in
+    Array.to_list rules_array in
+
+  (** the list of rules that need to know about the structure of the nodes
+    * the ones that don't are included in the distribution instead of generated
+    * see logic/lseg.logic *)
+  let rules =
+    (* Equality of list segment nodes.
+
+       If the RHS contains a node of a LHS list segment, we expand the node on the
+       RHS into its constituent fields. Afterwards the rules lseg_cons_field_lookup
+       can be applied. *)
+    mk_simple_seq_rule "lseg_node_lookup_first"
+      (mk_lseg_ne i_var j_var, mk_unfolded_struct i_var n_var)
+      (mk_lseg_ne i_var j_var, mk_node i_var n_var)::
+    (* If we have a field on the RHS of the first node in a non_empty list segment
+       on the LHS, we expand the list segment on the LHS. *)
+    (let v = Arg_var (Vars.freshe ()) in
+     mk_simple_seq_rule "lseg_cons_field_lookup"
+       (mkStar (mk_lseg v j_var) (mk_node i_var v), mk_rec_field i_var n_var)
+       (mk_lseg_ne i_var j_var, mk_rec_field i_var n_var))::
+    expand_node_rules@
+    (* Collapse to node.
+
+       If all fields of a node object are present on the lhs, we collapse them to
+       the node predicate. *)
+    (mk_simple_seq_rule "node_rollup_left"
+       (mk_node i_var n_var, mkEmpty)
+       (mk_unfolded_struct i_var n_var, mkEmpty))::
+    (* Convert all nodes on LHS to singleton list segments. *)
+    (mk_simple_seq_rule "lseg_node_rollup_left"
+       (mk_lseg_ne i_var n_var, mkEmpty)
+       (mk_node i_var n_var, mkEmpty))::
+    (mk_simple_seq_rule "node_expand_right"
+       (mk_node i_var n_var, mk_unfolded_struct i_var n2_var)
+       (mk_node i_var n_var, mk_node i_var n2_var))::
+    (mk_simple_seq_rule "node_rollup_right"
+       (mkEmpty, mk_node i_var n_var)
+       (mkEmpty, mk_unfolded_struct i_var n_var))::[] in
+  print_endline (string_of_int (List.length rules));
+  dump_logic_rules rules;
+  env_add_seq_rules rules
+    
+let add_list_logic_of_type t = match struct_name t with
+  | None -> (* recursive structs are necessarily named *) ()
+  | Some name ->
+    (* let's find the first recursive field, which we assume is the
+       forward pointer of the linked list *)
+    let numed_types = Array.mapi (fun i tt -> (i,tt)) (struct_element_types t) in
+    let subelt_types = Array.to_list numed_types in
+    try
+      let points_to_struct typ = pointer_type t = typ in
+      let (rec_field,_) =
+	List.find (fun (i,subelt_t) -> points_to_struct subelt_t) subelt_types in
+      add_list_logic_of_type t name rec_field
+    with Not_found -> ()
 
 (************** Collect all the types in a module *)
 
@@ -764,15 +893,7 @@ let add_logic_of_module m =
   List.iter add_sizeof_logic_of_type typs;
   let typs = List.filter filter_struct typs in
   List.iter add_struct_logic_of_type typs;
-  if !Lstar_config.gen_list_abstractions then
-    List.iter add_list_logic_of_type typs
-
-(** dumps the generated fold/unfold logic into a file *)
-let dump_logic_rules rs =
-  let file = Sys.getcwd() ^  "/.logic_rules.txt" in
-  let rules_out = open_out file in
-  let rules_fmt = Format.formatter_of_out_channel rules_out in
-  List.iter (pp_sequent_rule rules_fmt) rs
+  List.iter add_list_logic_of_type typs
 
 let go logic abs_rules spec_list m =
   print_endline "It is on!";
