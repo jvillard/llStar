@@ -228,34 +228,6 @@ and args_of_composite_value aggr v =
     else [] in
   Arg_op(aggr, args_of_ops 0)
 
-
-(** compute the predicate describing the shape of an object of type t pointed to by p in memory *)
-let rec spred_of_type ptr t = match (classify_type t) with
-  | Void
-  | Float
-  | Half
-  | Double
-  | X86fp80
-  | Fp128
-  | Ppc_fp128
-  | Label
-  | Integer -> mkEmpty
-  | TypeKind.Function -> (* silly name conflict with ValueKind *)
-    implement_this "SPred of function type"
-  | Struct
-  | Pointer ->
-    let ptr_t = args_of_type t in
-    let e = Arg_var (Vars.freshe ()) in
-    mkPointer ptr ptr_t e
-  | Array ->
-    let ptr_t = args_of_type t in
-    let size = Arg_op ("numeric_const", [Arg_string (string_of_int (array_length t))]) in
-    let e = Arg_var (Vars.freshe ()) in
-    let start = Arg_op ("numeric_const", [Arg_string "0"]) in
-    mkArray ptr start size size ptr_t e
-  | Vector
-  | Metadata -> mkEmpty
-
 (** compute the pure predicate corresponding to a getelementpointer instruction *)
 let ppred_of_gep x t ptr lidx =
   let rec jump_chain_of_lidx = function
