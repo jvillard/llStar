@@ -9,10 +9,10 @@ f:
    {$ret_v1 = _a}
 
 setint:
-  {pointer(i,pointer_type(integer_type()),_v)
-      * pointer(_v,integer_type(),_w)}
-  {pointer(i,pointer_type(integer_type()),_v)
-      * pointer(_v,integer_type(),numeric_const("0"))}
+  {pointer(i,numeric_const("8"),_v)
+      * pointer(_v,numeric_const("8"),_w)}
+  {pointer(i,numeric_const("8"),_v)
+      * pointer(_v,numeric_const("8"),numeric_const("0"))}
 
 yay_int:
   {pointer(s,pointer_type(named_type("struct.ij")),_v)
