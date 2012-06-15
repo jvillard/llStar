@@ -299,6 +299,10 @@ let mk_br_block fun_env br_label_orig br_assume =
       else f l);
   lab_br
 
+let args_sizeof t =
+  let size64 = Llvm_target.store_size env.target t in
+  Arg_op("numeric_const", [Arg_string(Int64.to_string size64)])
+
 (** compile an llvm instruction into a CoreStar program *) 
 let cfg_node_of_instr fun_env instr = match instr_opcode instr with
   (* Terminator Instructions *)
@@ -308,8 +312,8 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
       let p0 = Arg_var(Vars.concretep_str ("@parameter"^(string_of_int 0)^":")) in
       let post = mkEQ(ret_arg, p0) in
       let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
-      mk_node (Core.Assignment_core  ([], spec, [args_of_value ret_val]))
-    else mk_node (Core.End)
+      [mk_node (Core.Assignment_core  ([], spec, [args_of_value ret_val])); mk_node Core.End]
+    else [mk_node Core.End]
   | Opcode.Br ->
     (* this is how you get a block's label using the ocaml bindings... *)
     let label_of_bblock b =
@@ -317,7 +321,7 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
     if num_operands instr = 1 then
       (* Unconditional branch instr *)
       let next_label = label_of_bblock (block_of_value (operand instr 0)) in
-      mk_node (Core.Goto_stmt_core [next_label])
+      [mk_node (Core.Goto_stmt_core [next_label])]
     else
       (* Conditional branch instr, num_operands instr = 3 *)
       (* Since CoreStar doesn't know about conditionals, only about
@@ -338,7 +342,7 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
       let assume_else = mk_node (Core.Assignment_core ([],assume_else_spec,[])) in
       let then_label = mk_br_block fun_env then_label_orig assume_then in
       let else_label = mk_br_block fun_env else_label_orig assume_else in
-      mk_node (Core.Goto_stmt_core [then_label;else_label])
+      [mk_node (Core.Goto_stmt_core [then_label;else_label])]
   | Opcode.Switch -> implement_this "switch instruction"
   | Opcode.IndirectBr -> implement_this "indirect branch"
   | Opcode.Invoke -> implement_this "Invoke block terminator"
@@ -346,7 +350,7 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
   | Opcode.Unreachable ->
     (* if llvm thinks it's unreachable, let's tell hopstar by assuming False *)
     let spec = Spec.mk_spec [] mkFalse Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([],spec,[]))
+    [mk_node (Core.Assignment_core ([],spec,[]))]
   | Opcode.Invalid -> failwith "\"Invalid\" instruction"
   (* Standard Binary Operators *)
   | Opcode.Add
@@ -357,7 +361,7 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
     let pre = mkEmpty in
     let post = mkEQ (ret_arg, Arg_op("builtin_plus", [v1; v2])) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
+    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
   | Opcode.Sub
   | Opcode.FSub ->
     let id = value_id instr in
@@ -366,7 +370,7 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
     let pre = mkEmpty in
     let post = mkEQ (ret_arg, Arg_op("builtin_minus", [v1; v2])) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
+    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
   | Opcode.Mul
   | Opcode.FMul ->
     let id = value_id instr in
@@ -375,7 +379,7 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
     let pre = mkEmpty in
     let post = mkEQ (ret_arg, Arg_op("builtin_mult", [v1; v2])) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
+    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
   | Opcode.UDiv
   | Opcode.SDiv
   | Opcode.FDiv ->
@@ -385,7 +389,7 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
     let pre = mkEmpty in
     let post = mkEQ (ret_arg, Arg_op("builtin_div", [v1; v2])) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
+    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
   | Opcode.URem
   | Opcode.SRem
   | Opcode.FRem -> implement_this "?rem instr"
@@ -399,44 +403,42 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
   (* Memory Operators *)
   | Opcode.Alloca ->
     let id = value_id instr in
-    let t = type_of instr in
+    let ptr_t = type_of instr in
+    let sz = args_sizeof ptr_t in
     let x = Arg_var (Vars.concretep_str id) in
     let e = Arg_var (Vars.freshe ()) in
-    let ptr_t = args_of_type t in
-    let pointed_type = element_type t in
-    let alloca = mkSPred ("alloca", [x; ptr_t]) in
-    let pointer = mkPointer x ptr_t e in
-    let post = mkStar alloca (mkStar pointer (spred_of_type e pointed_type)) in
+    let alloca = mkSPred ("alloca", [x; sz]) in
+    let pointer = mkPointer x sz e in
+    let post = mkStar alloca pointer in
     let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([], spec, []))
+    [mk_node (Core.Assignment_core ([], spec, []))]
   | Opcode.Load ->
     let id = value_id instr in
     (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00225 *)
     let ptr_v = operand instr 0 in
+    let ptr_t = type_of ptr_v in
     let e = Arg_var (Vars.freshe ()) in
     let ptr = args_of_value ptr_v in
-    let ptr_t = args_of_type (type_of ptr_v) in
-    let pointer = mkPointer ptr ptr_t e in
+    let pointer = mkPointer ptr (args_sizeof ptr_t) e in
     let pre = pointer in
     let post = pconjunction (mkEQ(ret_arg, e)) pointer in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([Vars.concretep_str id], spec, []))
+    [mk_node (Core.Assignment_core ([Vars.concretep_str id], spec, []))]
   | Opcode.Store ->
     (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00343 *)
     let value = operand instr 0 in
     (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00346 *)
     let ptr_v = operand instr 1 in
-    let t = type_of ptr_v in
+    let ptr_t = type_of ptr_v in
     let ptr = args_of_value ptr_v in
     let e = Arg_var (Vars.freshe ()) in
     let v = args_of_value value in
-    let ptr_t = args_of_type t in
-    let pointer_pre = mkPointer ptr ptr_t e in
-    let pointer_post = mkPointer ptr ptr_t v in
+    let pointer_pre = mkPointer ptr (args_sizeof ptr_t) e in
+    let pointer_post = mkPointer ptr (args_sizeof ptr_t) v in
     let pre = pointer_pre in
     let post = pointer_post in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([], spec, []))
+    [mk_node (Core.Assignment_core ([], spec, []))]
   | Opcode.GetElementPtr ->
     let id = value_id instr in
     (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00788 *)
@@ -449,31 +451,18 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
     let jump_indices = jlist_from_op 1 in
     let post = ppred_of_gep ret_arg (type_of value) (args_of_value value) jump_indices  in
     let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
+    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
   (* Cast Operators *)
-  | Opcode.BitCast when integer_bitwidth (element_type (type_of (operand instr 0))) = 8 ->
-    (* hack to handle malloc + bitcast. Let's hope for the best... *)
-    (* TODO: really, we should identify mallocs with more accuracy
-       (LLVM knows about them, but then translates them away...) *)
-    (* TODO: only works when the type is sized. Should have a
-       best-scenario (ever so slightly unsound) heuristic for when it
-       isn't (i.e.: assume the malloc blob is of the right size. *)
+  | Opcode.BitCast ->
+    (* we just assign the old value to the new variable, since we
+       leave type checking in the hands of llvm *)
     let id = value_id instr in
     let value = operand instr 0 in
-    let new_t = element_type (type_of instr) in
-    let s = Llvm_target.store_size env.target new_t in
-    let size_of_new_t = Arg_op("numeric_const", [Arg_string(Int64.to_string s)]) in
     let v = args_of_value value in
-    let e = Arg_var (Vars.freshe ()) in
-    let ptr_new_t = args_of_type (type_of instr) in
-    let blob = mkSPred ("blob", [v;size_of_new_t]) in
-    let cast_pointer = mkPointer ret_arg ptr_new_t e in
-    let pre = blob in
-    let post = pconjunction (mkEQ(ret_arg, v))
-      (mkStar cast_pointer (spred_of_type e new_t)) in
+    let pre = mkEmpty in
+    let post = mkEQ(ret_arg, v) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
-  | Opcode.BitCast
+    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
   | Opcode.Trunc
   | Opcode.ZExt
   | Opcode.SExt
@@ -485,13 +474,14 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
   | Opcode.FPExt
   | Opcode.PtrToInt
   | Opcode.IntToPtr ->
+    (* TODO: most of these can change the actual value *)
     let id = value_id instr in
     let value = operand instr 0 in
     let v = args_of_value value in
     let pre = mkEmpty in
     let post = mkEQ(ret_arg, v) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
+    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
   (* Other Operators *)
   | Opcode.ICmp ->
     let id = value_id instr in
@@ -513,7 +503,7 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
     let pre = mkEmpty in
     let post = mkEQ (ret_arg, Arg_op(op, [v1; v2])) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))
+    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
   | Opcode.FCmp -> implement_this "fcmp instr"
   | Opcode.PHI ->
     (* We cannot treat phi nodes directly. Instead, we remember the
@@ -537,7 +527,7 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
 	  dispatch ((b,([x],[v]))::groups) tl in
     let cur_phi_nodes = fun_env.fun_cur_blk_phi_nodes in
     fun_env.fun_cur_blk_phi_nodes <- dispatch cur_phi_nodes (incoming instr);
-    mk_node Core.Nop_stmt_core
+    [mk_node Core.Nop_stmt_core]
   | Opcode.Call -> (
     try
       let id = value_id instr in
@@ -551,35 +541,35 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
 	else args_of_value (operand instr i)::(params_from_idx (i+1)) in
       let params = params_from_idx 0 in
       let call_spec = spec_of_fun_id fid in
-      mk_node (Core.Assignment_core ([Vars.concretep_str id],
-				     call_spec,
-				     params))
+      [mk_node (Core.Assignment_core ([Vars.concretep_str id],
+				      call_spec,
+				      params))]
     with MetaData _ ->
       (* a function call with meta-data in its arguments is for debug info *)
       (* and may be safely ignored *)
-      mk_node Core.Nop_stmt_core)
+      [mk_node Core.Nop_stmt_core])
   | Opcode.Select -> implement_this "select instr"
   | Opcode.UserOp1
   | Opcode.UserOp2 ->
     warn "Skipping user-defined instruction";
-    mk_node Core.Nop_stmt_core
+    [mk_node Core.Nop_stmt_core]
   | Opcode.VAArg ->
     warn "Skipping VAArg instruction";
-    mk_node Core.Nop_stmt_core
+    [mk_node Core.Nop_stmt_core]
   | Opcode.ExtractElement
   | Opcode.InsertElement
   | Opcode.ShuffleVector
   | Opcode.ExtractValue
   | Opcode.InsertValue ->
     warn "Skipping vector instruction";
-    mk_node Core.Nop_stmt_core
+    [mk_node Core.Nop_stmt_core]
   | Opcode.Fence ->
     (* this skip is safe since we assume a sequential semantics *)
-    mk_node Core.Nop_stmt_core
+    [mk_node Core.Nop_stmt_core]
   | Opcode.AtomicCmpXchg -> implement_this "atomic cmp xchange instr"
   | Opcode.AtomicRMW -> implement_this "atomic RMW instr"
   | Opcode.Resume -> implement_this "resume instr"
-  | Opcode.LandingPad -> mk_node Core.Nop_stmt_core
+  | Opcode.LandingPad -> [mk_node Core.Nop_stmt_core]
   | Opcode.Unwind -> implement_this "unwind"
 
 let rec update_cfg_with_new_phi_blocks bfwd bbwd lsrc = function
@@ -631,7 +621,7 @@ let cfg_nodes_of_block fun_env lnsl b =
   fun_env.fun_cur_blk_phi_nodes <- [];
   let label_node = mk_node (Core.Label_stmt_core l) in
   let body_nodes = fold_left_instrs
-    (fun cfgs i -> cfgs@[cfg_node_of_instr fun_env i]) [] b in
+    (fun cfgs i -> cfgs@(cfg_node_of_instr fun_env i)) [] b in
   if fun_env.fun_cur_blk_phi_nodes <> [] then (
     let phi_nodes = fun_env.fun_phi_nodes in
     fun_env.fun_phi_nodes <- (l, fun_env.fun_cur_blk_phi_nodes)::phi_nodes;);
@@ -941,9 +931,8 @@ let go logic abs_rules spec_list m =
   print_endline ("Added specs for "^string_of_int (List.length spec_list)^" functions");
   print_endline "Adding unfolding logic for named structs... ";
   let l = logic_of_module m in
-  env_add_logic_seq_rules l;
+  (*env_add_logic_seq_rules l;*)
   print_endline (string_of_int (List.length l)^" rules added");
-  dump_logic_rules l;
-  if false then List.iter (pp_sequent_rule Format.std_formatter) l;
+  (* dump_logic_rules l;*)
   verify_module m;
   env.result
