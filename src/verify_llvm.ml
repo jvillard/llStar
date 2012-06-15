@@ -637,6 +637,13 @@ let verify_module m =
   iter_globals env_add_gvar m;
   iter_functions verify_function m
 
+let gen_seq_rules_of_equiv name (equiv_left, equiv_right) =
+  let conclusion_left = (mkEmpty, equiv_left, mkEmpty, mkEmpty) in
+  let premise_left = (mkEmpty, equiv_right, mkEmpty, mkEmpty) in
+  let conclusion_right = (mkEmpty, mkEmpty, equiv_left, mkEmpty) in
+  let premise_right = (mkEmpty, mkEmpty, equiv_right, mkEmpty) in
+  (conclusion_left, [[premise_left]], name^"_left", ([], []), [])::
+  (conclusion_right, [[premise_right]], name^"_right", ([], []), [])::[]
 
 let add_sizeof_logic_of_type t =
   let args_t = args_of_type t in
@@ -651,11 +658,35 @@ let add_sizeof_logic_of_type t =
       saturate=false} in
   env_add_rw_rules [rewrite_rule]
   
-let add_struct_logic_of_type t = ()
-  (*
-  match struct_name t with
+let add_struct_logic_of_type t = match struct_name t with
   | None -> (* TODO: handle unnamed structs *) ()
-  | Some name -> () *)
+  | Some name ->
+    let args_struct_t = args_of_type t in
+    (** the physical offset inside the struct, as a logical expression *)
+    let offset_of_field i =
+      let offset = Llvm_target.offset_of_element env.target t i in
+      Arg_op("numeric_const", [Arg_string(Int64.to_string offset)]) in
+    let x_var = Arg_var (Vars.AnyVar (0, "x")) in
+    let root_var = Arg_var (Vars.AnyVar (0, "r")) in
+    let jump_var = Arg_var (Vars.AnyVar (0, "j")) in
+    let subelt_eltptr_rules i subelt_type =
+      let jump = Arg_op ("jump", [args_num i; jump_var]) in
+      let equiv_left =
+	mkPPred ("eltptr", [x_var; args_struct_t;
+			    root_var; jump]) in
+      let new_root =
+	if i = 0 then root_var
+	else Arg_op ("builtin_plus", [root_var; offset_of_field i]) in
+      let equiv_right =
+	mkPPred ("eltptr", [x_var; args_of_type subelt_type;
+			    new_root; jump_var]) in
+      gen_seq_rules_of_equiv ("eltptr_"^(string_of_lltype t))
+	(equiv_left, equiv_right) in
+    let eltptr_rules =
+      List.flatten 
+	(Array.to_list
+	   (Array.mapi subelt_eltptr_rules (struct_element_types t))) in
+    env_add_seq_rules eltptr_rules
 
 let add_list_logic_of_type t = ()
 
@@ -723,10 +754,15 @@ let filter_int_and_struct t = match classify_type t with
   | Struct -> true
   | _ -> false
 
+let filter_struct t = match classify_type t with
+  | Struct -> true
+  | _ -> false
+
 let add_logic_of_module m =
   let typs = collect_types_in_module m in
   let typs = List.filter filter_int_and_struct typs in
   List.iter add_sizeof_logic_of_type typs;
+  let typs = List.filter filter_struct typs in
   List.iter add_struct_logic_of_type typs;
   if !Lstar_config.gen_list_abstractions then
     List.iter add_list_logic_of_type typs

@@ -1,22 +1,9 @@
-equiv node_gep_ptr0:
-  !eltptr(?x, named_type("node"), ?p, jump(numeric_const("0"), ?j))
-  <=> !eltptr(?x, pointer_type(integer_type(numeric_const("32"))),
-      ?p, ?j)
-
-equiv node_gep_ptr1:
-  !eltptr(?x, named_type("node"), ?p, jump(numeric_const("1"), ?j))
-  <=> !eltptr(?x, pointer_type(named_type("node")),
-      (?p+numeric_const("8")), ?j)
-
-rewrite node_collate:
-  struct(named_type("node"), ?v0, ?v1) = collate(?v0, ?v1)
-
 rewrite range_node_full:
-  rg(nil(),numeric_const("16"),struct(named_type("node"),?v0,?v1))
+  rg(numeric_const("0"),numeric_const("16"),struct(named_type("node"),?v0,?v1))
   = struct(named_type("node"),?v0,?v1)
 
 rewrite range_node_0:
-  rg(nil(),numeric_const("8"),struct(named_type("node"),?v0,?v1))
+  rg(numeric_const("0"),numeric_const("8"),struct(named_type("node"),?v0,?v1))
   = ?v0
 
 rewrite range_node_1:
