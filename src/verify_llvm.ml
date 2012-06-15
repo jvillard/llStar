@@ -26,7 +26,7 @@ type verify_env = {
 				   functions and strive to prove for defined ones  *)
   mutable gvars: (string * args * args) list; (** global variable: id * type * value *)
   mutable idMap: string IdMap.t; (** maps LLVM nameless values to identifiers *)
-  mutable result: bool; (** result of the proof. Yes or No only... *)
+  mutable verif_result: bool; (** result of the proof. Yes or No only... *)
 }
 
 (** global environment *)
@@ -38,7 +38,7 @@ let env = {
   specs = [];
   gvars = [];
   idMap = IdMap.empty;
-  result = true;
+  verif_result = true;
 }
 
 let warn s =
@@ -74,8 +74,11 @@ let mkArray ptr start_idx end_idx size array_t v =
 
 let mkEmptySpec = Spec.mk_spec mkEmpty mkEmpty Spec.ClassMap.empty
 
-let env_add_logic_seq_rules sr  =
+let env_add_seq_rules sr  =
   env.logic <- { env.logic with seq_rules = env.logic.seq_rules@sr }
+
+let env_add_rw_rules rwr  =
+  env.logic <- { env.logic with rw_rules = env.logic.rw_rules@rwr }
 
 (** We want fewer of these *)
 let implement_this s = failwith ("Not implemented: "^s)
@@ -100,7 +103,7 @@ let rec args_of_type t = match (classify_type t) with
   | X86fp80
   | Fp128
   | Ppc_fp128 -> Arg_op("float_type", [])
-  | Label -> Arg_op("label type", [])
+  | Label -> Arg_op("label_type", [])
   | Integer -> Arg_op("integer_type", [args_num (integer_bitwidth t)])
   | TypeKind.Function -> (* silly name clash *)
     let ret_type = return_type t in
@@ -549,7 +552,6 @@ let rec update_cfg_with_new_phi_blocks bfwd bbwd lsrc = function
   | x::[] ->
     let y = match x.skind with
       | Core.Goto_stmt_core [l] ->
-	print_endline ("prout "^lsrc^" -> "^l);
 	mk_node (Core.Goto_stmt_core [bfwd (bbwd lsrc) l])
       | _ -> x in
     y::[]
@@ -577,10 +579,9 @@ let make_phi_blocks fun_env =
     let blocks = List.map block_of_group b in
     let f = fun_env.fun_br_to_dest in
     fun_env.fun_br_to_dest <- (fun lsrc ldest ->
-      if (ldest = lab_target) && (List.mem_assoc lsrc blocks) then (
-	print_endline ("updating "^lsrc^" -> "^ldest^" to "^lsrc^" -> "^(fst (List.assoc lsrc blocks)));
-	fst (List.assoc lsrc blocks))
-      else (print_endline ("keeping "^lsrc^" -> "^ldest); f lsrc ldest));
+      if (ldest = lab_target) && (List.mem_assoc lsrc blocks) then
+	fst (List.assoc lsrc blocks)
+      else f lsrc ldest);
     List.map snd blocks in
   List.flatten (List.map blocks_of_blk_phi_nodes fun_env.fun_phi_nodes)
 
@@ -625,7 +626,7 @@ let verify_function f =
     stmts_to_cfg cfg_nodes;
     print_core "totobite" id cfg_nodes;
     print_icfg_dotty [(cfg_nodes, id)] "totobite";
-    env.result <- env.result &&
+    env.verif_result <- env.verif_result &&
       (Symexec.verify id cfg_nodes spec env.logic env.abs_rules)
   )
 
@@ -637,256 +638,98 @@ let verify_module m =
   iter_functions verify_function m
 
 
-(* generation of fold/unfold rules for each struct *)
-
-(** Outputs logical rules to teach CoreStar how to fold and unfold a
-    named struct of name @name and type @t. *)
-let logic_of_named_struct (name,t) =
-  (* first, let's define a bunch of stuff that will be useful for more or
-     less all the rules *)
-  let types = struct_element_types t in
+let add_sizeof_logic_of_type t =
   let args_t = args_of_type t in
-  let args_ptr_t = args_of_type (pointer_type t) in
-  (* i8* is llvm for void* *)
-  let i8_ptr_t = args_of_type (pointer_type (i8_type (global_context ()))) in
-  let struct_size =
-    Arg_op("numeric_const",
-	   [Arg_string(Int64.to_string (Llvm_target.store_size env.target t))]) in
-
-  (** the physical offset inside the struct, as a logical expression *)
-  let offset_of_field i =
-    let offset = Llvm_target.offset_of_element env.target t i in
-    Arg_op("numeric_const", [Arg_string(Int64.to_string offset)]) in
-
-  (** pointer to the field number i.
-    * p: the root of the structure
-    * off_to_val: a function that given a field number gives back the value of that field 
-    * subt: the type of the field number i *)
-  let subpointer p off_to_val i subt =
-    (mkPointer
-       (Arg_op ("builtin_plus", [p; offset_of_field i]))
-       (Arg_op ("pointer_type", [args_of_type subt]))
-       (off_to_val (string_of_int i))) in
+  Format.fprintf Format.std_formatter "** %a\n" string_args args_t;
+  let args_size = args_sizeof t in
+  let rewrite_rule =
+    { function_name = "sizeof";
+      arguments=[args_t];
+      result=args_size;
+      guard={without_form=[];rewrite_where=[];if_form=[]};
+      rewrite_name="sizeof_"^(string_of_lltype t);
+      saturate=false} in
+  env_add_rw_rules [rewrite_rule]
   
-  (* we need a few variable names in the rules *)
-  let any_var x = Arg_var (Vars.AnyVar (0, x)) in
-  let p = any_var "p" in
-  let vp = any_var "vp" in
-  let x = any_var "x" in
-  let j = any_var "j" in
-  let st = any_var "st" in
-  let v = any_var "v" in
+let add_struct_logic_of_type t = ()
+  (*
+  match struct_name t with
+  | None -> (* TODO: handle unnamed structs *) ()
+  | Some name -> () *)
 
-  (* our goal will often be x |-(st)-> v *)
-  let target_pointer = mkPointer x st v in
+let add_list_logic_of_type t = ()
 
-  (* eltptr_concl and etlptr_prem are also used in the next rule, so be 
-     careful if you modify those *)
+(************** Collect all the types in a module *)
 
-  (** an array of pointer predicates for each of the fields of the struct *)
-  let subpointers_fields =
-    Array.mapi
-      (subpointer p (fun offset -> Arg_op ("field", [Arg_op ("numeric_const", [Arg_string offset]); vp])))
-      types in
-  let subpointers_indep =
-    Array.mapi
-      (subpointer p (fun offset -> vp))
-      types in
-  (** and the formula that stars them all together *)
-  let unfolded_form = Array.fold_right (fun p f -> mkStar p f) subpointers_fields mkEmpty in
-
-
-  (** rules to evaluate getelementpointer expressions and unfold the structure
-    * at the same time *)
-  let geteltptr_rule rule_name eltptr_concl eltptr_prem target offset subptr =
-    let conclusion_lhs =
-      pconjunction (eltptr_concl offset)
-	(mkPointer p (Arg_op ("named_type", [Arg_string name])) vp) in
-    let conclusion_rhs = target offset in
-    let conclusion = (mkEmpty, conclusion_lhs, conclusion_rhs, mkEmpty) in
-    let premise_lhs = pconjunction (eltptr_prem offset) unfolded_form in
-    let premise_rhs = target offset in
-    let premise = (mkEmpty, premise_lhs, premise_rhs, mkEmpty) in
-    (conclusion, [[premise]], name^"_"^rule_name^(string_of_int offset), ([], []), []) in
-  let geteltptr_unfold_rule rule_name eltptr_concl eltptr_prem target offset subptr =
-    let conclusion = (mkEmpty, pconjunction (eltptr_concl offset) subptr,
-		      target offset, mkEmpty) in
-    let premise = (mkEmpty, pconjunction (eltptr_prem offset) subptr,
-		   target offset, mkEmpty) in
-    (conclusion, [[premise]], name^"_unfold_"^rule_name^(string_of_int offset),
-     ([], []), []) in
-  let eltptr_struct_concl i =
-    mkPPred ("eltptr", [x; args_t; p; Arg_op ("jump", [args_num i; j])]) in
-  let eltptr_struct_prem i =
-    let ith_t = args_of_type (Array.get types i) in
-    mkPPred ("eltptr", [x; ith_t; Arg_op ("builtin_plus", [p; offset_of_field i]); j]) in
-  let eltptr_raw_concl i =
-    mkPPred ("eltptr", [x; i8_ptr_t; p; Arg_op ("jump", [offset_of_field i; j])]) in
-  let eltptr_raw_prem = eltptr_struct_prem in
-  let target_ptr_fun i = target_pointer in
-  let target_blob_fun i =
-    let ith_elt_size = Llvm_target.store_size env.target (Array.get types i) in
-    let size_args = Arg_op("numeric_const", [Arg_string(Int64.to_string ith_elt_size)]) in
-    mkSPred ("blob", [x; size_args]) in
-  let gep_generators =
-    geteltptr_rule "gep_ptr" eltptr_struct_concl eltptr_struct_prem target_ptr_fun
-    ::geteltptr_rule "gep_blob" eltptr_struct_concl eltptr_struct_prem target_blob_fun
-    ::geteltptr_rule "raw_gep_ptr" eltptr_raw_concl eltptr_raw_prem target_ptr_fun
-    ::geteltptr_rule "raw_gep_blob" eltptr_raw_concl eltptr_raw_prem target_blob_fun
-    ::[] in
-  let gep_unfold_generators =
-    geteltptr_unfold_rule "gep_ptr" eltptr_struct_concl eltptr_struct_prem target_ptr_fun
-    ::geteltptr_unfold_rule "gep_blob" eltptr_struct_concl eltptr_struct_prem target_blob_fun
-    ::geteltptr_unfold_rule "raw_gep_ptr" eltptr_raw_concl eltptr_raw_prem target_ptr_fun
-    ::geteltptr_unfold_rule "raw_gep_blob" eltptr_raw_concl eltptr_raw_prem target_blob_fun
-    ::[] in
-  let geteltptr_rules =
-    List.flatten (List.map
-		    (fun gep_gen ->
-		      Array.to_list (Array.mapi gep_gen subpointers_fields))
-		    gep_generators) in
-  let geteltptr_unfold_rules =
-    List.flatten (List.map
-		    (fun gep_gen ->
-		      Array.to_list (Array.mapi gep_gen subpointers_indep))
-		    gep_unfold_generators) in
-
-  (* TODO: narrate me *)
-  let subpointers =
-    Array.mapi
-      (subpointer p (fun off -> any_var ("v"^off)))
-      types in
-  let unfolded_form = Array.fold_right (fun p f -> mkStar p f) subpointers mkEmpty in
-
-  let named_pointer = mkPointer p args_t vp in
-  let conclusion = (mkEmpty, unfolded_form, named_pointer, mkEmpty) in
-  let premise = (unfolded_form, mkEmpty, mkEmpty, mkEmpty) in
-  let fold_struct_rule = (conclusion, [[premise]], name^"_fold", ([], []), []) in
-
-  let sz = any_var "sz" in
-  let blob =  mkSPred ("blob", [p; sz]) in
-  let conclusion = (mkEmpty, unfolded_form, blob, mkEmpty) in
-  let premise = (unfolded_form, mkEmpty, mkEQ(sz,struct_size), mkEmpty) in
-  let fold_blob_rule = (conclusion, [[premise]], name^"_blob_fold", ([], []), []) in
-  
-  (* blob of full size in the rhs, folded struct in the lhs *)
-  let struct_pointer = mkPointer x args_t v in
-  let blob = mkSPred ("blob", [x; struct_size]) in
-  let conclusion = (mkEmpty, struct_pointer, blob, mkEmpty) in
-  let premise = (struct_pointer, mkEmpty, mkEmpty, mkEmpty) in
-  let folded_entails_blob =
-    (conclusion, [[premise]], name^"_blob_folded", ([], []), []) in
-
-  (* blob of the full size in the rhs, unfolded struct in the lhs *)
-  let subpointers =
-    Array.mapi
-      (subpointer p (fun off -> any_var ("v"^off)))
-      types in (* subpointers are reused down below, be careful *)
-  let unfolded_form = Array.fold_right (fun p f -> mkStar p f) subpointers mkEmpty in
-  let blob = mkSPred ("blob", [x; struct_size]) in
-  let conclusion = (mkEmpty, unfolded_form, blob, mkEmpty) in
-  let premise = (unfolded_form, mkEmpty, mkEmpty, mkEmpty) in
-  let unfolded_entails_blob =
-    (conclusion, [[premise]], name^"_blob_unfolded", ([], []), []) in
-
-  (* blob of the size of the first element in the rhs, folded struct in the lhs *)
-  let folded_entails_first_blob =
-    try
-      let t0 = Array.get types 0 in
-      let p0 = Array.get subpointers 0 in
-      let ptl = Array.sub subpointers 1 (Array.length subpointers -1) in
-      let first_elt_size =
-	Arg_op("numeric_const",
-	       [Arg_string(Int64.to_string (Llvm_target.store_size env.target t0))]) in
-      let blob = mkSPred ("blob", [p; first_elt_size]) in
-      let ptr_to_struct = mkPointer p args_ptr_t x in
-      let struct_ptr = mkPointer x args_t v in
-      let conclusion = (mkEmpty,  mkStar ptr_to_struct struct_ptr, blob, mkEmpty) in
-      let premise = (p0, Array.fold_right (fun p f -> mkStar p f) ptl mkEmpty,
-		     mkEmpty, mkEmpty) in
-      [(conclusion, [[premise]], name^"_blob_first", ([], []), [])]
-    with Invalid_argument _ -> [] (* Yep, a C struct can have an empty declaration. *) in
-
-  (* return a list of all the rules defined above *)
-  geteltptr_rules@geteltptr_unfold_rules@fold_struct_rule::fold_blob_rule::folded_entails_blob::unfolded_entails_blob::folded_entails_first_blob
-
-
-(************** Collect all the named structs in a module *)
-(* this would not have to exist if findUsedStructTypes from
-   lib/VMCore/Module.cpp was accessible from the OCaml or C
-   bindings
-*)
-
-(** looks for new named structs in the type t *)
-let rec collect_named_structs_of_type (seen_t, seen_const, lns) t =
-  if (LltypeSet.mem t seen_t) then (seen_t, seen_const, lns)
+let rec collect_type (seen_t, seen_const) t =
+  if (LltypeSet.mem t seen_t) then (seen_t, seen_const)
   else
     let seen_t = LltypeSet.add t seen_t in
     match (classify_type t) with
-    | Struct -> (
-      match struct_name t with
-	| None ->
-	  (* FIXME: is this right? maybe we should name all structs... *)
-	  (seen_t, seen_const, lns)
-	| Some n ->
-	  if List.mem_assoc n lns then (seen_t, seen_const, lns)
-	  else
-	    let lns = (n,t)::lns in
-	    Array.fold_left collect_named_structs_of_type
-	      (seen_t, seen_const, lns) (struct_element_types t)
-    )
-    | Pointer
-    | Array
-    | Vector -> collect_named_structs_of_type (seen_t, seen_const, lns) (element_type t)
-    | _ -> (seen_t, seen_const, lns)
+      | Struct ->
+	Array.fold_left collect_type (seen_t, seen_const) (struct_element_types t)
+      | Pointer
+      | Array
+      | Vector -> collect_type (seen_t, seen_const) (element_type t)
+      | _ -> (seen_t, seen_const)
 
-(** looks for new named structs in the value v *)
-let rec collect_named_structs_of_value o v =
-  let (seen_t, seen_const, lns) = collect_named_structs_of_type o (type_of v) in
+(** looks for new types in the value v *)
+let rec collect_types_in_value o v =
+  let (seen_t, seen_const) = collect_type o (type_of v) in
   (*  if v is not a constant, then its structs have already been collected explicitly *)
-  if (not (is_constant v)) || (LlvalueSet.mem v seen_const) then (seen_t, seen_const, lns)
+  if (not (is_constant v)) || (LlvalueSet.mem v seen_const) then (seen_t, seen_const)
   else
     let seen_const = LlvalueSet.add v seen_const in
-    let o = (seen_t, seen_const, lns) in
+    let o = (seen_t, seen_const) in
     let num_op = num_operands v in
     let rec collect_from_op o n =
       if n = num_op then o
       else (
-	let o = collect_named_structs_of_value o (operand v n) in
+	let o = collect_types_in_value o (operand v n) in
 	collect_from_op o (n+1)) in
     collect_from_op o 0
 
-(** looks for new named structs in the instruction i *)
-let collect_named_structs_of_instr o i =
+(** looks for new types in the instruction i *)
+let collect_types_in_instr o i =
   let num_op = num_operands i in
-  let o = collect_named_structs_of_type o (type_of i) in
+  let o = collect_type o (type_of i) in
   let rec collect_from_op o n =
     if n = num_op then o
     else (
-      let o = collect_named_structs_of_value o (operand i n) in
+      let o = collect_types_in_value o (operand i n) in
       collect_from_op o (n+1)) in
   collect_from_op o 0
 
-let collect_named_structs_of_block o b =
-  fold_left_instrs collect_named_structs_of_instr o b
+let collect_types_in_block o b =
+  fold_left_instrs collect_types_in_instr o b
 
-let collect_named_structs_of_function o f =
-  let o = collect_named_structs_of_type o (type_of f) in
-  fold_left_blocks collect_named_structs_of_block o f
+let collect_types_in_function o f =
+  let o = collect_type o (type_of f) in
+  fold_left_blocks collect_types_in_block o f
 
-(** collects all named structs that are referred to by the functions of module m *)
-let collect_named_structs_of_module m =
-  (* we only care about the named structs that are used inside functions,
+(** collects all the types referred to by the functions of module m *)
+let collect_types_in_module m =
+  (* we only care about the types that are used inside functions,
      so let's collect only those *)
-  let o = (LltypeSet.empty,LlvalueSet.empty,[]) in
-  let (_, _, ltf) = fold_left_functions collect_named_structs_of_function o m in
-  print_endline ("found "^(string_of_int (List.length ltf))^" struct(s)"); ltf
+  let o = (LltypeSet.empty,LlvalueSet.empty) in
+  let (typs, _) = fold_left_functions collect_types_in_function o m in
+  print_endline ("found "^(string_of_int (LltypeSet.cardinal typs))^" types");
+  LltypeSet.elements typs
 
-(************** /Collect all the named structs in a module *)
+(************** /Collect all the types in a module *)
 
-let logic_of_module m =
-  let ltf = collect_named_structs_of_module m in
-  List.flatten (List.map logic_of_named_struct ltf)
+let filter_int_and_struct t = match classify_type t with
+  | Integer
+  | Struct -> true
+  | _ -> false
+
+let add_logic_of_module m =
+  let typs = collect_types_in_module m in
+  let typs = List.filter filter_int_and_struct typs in
+  List.iter add_sizeof_logic_of_type typs;
+  List.iter add_struct_logic_of_type typs;
+  if !Lstar_config.gen_list_abstractions then
+    List.iter add_list_logic_of_type typs
 
 (** dumps the generated fold/unfold logic into a file *)
 let dump_logic_rules rs =
@@ -901,10 +744,8 @@ let go logic abs_rules spec_list m =
   env.target <- Llvm_target.TargetData.create (data_layout m);
   env.logic <- logic; env.abs_rules <- abs_rules; env.specs <- spec_list;
   print_endline ("Added specs for "^string_of_int (List.length spec_list)^" functions");
-  print_endline "Adding unfolding logic for named structs... ";
-  let l = logic_of_module m in
-  (*env_add_logic_seq_rules l;*)
-  print_endline (string_of_int (List.length l)^" rules added");
+  print_endline "Generating logic for the module... ";
+  add_logic_of_module m;
   (* dump_logic_rules l;*)
   verify_module m;
-  env.result
+  env.verif_result

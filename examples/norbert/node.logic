@@ -8,9 +8,6 @@ equiv node_gep_ptr1:
   <=> !eltptr(?x, pointer_type(named_type("node")),
       (?p+numeric_const("8")), ?j)
 
-rewrite sizeof_node:
-  sizeof(named_type("node")) = numeric_const("16")
-
 rewrite node_collate:
   struct(named_type("node"), ?v0, ?v1) = collate(?v0, ?v1)
 

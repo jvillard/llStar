@@ -1,3 +1,4 @@
 import "../../logic/pointer.logic";
-import "lseg.logic";
+import "../../logic/lseg.logic";
 import "node.logic";
+import "lseg_node.logic";
