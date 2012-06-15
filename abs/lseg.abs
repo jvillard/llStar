@@ -1,0 +1,11 @@
+abstraction lseg_rollup_app_abs:
+  lseg_ne(?i, _n) * lseg(_kn, ?j)
+~~>
+  lseg_ne(?i, ?j)
+where
+  _n notincontext
+
+abstraction lseg_node_rollup_abs:
+  node(?i, ?n)
+~~>
+  lseg_ne(?i, ?n)

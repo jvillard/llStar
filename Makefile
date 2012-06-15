@@ -39,7 +39,8 @@ corestar_src:
 	ln -sf "$(CORESTAR_HOME)/src" corestar_src
 
 test:
-	cd examples && ./run.sh && cd -
+	cd examples; make
+
 
 .PHONY: build clean test
 

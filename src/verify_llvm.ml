@@ -624,8 +624,7 @@ let verify_function f =
     let cfg_nodes = cfg_nodes_of_function f in
     let spec = spec_of_fun_id id in
     stmts_to_cfg cfg_nodes;
-    print_core "totobite" id cfg_nodes;
-    print_icfg_dotty [(cfg_nodes, id)] "totobite";
+    print_icfg_dotty [(cfg_nodes, id)] ("."^id);
     env.verif_result <- env.verif_result &&
       (Symexec.verify id cfg_nodes spec env.logic env.abs_rules)
   )
@@ -656,7 +655,6 @@ let dump_logic_rules rs =
 
 let add_sizeof_logic_of_type t =
   let args_t = args_of_type t in
-  Format.fprintf Format.std_formatter "** %a\n" string_args args_t;
   let args_size = args_sizeof t in
   let rewrite_rule =
     { function_name = "sizeof";

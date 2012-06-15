@@ -1,2 +1,2 @@
-import "struct.logic";
-import "array.logic";
+import "pointer.logic";
+

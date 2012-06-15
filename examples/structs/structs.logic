@@ -1,2 +1,1 @@
-import "../../logic/new.logic";
-import "../../logic/pointer.logic";
+import "../../logic/llvm.logic";
