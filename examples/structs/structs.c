@@ -1,6 +1,8 @@
 // clang -O0 -emit-llvm bite.c -c -o bite.bc
 #include <stdlib.h>
 
+void skip(void) {}
+
 struct two {
   int a;
   int b;
@@ -11,6 +13,7 @@ struct ole {
   struct ole *next;
 };
 
+/*
 int f(int a) {
   struct ole *p, s;
   int b;
@@ -19,7 +22,9 @@ int f(int a) {
   s.data = &b;
 
   p = malloc(sizeof(struct ole));
+  if (!p) return a;
   p->data = malloc(sizeof(int));
+  if (!(p->data)) return a;
   //  *((struct ole **)((void *)p+sizeof(int *))) = p;
   p->next = p;
   *(p->next->data) = a;
@@ -30,13 +35,16 @@ int f(int a) {
 
 
   t = malloc(sizeof(struct two));
-  t->a = 4444;
-  t->a = 4445;
+  if (t) {
+    t->a = 4444;
+    t->b = 4445;
+    free(t);
+  }
 
-  free(t);
   free(p);
   return b;
 }
+*/
 
 struct ij {
   int i;
