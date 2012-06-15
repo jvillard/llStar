@@ -330,8 +330,8 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
 	 (using the fun_env environment to remember the
 	 indirection). These blocks will assume "cond" and "not cond"
 	 respectively, thus simulating a conditional branching. *)
-      let then_label_orig = label_of_bblock (block_of_value (operand instr 1)) in
-      let else_label_orig = label_of_bblock (block_of_value (operand instr 2)) in
+      let then_label_orig = label_of_bblock (block_of_value (operand instr 2)) in
+      let else_label_orig = label_of_bblock (block_of_value (operand instr 1)) in
       (* the boolean value whose truth we're branching upon *)
       let args_cond = args_of_value (operand instr 0) in
       let assume_then_spec = Spec.mk_spec mkEmpty

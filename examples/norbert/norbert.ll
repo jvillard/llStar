@@ -4,7 +4,7 @@ define %node* @norbert(i32 %a, %node* %b) {
   %p = call noalias i8* @malloc(i64 16)
   %r = bitcast i8* %p to %node*
   %br = icmp eq i8* %p, null
-  br i1 %br, label %.success, label %.exit
+  br i1 %br, label %.exit, label %.success
 .success:
   %i = bitcast i8* %p to i32*
   store i32 %a, i32* %i
