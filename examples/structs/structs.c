@@ -13,7 +13,6 @@ struct ole {
   struct ole *next;
 };
 
-/*
 int f(int a) {
   struct ole *p, s;
   int b;
@@ -25,8 +24,8 @@ int f(int a) {
   if (!p) return a;
   p->data = malloc(sizeof(int));
   if (!(p->data)) return a;
-  //  *((struct ole **)((void *)p+sizeof(int *))) = p;
-  p->next = p;
+  /* p->next = p; */ /* this is equivalent to the line below */
+  *((struct ole **)((void *)p+sizeof(int *))) = p;
   *(p->next->data) = a;
 
   b = *((*p).data);
@@ -44,7 +43,6 @@ int f(int a) {
   free(p);
   return b;
 }
-*/
 
 struct ij {
   int i;
@@ -69,10 +67,9 @@ void setifield(struct oneint *s) {
   s->i = 0;
 }
 
-struct ij yay_yay_int(struct ij s) {
-  setifield((struct oneint *)&s);
-  s.j = 0;
-  return s;
+void yay_yay_int(struct ij *s) {
+  setifield((struct oneint *)s);
+  s->j = 0;
 }
 
 int main() {
@@ -81,13 +78,8 @@ int main() {
 
   x = f(1664);
 
-  
-  y = malloc(sizeof(int));
-  *y = 1665;
-  free(y);
-
   s.i = x;
-  s = yay_yay_int(s);
+  yay_yay_int(&s);
   s.j = x;
 
   return s.j;

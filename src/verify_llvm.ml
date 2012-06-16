@@ -623,10 +623,20 @@ let verify_function f =
     print_endline ("verifying "^id);
     let cfg_nodes = cfg_nodes_of_function f in
     let spec = spec_of_fun_id id in
+    (* replace "@parameter%i%:" logical values with the function arguments *)
+    let rec add_param_subst (i,subst) fun_param =
+      let arg = args_of_value fun_param in
+      let param = Vars.concretep_str ("@parameter"^(string_of_int i)^":") in
+      (i+1, add_subst param arg subst) in
+    let (_,subst) = fold_left_params add_param_subst (0,empty) f in
+    let spec_to_verify =
+      { spec with
+	Spec.pre = subst_form subst spec.Spec.pre;
+	Spec.post = subst_form subst spec.Spec.post; } in
     stmts_to_cfg cfg_nodes;
     print_icfg_dotty [(cfg_nodes, id)] ("."^id);
     env.verif_result <- env.verif_result &&
-      (Symexec.verify id cfg_nodes spec env.logic env.abs_rules)
+      (Symexec.verify id cfg_nodes spec_to_verify env.logic env.abs_rules)
   )
 
 let env_add_gvar gvar =
