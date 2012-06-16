@@ -24,5 +24,4 @@ let arg_list = Config.args_default @ [
 
 let usage_msg = "Usage: -l <logic_file_name>  "^
   "-a <abstraction_file_name>  -s <spec_file_name>  "^
-  "-f <class_file_program> "^
-  "-lists <bool>"
+  "-f <bitcode_program>"

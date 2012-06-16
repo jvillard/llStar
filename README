@@ -1,0 +1,178 @@
+* About lStar
+
+  lStar is an automatic prover for programs written in
+  bitcode. Bitcode is the intermediate representation of the LLVM
+  compiler framework. lStar attempts to prove individual functions
+  correct with respect to memory safety and to their
+  specifications. In doing so, it automatically discovers loop
+  invariants. Specifications are given in the formalism of separation
+  logic by the user.
+
+  lStar is distributed under a 3-clause BSD licences (see LICENSE). It
+  is available from
+
+    http://www.cs.ucl.ac.uk/staff/J.Villard/lstar
+
+  and development versions are hosted by bitbucket at
+
+    https://bitbucket.org/jvillard/lstar/
+
+
+* Requirements and How to Get Them
+
+  Read this section carefully!
+
+  lStar requires OCaml, LLVM 3.1, and z3. Additionally, coreStar is
+  required to compile lStar from source. The requirements are detailed
+  below, in reverse order of exoticism. lStar has been developped
+  under Linux, but other environments might be viable.
+
+  In short, get z3 and set the environment variables as shown below,
+  and install LLVM and OCaml. If you have a development version of
+  lStar, also get coreStar, unpack it somewhere and set up the
+  appropriate link to its source tree as shown below.
+
+** coreStar
+
+   coreStar is a symbolic execution engine for separation logic, the
+   formal theory underlying lStar. It is *included* in standard
+   distributions of lStar, so no action should be required to install
+   it. Alternatively, for instance if you have a development version
+   lStar, it can be fetched from
+
+     https://github.com/seplogic/corestar
+
+   lStar expects coreStar src/ directory to be under corestar_src/, at
+   the same level as its own src/ directory. Simply unpack coreStar
+   somewhere and set up a symbolic link inside the lStar directory to
+   corestar/src/:
+
+"""
+ln -s /where/corestar/is/src /where/lstar/is/corestar_src
+"""
+
+** z3
+
+   z3 is an SMT solver used to solve the arithmetic constraints found
+   during the proof process. It is called by coreStar indirectly from
+   lStar. Due to its closed-source nature, it cannot and is *not*
+   included with lStar. However, binaries for Linux and Windows are
+   available from
+
+     http://research.microsoft.com/en-us/um/redmond/projects/z3/download.html
+
+   The rest of this document assumes that a working version of z3 is
+   installed on the system. Moreover, you have to tell lStar where to
+   find z3. This is achieved by setting the following environment
+   variables:
+
+"""
+# *change* this to wherever z3 is on your system
+export JSTAR_SMT_PATH=$HOME/local/bin/z3
+# keep this as it is, but do set it somewhere
+export JSTAR_SMT_ARGUMENTS="-in -smt2"
+"""
+
+   coreStar, and thus lStar, should also work with other SMT
+   solvers. See the coreStar documentation if you want to use this
+   feature.
+
+** LLVM
+
+   LLVM is an open source compiler framework that uses bitcode as its
+   intermediate representation, which, incidentally, is the language
+   that lStar takes as input. lStar 1.0 builds and run against LLVM
+   version 3.1. LLVM is *not* included in the lStar distribution. The
+   preferred way to get it is from your software management, or from
+
+     http://llvm.org/releases/download.html#3.1
+
+   You will need the following, all included in the standard LLVM
+   distributions:
+
+   - LLVM dynamic libraries and OCaml bindings to build and run lStar
+
+   - LLVM building tools to compile bitcode files into the equivalent
+     binary form that lStar takes as input
+
+   - Optionally, the Clang compiler, available from the same location,
+     to compile C (and other languages) files to bitcode
+
+** OCaml
+
+   OCaml is a functional language. You can get it from
+     http://caml.inria.fr/download.en.html
+
+   lStar has been tested against OCaml 3.12.1. I have no idea which
+   minimal version is required to compile or run lStar.
+
+
+* Build Instructions
+
+  Simply go to the lStar directory and type make. This should produce
+  the lStar binary at bin/lstar. If not, read the "requirements"
+  section above a second time. If might still fail, sorry.
+
+
+* Usage
+
+  lStar can be invoked from the command line as follows:
+
+  ./bin/lstar -l <logic_file_name>
+              -a <abstraction_file_name>
+              -s <spec_file_name>
+              -f <bitcode_module>
+
+  The meaning of each option is as follows:
+
+  - <bitcode_module> should be the .bc file you want to analyse.
+
+  - <spec_file_name> is the file that contains specifications for each
+    function in the bitcode module above. Specs are given as "f:
+    {pre}{post}" where "f" is the name of the function, "pre" its
+    intended precondition, and "post" its intended postcondition. See
+    the examples included in the distribution for examples of the
+    syntax (examples/*/*.spec).
+
+  - <logic_file_name> is a file containing what logical rules lStar
+    should use to manipulate symbolic states. A first guess can be to
+    use the default file provided in the distribution, and located at
+    "logic/llvm.logic". Other logic sample files are included in
+    "logic/", including some rudimentary support for arithmetic in
+    case there isn't an SMT solver available.
+
+  - <abstraction_file_name> is a file containing abstraction rules
+    that lStar uses to approximate the symbolic state when trying to
+    find loop invariants. See the "abs/" directory for examples
+    (currently, only singly-linked lists).
+
+  It's easier to start from the examples included in the distribution.
+
+
+* Examples Included in the Distribution
+
+  A few examples are shipped with lStar, under "examples/". Each
+  example comes in its own subdirectory, that contains the spec,
+  logic, abstraction, and source files, with the addition of a
+  Makefile that runs lStar with the appropriate options. See each
+  example and its Makefile for details.
+
+  For instance, to run lStar on the Smaug example, that traverses a
+  singly-linked list, simply type
+"""
+cd examples/smaug
+make test
+"""
+
+  Other examples include Norbert, a program that allocates a struct
+  node and fills in its fields with the values passed as argument, and
+  "structs", that performs complex field manipulations and pointer
+  arithmetic. All the examples are successfully checked by lStar.
+
+  You can run all the tests from the top level directory by doing
+"""
+make test
+"""
+
+
+                    === Happy Proving! ===

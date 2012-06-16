@@ -607,7 +607,7 @@ let cfg_nodes_of_function f =
      confusing in output messages *)
   let lab_nodes_list =
     fold_left_blocks (cfg_nodes_of_block fun_env) [] f in
-  print_endline ("*** Found "^(string_of_int (List.length fun_env.fun_br_blocks))^" conditional branchings and "^(string_of_int (List.length fun_env.fun_phi_nodes))^" blocks with phi nodes");
+  (* print_endline ("*** Found "^(string_of_int (List.length fun_env.fun_br_blocks))^" conditional branchings and "^(string_of_int (List.length fun_env.fun_phi_nodes))^" blocks with phi nodes"); *)
   let lnsl = lab_nodes_list@fun_env.fun_br_blocks in
   let phi_cfg = make_phi_blocks fun_env in
   let lnsl = List.map
@@ -878,7 +878,6 @@ let add_list_logic_of_struct t name rec_field =
       (mk_simple_seq_rule "node_rollup_right"
 	 (mkEmpty, mk_node i_var n_var)
 	 (mkEmpty, mk_unfolded_struct_ i_var n_var))::[] in
-  print_endline (string_of_int (List.length rules));
   dump_logic_rules rules;
   env_add_seq_rules rules
     
@@ -950,7 +949,6 @@ let collect_types_in_module m =
      so let's collect only those *)
   let o = (LltypeSet.empty,LlvalueSet.empty) in
   let (typs, _) = fold_left_functions collect_types_in_function o m in
-  print_endline ("found "^(string_of_int (LltypeSet.cardinal typs))^" types");
   LltypeSet.elements typs
 
 (************** /Collect all the types in a module *)
