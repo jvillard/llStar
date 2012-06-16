@@ -21,6 +21,9 @@ OCAMLBUILD=ocamlbuild $(OB_FLAGS) -I $(SRC_DIR) `cat $(CORESTAR_SUBDIRS)` $(addp
 
 build: native
 
+bin:
+	mkdir bin
+
 native byte: $(CORESTAR_SUBDIRS)
 	$(OCAMLBUILD) $(addsuffix .$@,$(MAINS))
 	for f in $(MAINS); do ln -sf ../`readlink $$f.$@` bin/$$f; rm $$f.$@; done
