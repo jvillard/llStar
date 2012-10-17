@@ -22,6 +22,7 @@ type verify_env = {
 					       alignment and padding *)
   mutable logic: Psyntax.logic; (** inference rules for logical entailments *)
   mutable abs_rules: Psyntax.logic; (** abstraction rules for formulas *)
+  mutable abduct_logic: Psyntax.logic; (** abduction logic *)
   mutable specs: funspec list; (** the hoare triples we assume for declared
 				   functions and strive to prove for defined ones  *)
   mutable gvars: (string * args * args) list; (** global variable: id * type * value *)
@@ -35,6 +36,7 @@ let env = {
   target = Llvm_target.TargetData.create ""; (* has to be filled with a legal value later *)
   logic = empty_logic;
   abs_rules = empty_logic;
+  abduct_logic = empty_logic;
   specs = [];
   gvars = [];
   idMap = IdMap.empty;
@@ -635,8 +637,19 @@ let verify_function f =
 	Spec.post = subst_form subst spec.Spec.post; } in
     stmts_to_cfg cfg_nodes;
     print_icfg_dotty [(cfg_nodes, id)] ("."^id);
-    env.verif_result <- env.verif_result &&
-      (Symexec.verify id cfg_nodes spec_to_verify env.logic env.abs_rules)
+    let success =
+      if !Lstar_config.abduction_flag then
+	let specs = Symexec.bi_abduct id cfg_nodes spec_to_verify
+	  env.logic env.abduct_logic env.abs_rules in
+	List.iter (fun (pre,post) ->
+	  Format.fprintf
+	    Format.err_formatter
+	    ("*** Spec for function %s \n{%a}\n{%a}\n") id
+	    Sepprover.string_inner_form pre Sepprover.string_inner_form post) specs;
+	specs <> []
+      else
+	Symexec.verify id cfg_nodes spec_to_verify env.logic env.abs_rules in
+    env.verif_result <- env.verif_result && success
   )
 
 let env_add_gvar gvar =
@@ -655,9 +668,9 @@ let gen_seq_rules_of_equiv name (equiv_left, equiv_right) =
   mk_simple_seq_rule (name^"_left") (equiv_right, mkEmpty) (equiv_left, mkEmpty)::
   mk_simple_seq_rule (name^"_right") (mkEmpty, equiv_right) (mkEmpty, equiv_left)::[]
 
-(** dumps logic rules into a (hardcoded) file *)
-let dump_logic_rules rs =
-  let file = Sys.getcwd() ^  "/.logic_rules.txt" in
+(** dumps logic rules into a file in the current directory *)
+let dump_logic_rules name rs =
+  let file = Sys.getcwd() ^  "/." ^ name in
   let rules_out = open_out file in
   let rules_fmt = Format.formatter_of_out_channel rules_out in
   Format.fprintf rules_fmt "@[%a@." (Debug.pp_list pp_sequent_rule) rs;
@@ -880,7 +893,6 @@ let add_list_logic_of_struct t name rec_field =
       (mk_simple_seq_rule "node_rollup_right"
 	 (mkEmpty, mk_node i_var n_var)
 	 (mkEmpty, mk_unfolded_struct_ i_var n_var))::[] in
-  dump_logic_rules rules;
   env_add_seq_rules rules
     
 let add_list_logic_of_type t = match struct_name t with
@@ -980,6 +992,15 @@ let go logic abs_rules spec_list m =
   print_endline ("Added specs for "^string_of_int (List.length spec_list)^" functions");
   print_endline "Generating logic for the module... ";
   add_logic_of_module m;
-  (* dump_logic_rules l;*)
+  dump_logic_rules "logic_rules.txt" (env.logic.seq_rules);
+  if !Lstar_config.abduction_flag then (
+    let l1,l2,cn = Load_logic.load_logic (!Lstar_config.abductrules_file_name) in
+    let abduct_lo = {Psyntax.empty_logic with
+      Psyntax.seq_rules=l1;
+      Psyntax.rw_rules=l2;
+      Psyntax.consdecl=cn} in
+    env.abduct_logic <- abduct_lo;
+    dump_logic_rules "abduct_rules.txt" (env.abduct_logic.seq_rules)
+  );
   verify_module m;
   env.verif_result

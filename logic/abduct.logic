@@ -1,0 +1,8 @@
+import "pointer.logic";
+
+rule abduct_ptr :
+  | |- pointer(?x,?sz,?v) -|
+without
+  pointer(?x,?sz,_w)
+if
+  | |- -| pointer(?x,?sz,?v)

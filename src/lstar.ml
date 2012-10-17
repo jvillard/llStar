@@ -5,9 +5,6 @@ open Lstar_config
 open Cfg_core
 
 let main () =
-  let usage_msg = "Usage: -l <logic_file_name>  "^
-    "-a <abstraction_file_name>  -s <spec_file_name>  "^
-    "-f <class_file_program>" in
   Arg.parse
     arg_list
     (fun s -> Format.eprintf "WARNING: Ignored argument %s.@." s)
