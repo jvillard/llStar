@@ -660,7 +660,7 @@ let dump_logic_rules rs =
   let file = Sys.getcwd() ^  "/.logic_rules.txt" in
   let rules_out = open_out file in
   let rules_fmt = Format.formatter_of_out_channel rules_out in
-  List.iter (pp_sequent_rule rules_fmt) rs;
+  Format.fprintf rules_fmt "@[%a@." (Debug.pp_list pp_sequent_rule) rs;
   close_out rules_out
 
 let add_sizeof_logic_of_type t =
