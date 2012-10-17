@@ -799,10 +799,12 @@ let add_logic_of_struct t =
     Array.to_list rules_array in
 
   let rules =
-    mk_simple_seq_rule ("collate_"^(string_of_lltype t))
-      (mk_struct_pointer x_var collate_field_values, mk_struct_pointer x_var v_var)
-      (mk_unfolded_struct t x_var field_values, mk_struct_pointer x_var v_var)::
-      field_rules in
+    if Array.length (struct_element_types t) > 1 then
+      mk_simple_seq_rule ("collate_"^(string_of_lltype t))
+	(mk_struct_pointer x_var collate_field_values, mk_struct_pointer x_var v_var)
+	(mk_unfolded_struct t x_var field_values, mk_struct_pointer x_var v_var)::
+	field_rules
+    else [] in
   env_add_seq_rules rules
 
 let add_list_logic_of_struct t name rec_field =
