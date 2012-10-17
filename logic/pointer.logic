@@ -34,15 +34,17 @@ equiv jump_end:
 
 rule ptr_same_root_same_size:
  | pointer(?x,?sz,?v) |- pointer(?x,?sz,?w)
+without
+ ?w != ?v
 if
- pointer(?x,?sz,?v) |
- |- ?w = ?v
+ pointer(?x,?sz,?v) | |- ?w = ?v
 
 rule remove_malloced:
- | malloced(?mb, ?n)
- |- malloced(?mb,?m)
+ | malloced(?mb,?n) |- malloced(?mb,?m)
+without
+ ?n != ?m
 if
- malloced(?mb,?n)| |- ?n = ?m
+ malloced(?mb,?n) | |- ?n = ?m
 
 /*************************************
  * rules for contradictions 
