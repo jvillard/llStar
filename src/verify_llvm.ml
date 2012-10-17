@@ -982,7 +982,10 @@ let add_logic_of_module m =
   List.iter add_sizeof_logic_of_type typs;
   let typs = List.filter filter_struct typs in
   List.iter add_logic_of_struct typs;
-  List.iter add_list_logic_of_type typs
+  if !Lstar_config.auto_gen_list_logic then (
+    print_endline "Generating list logic for the module...";
+    List.iter add_list_logic_of_type typs
+  )
 
 let go logic abs_rules spec_list m =
   print_endline "It is on!";

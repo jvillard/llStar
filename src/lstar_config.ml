@@ -3,6 +3,7 @@ let logic_file_name = ref "logic"
 let spec_file_name = ref "specs"
 let absrules_file_name = ref "abs"
 let abductrules_file_name = ref "../../logic/abduct.logic"
+let auto_gen_list_logic = ref false
 
 let abduction_flag = ref false
 
@@ -25,8 +26,9 @@ let arg_list = Config.args_default @ [
   ("-a", Arg.String(set_absrules_file_name), "abstraction rules file name");
   ("-abduct_file", Arg.Set_string(abductrules_file_name), "abduction rules file name");
   ("-abduct", Arg.Set(abduction_flag), "toggles abduction on");
+  ("-lists", Arg.Set(auto_gen_list_logic), "toggles automatic list abstraction rules generation");
 ]
 
 let usage_msg = "Usage: -l <logic_file_name>  "^
   "-a <abstraction_file_name>  -s <spec_file_name>  "^
-  "-f <bitcode_program> -abduct_file <abduction_file_name> -abduct"
+  "-f <bitcode_program> -abduct_file <abduction_file_name> -abduct -lists"
