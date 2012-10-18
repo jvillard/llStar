@@ -45,6 +45,7 @@ val implies : logic -> inner_form -> form -> bool
 val implies_opt : logic -> inner_form option -> form -> bool
 val inconsistent : logic -> inner_form -> bool
 val inconsistent_opt : logic -> inner_form option -> bool
+val is_pure : inner_form -> bool
 val frame : logic -> inner_form -> form -> inner_form list option
 val frame_opt : logic -> inner_form option -> form -> inner_form list option
 val frame_inner : logic -> inner_form -> inner_form -> inner_form list option

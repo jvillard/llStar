@@ -349,7 +349,9 @@ let check_postcondition (heaps : formset_entry list) (sheap : formset_entry) =
     let heap,id = 
       List.find 
         (fun (heap,id) -> 
-          (frame_inner !curr_logic (inner_form_af_to_form sheap_noid) (inner_form_af_to_form heap)) <> None) 
+          match frame_inner !curr_logic (inner_form_af_to_form sheap_noid) (inner_form_af_to_form heap) with
+	  | None -> false
+	  | Some frames -> (not !Config.check_memleaks) or List.fold_left (fun b f -> b && (Sepprover.is_pure f)) true frames)
         heaps in
     if Config.symb_debug() then 
       printf "\n\nPost okay \n%!";

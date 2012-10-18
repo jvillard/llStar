@@ -27,6 +27,8 @@ open Psyntax
     
     type inner_form_af = Clogic.AF.ts_formula
 
+    let is_pure f = Clogic.plain (f.Clogic.F.form)
+
     let lift_inner_form inner_form = 
       let ts,form = Clogic.break_ts_form inner_form in
       Clogic.mk_ts_form_af ts form Clogic.empty
