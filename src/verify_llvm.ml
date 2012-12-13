@@ -205,19 +205,19 @@ let rec args_of_const_expr v = match constexpr_opcode v with
     Arg_var (Vars.freshe ())
 
 and args_of_value v = match classify_value v with
-  | NullValue -> Arg_op("zeroinitializer", [])
+  | NullValue -> args_num_0
   | Argument -> Arg_var (Vars.concretep_str (value_id v))
   | BasicBlock -> failwith "Invalid bitcode? Unexpected BasickBlock value"
   | InlineAsm -> Arg_var (Vars.freshe ())
   | MDNode -> raise (MetaData v)
   | MDString -> raise (MetaData v)
   | BlockAddress -> Arg_op("block_addr", [args_of_value (operand v 0)])
-  | ConstantAggregateZero ->  Arg_op("zeroinitializer", [])
+  | ConstantAggregateZero -> args_num_0
   | ConstantArray -> args_of_composite_value "array" v
   | ConstantExpr -> args_of_const_expr v
   | ConstantFP -> Arg_var (Vars.freshe ())
   | ConstantInt -> args_of_int_const v
-  | ConstantPointerNull -> Arg_op("zeroinitializer", [])
+  | ConstantPointerNull -> args_num_0
   | ConstantStruct -> args_of_composite_value "struct" v
   | ConstantVector -> args_of_composite_value "vector" v
   | Function -> Arg_op("function", [args_of_value (operand v 0)])
