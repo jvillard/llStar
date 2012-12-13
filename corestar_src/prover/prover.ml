@@ -358,9 +358,7 @@ let rec apply_rule_list_once
     [] -> raise No_match
   | rule::rules ->
       try 
-	let r =	apply_rule (Clogic.convert_rule rule) seq in
-	(*Format.printf "%a" pp_sequent_rule rule;*)
-	r
+      apply_rule (Clogic.convert_rule rule) seq
       with 
       | No_match -> apply_rule_list_once rules seq
 

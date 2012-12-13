@@ -47,7 +47,7 @@ let main () =
     let spec_list = Load.import_flatten
       Cli_utils.specs_dirs            
       !spec_file_name
-      (Logic_parser.spec_file Logic_lexer.token) in
+      Logic_parser.spec_file Logic_lexer.token in
 
     let verdict = Verify_llvm.go logic abs_rules spec_list im in
   print_string ("\n"^

@@ -54,7 +54,6 @@ let stmts_to_cfg (stmts : cfg_node list) : unit =
     function
     | {skind = Goto_stmt_core ls} as m :: ss -> 
         List.iter (fun ln -> connect m (find ln)) ls; process ss
-    | {skind = End} :: ss -> process ss
     | m :: ((n :: _) as ss)-> connect m n; process ss
     | _ -> () in
   List.iter (fun s -> s.succs <- []; s.preds <- []) stmts;

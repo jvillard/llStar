@@ -15,7 +15,6 @@
 val specs_template_mode : bool ref
 val dotty_print : bool ref
 val symb_debug : unit -> bool
-val set_symb_debug : bool -> unit
 val eclipse_ref : bool ref
 val parse_debug : unit -> bool
 val smt_debug : unit -> bool

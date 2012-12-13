@@ -22,8 +22,7 @@ let dotty_print = ref false
 
 let symb_debug_ref = ref false
 let symb_debug() = !symb_debug_ref
-let set_symb_debug b = symb_debug_ref := b
-
+  
 let eclipse_ref = ref false
 let eclipse_mode() = !eclipse_ref
 
