@@ -46,6 +46,11 @@ let env = {
 let warn s =
   print_endline ("WARNING: "^s)
 
+let string_of_struct s =
+  match struct_name s with
+  | None -> string_of_lltype s
+  | Some name -> name
+
 (** gets names of named and unnamed variables *)
 (* Ideally, we would get them from the SlotTracker thingy in
    lib/VMCore/AsmWriter.cpp, but it's not in the ocaml bindings... *)
@@ -762,7 +767,7 @@ let add_eltptr_logic_of_struct t = match struct_name t with
       let equiv_right =
 	mkPPred ("eltptr", [x_var; args_of_type subelt_type;
 			    new_root; jump_var]) in
-      gen_seq_rules_of_equiv ("eltptr_"^(string_of_lltype t))
+      gen_seq_rules_of_equiv ("eltptr_"^(string_of_struct t))
 	(equiv_left, equiv_right) in
     let eltptr_rules =
       List.flatten 
@@ -802,7 +807,7 @@ let add_logic_of_struct t =
     let e = offset_of_field_end t i in
     let field_value = Arg_op ("rg", [b; e; v_var]) in
     let target_pointer = mk_field_pointer t i x_var w_var in
-    mk_simple_seq_rule ((string_of_lltype t)^"_field_"^(string_of_int i))
+    mk_simple_seq_rule ((string_of_struct t)^"_field_"^(string_of_int i))
       (mk_unfolded_struct t x_var (field_ranged_values v_var),
        pconjunction (mkEQ (w_var,field_value)) target_pointer)
       (mk_struct_pointer x_var v_var, target_pointer) in
@@ -813,7 +818,7 @@ let add_logic_of_struct t =
 
   let rules =
     if Array.length (struct_element_types t) > 1 then
-      mk_simple_seq_rule ("collate_"^(string_of_lltype t))
+      mk_simple_seq_rule ("collate_"^(string_of_struct t))
 	(mk_struct_pointer x_var collate_field_values, mk_struct_pointer x_var v_var)
 	(mk_unfolded_struct t x_var field_values, mk_struct_pointer x_var v_var)::
 	field_rules
