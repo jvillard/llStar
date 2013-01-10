@@ -6,29 +6,29 @@
  * Empty list segment.
  */
 equiv lseg_empty:
-  lseg(?i, ?i) <=> ?i = ?i
+  lseg(?s,?i, ?i) <=> ?i = ?i
 
 /*
   Contradiction (lseg_ne describes non-empty list segment).
 */
 equiv lseg_ne_empty1:
-  lseg_ne(?i, ?j) => ?i = ?j <=> False
+  lseg_ne(?s,?i, ?j) => ?i = ?j <=> False
 
 /*
   Contradiction (lseg_ne describes non-empty list segement).
 */
 equiv lseg_ne_empty2:
-  lseg_ne(?i, ?i) <=> False
+  lseg_ne(?s,?i, ?i) <=> False
 
 /*
   Contradiction.
     A heap cannot split into two part containing the same field.
 */
 equiv lseg_ne_lseg_ne_contradiction1:
-  lseg_ne(?i, ?j) * lseg_ne(?i, ?k) <=> False
+  lseg_ne(?r,?i, ?j) * lseg_ne(?s,?i, ?k) <=> False
 
 equiv lseg_lseg_contradiction2:
-      lseg_ne(?i, ?m) * lseg_ne(?j, ?n)
+      lseg_ne(?r,?i, ?m) * lseg_ne(?s,?j, ?n)
   =>  ?i = ?j <=> False
 
 /*
@@ -36,39 +36,39 @@ equiv lseg_lseg_contradiction2:
    All non-empty "lseg" list segements are converted to "lseg_ne" list segments.
 */
 equiv lseg_non_empty1:
-  ?i != ?j => lseg(?i, ?j) <=> lseg_ne(?i, ?j)
+  ?i != ?j => lseg(?s,?i, ?j) <=> lseg_ne(?s,?i, ?j)
 
 /*
   Substraction rules for list segments.
 */
 rule lseg_app_rollup2:
-  | lseg_ne(?i, ?j) * lseg_ne(?j, ?k)
-    |- lseg_ne(?i, ?k)
+  | lseg_ne(?s,?i, ?j) * lseg_ne(?s,?j, ?k)
+    |- lseg_ne(?s,?i, ?k)
 if
-  lseg_ne(?i, ?j) * lseg_ne(?j, ?k) |
+  lseg_ne(?s,?i, ?j) * lseg_ne(?s,?j, ?k) |
    |- 
 
 rule lseg_app_rollup3:
-  | lseg_ne(?i, ?j) * lseg_ne(?j, ?l) * lseg_ne(?l, ?k)
-    |- lseg_ne(?i, ?k)
+  | lseg_ne(?s,?i, ?j) * lseg_ne(?s,?j, ?l) * lseg_ne(?s,?l, ?k)
+    |- lseg_ne(?s,?i, ?k)
 if
-  lseg_ne(?i, ?j) * lseg_ne(?j, ?l) * lseg_ne(?l, ?k) |
+  lseg_ne(?s,?i, ?j) * lseg_ne(?s,?j, ?l) * lseg_ne(?s,?l, ?k) |
    |- 
 
 rule lseg_app_rollup_trans:
-  | lseg_ne(?i, ?j) * lseg_ne(?j, ?l) * lseg_ne(?m, ?k)
-    |- lseg_ne(?i, ?k)
+  | lseg_ne(?s,?i, ?j) * lseg_ne(?s,?j, ?l) * lseg_ne(?s,?m, ?k)
+    |- lseg_ne(?s,?i, ?k)
 if
-  lseg_ne(?i, ?l) | lseg_ne(?m, ?k)
-   |- lseg_ne(?l,?k)
+  lseg_ne(?s,?i, ?l) | lseg_ne(?s,?m, ?k)
+   |- lseg_ne(?s,?l,?k)
 
 rule lseg_same:
-  | lseg_ne(?i, ?j)
-    |- lseg_ne(?i, ?k)
+  | lseg_ne(?s,?i, ?j)
+    |- lseg_ne(?s,?i, ?k)
 without
   ?j != ?k
 if
-  lseg_ne(?i, ?j) |
+  lseg_ne(?s,?i, ?j) |
    |- ?j = ?k
 
 /*
@@ -79,11 +79,11 @@ if
   inductive case of the "lseg" definition.
 */
 rule lseg_cons_expand:
-  | lseg_ne(?i, ?j)
-    |- lseg_ne(?i, ?j2)
+  | lseg_ne(?s,?i, ?j)
+    |- lseg_ne(?s,?i, ?j2)
 if
-  | lseg_ne(?i, ?j)
-    |- node(?i, _n) * lseg(_n, ?j2)
+  | lseg_ne(?s,?i, ?j)
+    |- node(?s,?i, _n) * lseg(?s,_n, ?j2)
 
 /*
   Equivalence.
@@ -91,9 +91,9 @@ if
   A list segment must be either empty or non-empty.
 */
 equiv lseg_disj:
-      lseg(?i, ?j)
+      lseg(?s,?i, ?j)
   <=> ?i = ?j
-        || lseg_ne(?i, ?j)
+        || lseg_ne(?s,?i, ?j)
 
 /*
   Contradiction.
@@ -101,7 +101,7 @@ equiv lseg_disj:
   A node object cannot be null.
 */
 equiv node_not_nil:
-  node(nil(), ?n) <=>  False
+  node(?s,nil(), ?n) <=>  False
 
 /*
   Contradiction.
@@ -110,4 +110,4 @@ equiv node_not_nil:
   then we have a contradiction (see field_field_contradiction1 for comparison).
 */
 equiv node_not_eq:
-  node(?x, ?n) * node(?x, ?m) <=> False
+  node(?r,?x, ?n) * node(?s,?x, ?m) <=> False

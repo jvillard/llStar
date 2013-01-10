@@ -830,9 +830,9 @@ let add_list_logic_of_struct t name rec_field =
     Array.map (fun _ -> Arg_var (Vars.freshe ())) (struct_element_types t) in
 
   let mk_rec_field root value = mk_field_pointer t rec_field root value in
-  let mk_lseg b e = mkSPred ("lseg", [b;e]) in
-  let mk_lseg_ne b e = mkSPred ("lseg_ne", [b;e]) in
-  let mk_node ptr value = mkSPred ("node", [ptr; value]) in
+  let mk_lseg b e = mkSPred ("lseg", [name;b;e]) in
+  let mk_lseg_ne b e = mkSPred ("lseg_ne", [name;b;e]) in
+  let mk_node ptr value = mkSPred ("node", [name;ptr; value]) in
 
   let i_var = Arg_var (Vars.AnyVar (0, "i")) in
   let j_var = Arg_var (Vars.AnyVar (0, "j")) in
@@ -911,7 +911,7 @@ let add_list_logic_of_type t = match struct_name t with
       let points_to_struct typ = pointer_type t = typ in
       let (rec_field,_) =
 	List.find (fun (i,subelt_t) -> points_to_struct subelt_t) subelt_types in
-      add_list_logic_of_struct t name rec_field
+      add_list_logic_of_struct t (Arg_string name) rec_field
     with Not_found -> ()
 
 (************** Collect all the types in a module *)

@@ -1,4 +1,4 @@
-import "pointer.logic";
+import "llvm.logic";
 
 rule abduct_ptr :
   | |- pointer(?x,?sz,?v) -|
