@@ -129,6 +129,7 @@ rule token = parse
   | "." { DOT }
   | "'" { QUOTE }
   | ":=" { COLON_EQUALS }
+  | "==" { EQUALSEQUALS }
   | "=" { EQUALS }
   | "&" { AND }
   | "|" { OR }

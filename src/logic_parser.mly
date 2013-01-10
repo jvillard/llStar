@@ -76,6 +76,7 @@ let parse_warning s =
 %token END
 %token EOF
 %token EQUALS 
+%token EQUALSEQUALS
 %token EQUIV
 %token FALSE
 %token FRAME
@@ -363,7 +364,7 @@ rule:
   | CONSTRUCTOR identifier  { NormalEntry( ConsDecl($2) ) }
   | IMPORT STRING_CONSTANT SEMICOLON  { ImportEntry($2) }
   | RULE identifier_op COLON sequent without where IF sequent_list_or_list { NormalEntry(SeqRule($4,$8,$2,$5,$6)) }
-  | REWRITERULE identifier_op COLON identifier L_PAREN term_list R_PAREN EQUALS term ifclause without_simp where 
+  | REWRITERULE identifier_op COLON identifier L_PAREN term_list R_PAREN EQUALSEQUALS term ifclause without_simp where 
     { NormalEntry(RewriteRule({function_name=$4;
         arguments=$6;
         result=$9;

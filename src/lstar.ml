@@ -41,6 +41,9 @@ let main () =
     let l1,l2,cn = Load_logic.load_logic !logic_file_name in
     let logic = {Psyntax.empty_logic with Psyntax.seq_rules=l1; Psyntax.rw_rules=l2; Psyntax.consdecl=cn} in
 
+    let l1,l2,cn = Load_logic.load_logic !abductrules_file_name in
+    let abduct_logic = {Psyntax.empty_logic with Psyntax.seq_rules=l1; Psyntax.rw_rules=l2; Psyntax.consdecl=cn} in
+
     let l1,l2,cn = Load_logic.load_abstractions !absrules_file_name in
     let abs_rules = {Psyntax.empty_logic with Psyntax.seq_rules=l1; Psyntax.rw_rules=l2; Psyntax.consdecl=cn} in
 
@@ -49,7 +52,7 @@ let main () =
       !spec_file_name
       Logic_parser.spec_file Logic_lexer.token in
 
-    let verdict = Verify_llvm.go logic abs_rules spec_list im in
+    let verdict = Verify_llvm.go logic abduct_logic abs_rules spec_list im in
   print_string ("\n"^
 "=== End Proof ==================================================================\n");
     print_string ("\nmama says "^(if verdict then "yes" else "no")^"\n");

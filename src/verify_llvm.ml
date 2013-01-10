@@ -82,10 +82,12 @@ let mkArray ptr start_idx end_idx size array_t v =
 let mkEmptySpec = Spec.mk_spec mkEmpty mkEmpty Spec.ClassMap.empty
 
 let env_add_seq_rules sr  =
-  env.logic <- { env.logic with seq_rules = env.logic.seq_rules@sr }
+  env.logic <- { env.logic with seq_rules = env.logic.seq_rules@sr };
+  env.abduct_logic <- { env.abduct_logic with seq_rules = env.abduct_logic.seq_rules@sr }
 
 let env_add_rw_rules rwr  =
-  env.logic <- { env.logic with rw_rules = env.logic.rw_rules@rwr }
+  env.logic <- { env.logic with rw_rules = env.logic.rw_rules@rwr };
+  env.abduct_logic <- { env.abduct_logic with rw_rules = env.abduct_logic.rw_rules@rwr }
 
 (** We want fewer of these *)
 let implement_this s = failwith ("Not implemented: "^s)
@@ -992,22 +994,19 @@ let add_logic_of_module m =
     List.iter add_list_logic_of_type typs
   )
 
-let go logic abs_rules spec_list m =
+let go logic abduct_logic abs_rules spec_list m =
   print_endline "It is on!";
   env.context <- module_context m;
   env.target <- Llvm_target.TargetData.create (data_layout m);
-  env.logic <- logic; env.abs_rules <- abs_rules; env.specs <- spec_list;
+  env.logic <- logic;
+  env.abduct_logic <- abduct_logic;
+  env.abs_rules <- abs_rules;
+  env.specs <- spec_list;
   print_endline ("Added specs for "^string_of_int (List.length spec_list)^" functions");
   print_endline "Generating logic for the module... ";
   add_logic_of_module m;
   dump_logic_rules "logic_rules.txt" (env.logic.seq_rules);
   if !Lstar_config.abduction_flag then (
-    let l1,l2,cn = Load_logic.load_logic (!Lstar_config.abductrules_file_name) in
-    let abduct_lo = {Psyntax.empty_logic with
-      Psyntax.seq_rules=l1;
-      Psyntax.rw_rules=l2;
-      Psyntax.consdecl=cn} in
-    env.abduct_logic <- abduct_lo;
     dump_logic_rules "abduct_rules.txt" (env.abduct_logic.seq_rules)
   );
   verify_module m;
