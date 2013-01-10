@@ -889,9 +889,9 @@ let add_list_logic_of_struct t name rec_field =
 	 (mk_node i_var n_var, mkEmpty)
 	 (mk_unfolded_struct_ i_var n_var, mkEmpty))::
     (* Convert all nodes on LHS to singleton list segments. *)
-      (mk_simple_seq_rule "lseg_node_rollup_left"
-	 (mk_lseg_ne i_var n_var, mkEmpty)
-	 (mk_node i_var n_var, mkEmpty))::
+      (* (mk_simple_seq_rule "lseg_node_rollup_left" *)
+      (* 	 (mk_lseg_ne i_var n_var, mkEmpty) *)
+      (* 	 (mk_node i_var n_var, mkEmpty)):: *)
       (mk_simple_seq_rule "node_expand_right"
 	 (mk_node i_var n_var, mk_unfolded_struct_ i_var n2_var)
 	 (mk_node i_var n_var, mk_node i_var n2_var))::

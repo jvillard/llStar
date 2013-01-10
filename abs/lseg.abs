@@ -1,6 +1,7 @@
 /*************************************
  * Simple subtraction rules from TACAS 2006 paper
- * without junk rules
+ * - without rules that produce garbage
+ * - with non-empty list predicates
  *************************************/
 
 
@@ -14,7 +15,7 @@ where
 
 
 abstraction ls_pto:
- lseg(?x,_x) * node(_x,nil()) ~~>  lseg(?x,nil()) 
+ lseg(?x,_x) * node(_x,nil()) ~~>  lseg_ne(?x,nil()) 
 where 
   _x notincontext;
   _x notin ?x
@@ -22,7 +23,7 @@ where
 
 
 abstraction pto_ls:
- node(?x,_x) * lseg(_x,nil()) ~~> lseg(?x,nil()) 
+ node(?x,_x) * lseg(_x,nil()) ~~> lseg_ne(?x,nil()) 
 where 
   _x notincontext;
   _x notin ?x
@@ -30,12 +31,41 @@ where
 
 
 abstraction pto_pto:
- node(?x,_x) * node(_x,nil()) ~~> lseg(?x,nil())
+ node(?x,_x) * node(_x,nil()) ~~> lseg_ne(?x,nil())
 where 
   _x notincontext;
   _x notin ?x
 
 
+abstraction lsne_ls:
+ lseg_ne(?x,_x) * lseg(_x,nil()) ~~> lseg_ne(?x,nil()) 
+where 
+  _x notincontext;
+  _x notin ?x
+
+abstraction ls_lsne:
+ lseg(?x,_x) * lseg_ne(_x,nil()) ~~> lseg_ne(?x,nil()) 
+where 
+  _x notincontext;
+  _x notin ?x
+
+abstraction lsne_lsne:
+ lseg_ne(?x,_x) * lseg_ne(_x,nil()) ~~> lseg_ne(?x,nil()) 
+where 
+  _x notincontext;
+  _x notin ?x
+
+abstraction lsne_pto:
+ lseg_ne(?x,_x) * node(_x,nil()) ~~>  lseg_ne(?x,nil()) 
+where 
+  _x notincontext;
+  _x notin ?x
+
+abstraction pto_lsne:
+ node(?x,_x) * lseg_ne(_x,nil()) ~~> lseg_ne(?x,nil()) 
+where 
+  _x notincontext;
+  _x notin ?x
 
 /*************** End Abs1 Rule *******************/
 
@@ -63,7 +93,7 @@ where
 
 
 abstraction ls_pto_ls:
- lseg(?x,_x) * node(_x,?y) * lseg(?y,?z) ~~> lseg(?x,?y) * lseg(?y,?z)
+ lseg(?x,_x) * node(_x,?y) * lseg(?y,?z) ~~> lseg_ne(?x,?y) * lseg(?y,?z)
 where 
     _x notincontext;
   _x notin ?x;
@@ -74,7 +104,7 @@ where
 
 
 abstraction ls_pto_pto:
- lseg(?x,_x) * node(_x,?y) * node(?y,?z) ~~> lseg(?x,?y) * node(?y,?z)
+ lseg(?x,_x) * node(_x,?y) * node(?y,?z) ~~> lseg_ne(?x,?y) * node(?y,?z)
 where 
   _x notincontext;
   _x notin ?x;
@@ -83,7 +113,7 @@ where
 
 
 abstraction pto_ls_ls:
- node(?x,_x) * lseg(_x,?y) * lseg(?y,?z) ~~> lseg(?x,?y)  * lseg(?y,?z) 
+ node(?x,_x) * lseg(_x,?y) * lseg(?y,?z) ~~> lseg_ne(?x,?y)  * lseg(?y,?z) 
 where 
   _x notincontext;
   _x notin ?x;
@@ -93,7 +123,7 @@ where
 
 
 abstraction pto_ls_pto:
- node(?x,_x) * lseg(_x,?y) * node(?y,?z) ~~> lseg(?x,?y)  * node(?y,?z)
+ node(?x,_x) * lseg(_x,?y) * node(?y,?z) ~~> lseg_ne(?x,?y)  * node(?y,?z)
 where 
   _x notincontext;
   _x notin ?x;
@@ -103,7 +133,7 @@ where
 
 
 abstraction pto_pto_ls:
- node(?x,_x) * node(_x,?y) * lseg(?y,?z) ~~> lseg(?x,?y) * lseg(?y,?z) 
+ node(?x,_x) * node(_x,?y) * lseg(?y,?z) ~~> lseg_ne(?x,?y) * lseg(?y,?z) 
 where 
   _x notincontext;
   _x notin ?x;
@@ -114,13 +144,18 @@ where
 
 
 abstraction pto_pto_pto:
- node(?x,_x) * node(_x,?y) * node(?y,?z) ~~> lseg(?x,?y) * node(?y,?z) 
+ node(?x,_x) * node(_x,?y) * node(?y,?z) ~~> lseg_ne(?x,?y) * node(?y,?z) 
 where 
   _x notincontext;
   _x notin ?x;
   _x notin ?y;
   _x notin ?z
 
+
+
+/* abstract a node into a non-empty list segment */
+abstraction node_lsne:
+  node(?x,?y) ~~> lseg_ne(?x,?y)
 
 
 /*************************************
