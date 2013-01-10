@@ -2,7 +2,6 @@
  * Simple subtraction rules 
  *************************************/
 
-/*
 equiv eq_self_pred:
  builtin_eq(?x,?x) = numeric_const("0") <=> False
 without False
@@ -10,7 +9,6 @@ without False
 equiv neq_self_pred:
  builtin_neq(?x,?x) = numeric_const("1") <=> False
 without False
-*/
 
 equiv eq0_pred:
  builtin_eq(?x,?y) = numeric_const("0") <=> ?x != ?y
