@@ -6,7 +6,7 @@ LSTAR_OPTIONS=-lists
 SRC_FILE=$(PROG_NAME).bc
 SPEC_FILE=$(PROG_NAME).spec
 LOGIC_FILE=$(PROG_NAME).logic
-ABS_FILE=/dev/null
+ABS_FILE=../../abs/lseg.abs
 SMT_FILE=/dev/null
 
 %.bc: %.ll

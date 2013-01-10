@@ -1,11 +1,143 @@
-abstraction lseg_rollup_app_abs:
-  lseg_ne(?i, _n) * lseg(_kn, ?j)
-~~>
-  lseg_ne(?i, ?j)
-where
-  _n notincontext
+/*************************************
+ * Simple subtraction rules from TACAS 2006 paper
+ * without junk rules
+ *************************************/
 
-abstraction lseg_node_rollup_abs:
-  node(?i, ?n)
-~~>
-  lseg_ne(?i, ?n)
+
+/*************** Abs1 Rule *******************/
+abstraction ls_ls:
+ lseg(?x,_x) * lseg(_x,nil()) ~~> lseg(?x,nil()) 
+where 
+  _x notincontext;
+  _x notin ?x
+
+
+
+abstraction ls_pto:
+ lseg(?x,_x) * node(_x,nil()) ~~>  lseg(?x,nil()) 
+where 
+  _x notincontext;
+  _x notin ?x
+
+
+
+abstraction pto_ls:
+ node(?x,_x) * lseg(_x,nil()) ~~> lseg(?x,nil()) 
+where 
+  _x notincontext;
+  _x notin ?x
+
+
+
+abstraction pto_pto:
+ node(?x,_x) * node(_x,nil()) ~~> lseg(?x,nil())
+where 
+  _x notincontext;
+  _x notin ?x
+
+
+
+/*************** End Abs1 Rule *******************/
+
+
+
+/*************** Abs2 Rule *******************/
+abstraction ls_ls_ls:
+ lseg(?x,_x) * lseg(_x,?y) * lseg(?y,?z) ~~> lseg(?x,?y) * lseg(?y,?z) 
+where 
+  _x notincontext;
+  _x notin ?x;
+  _x notin ?y;
+  _x notin ?z
+
+
+
+abstraction ls_ls_pto:
+ lseg(?x,_x) * lseg(_x,?y) * node(?y,?z) ~~> lseg(?x,?y) * node(?y,?z) 
+where 
+  _x notincontext;
+  _x notin ?x;
+  _x notin ?y;
+  _x notin ?z
+
+
+
+abstraction ls_pto_ls:
+ lseg(?x,_x) * node(_x,?y) * lseg(?y,?z) ~~> lseg(?x,?y) * lseg(?y,?z)
+where 
+    _x notincontext;
+  _x notin ?x;
+  _x notin ?y;
+  _x notin ?z
+
+
+
+
+abstraction ls_pto_pto:
+ lseg(?x,_x) * node(_x,?y) * node(?y,?z) ~~> lseg(?x,?y) * node(?y,?z)
+where 
+  _x notincontext;
+  _x notin ?x;
+  _x notin ?y;
+  _x notin ?z
+
+
+abstraction pto_ls_ls:
+ node(?x,_x) * lseg(_x,?y) * lseg(?y,?z) ~~> lseg(?x,?y)  * lseg(?y,?z) 
+where 
+  _x notincontext;
+  _x notin ?x;
+  _x notin ?y;
+  _x notin ?z
+
+
+
+abstraction pto_ls_pto:
+ node(?x,_x) * lseg(_x,?y) * node(?y,?z) ~~> lseg(?x,?y)  * node(?y,?z)
+where 
+  _x notincontext;
+  _x notin ?x;
+  _x notin ?y;
+  _x notin ?z
+
+
+
+abstraction pto_pto_ls:
+ node(?x,_x) * node(_x,?y) * lseg(?y,?z) ~~> lseg(?x,?y) * lseg(?y,?z) 
+where 
+  _x notincontext;
+  _x notin ?x;
+  _x notin ?y;
+  _x notin ?z
+
+
+
+
+abstraction pto_pto_pto:
+ node(?x,_x) * node(_x,?y) * node(?y,?z) ~~> lseg(?x,?y) * node(?y,?z) 
+where 
+  _x notincontext;
+  _x notin ?x;
+  _x notin ?y;
+  _x notin ?z
+
+
+
+/*************************************
+ *  Empty rules
+ ***********************************
+rule node_nil2:
+node(nil(),?x) | |- 
+if
+
+rule node_not_nil:
+node(?x,?y) | ?x!=nil() |-
+if
+| |-
+
+rule node_not_eq:
+node(?x,?y) * node(?z,?w) | ?x!=?z |-
+if
+| |-
+*/
+/*************** End Abs2 Rule *******************/

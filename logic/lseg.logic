@@ -62,6 +62,14 @@ if
   lseg_ne(?i, ?l) | lseg_ne(?m, ?k)
    |- lseg_ne(?l,?k)
 
+rule lseg_same:
+  | lseg_ne(?i, ?j)
+    |- lseg_ne(?i, ?k)
+without
+  ?j != ?k
+if
+  lseg_ne(?i, ?j) |
+   |- ?j = ?k
 
 /*
   Equality of non-empty list segments.

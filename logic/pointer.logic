@@ -13,19 +13,27 @@ without False
 */
 
 equiv eq0_pred:
- builtin_eq(?x,?y) = numeric_const("0") => ?x != ?y
+ builtin_eq(?x,?y) = numeric_const("0") <=> ?x != ?y
 without ?x != ?y
 
+equiv eqn0_pred:
+ builtin_eq(?x,?y) != numeric_const("0") <=> ?x = ?y
+without ?x = ?y
+
 equiv eq1_pred:
- builtin_eq(?x,?y) = numeric_const("1") => ?x = ?y
+ builtin_eq(?x,?y) = numeric_const("1") <=> ?x = ?y
 without ?x = ?y
 
 equiv neq0_pred:
- builtin_neq(?x,?y) = numeric_const("0") => ?x = ?y
+ builtin_neq(?x,?y) = numeric_const("0") <=> ?x = ?y
 without ?x = ?y
 
+equiv neqn0_pred:
+ builtin_neq(?x,?y) != numeric_const("0") <=> ?x != ?y
+without ?x != ?y
+
 equiv neq1_pred:
- builtin_neq(?x,?y) = numeric_const("1") => ?x != ?y
+ builtin_neq(?x,?y) = numeric_const("1") <=> ?x != ?y
 without ?x != ?y
 
 equiv pointer_getelementptr0:
@@ -45,6 +53,13 @@ without
  ?w != ?v
 if
  pointer(?x,?sz,?v) | |- ?w = ?v
+
+/* corestar already knows that it can match identical predicates!
+rule padding_same_root_same_size:
+ | padding(?x,?sz) |- padding(?x,?sz)
+if
+ padding(?x,?sz) | |- 
+*/
 
 rule remove_malloced:
  | malloced(?mb,?n) |- malloced(?mb,?m)
