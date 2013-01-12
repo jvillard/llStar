@@ -81,9 +81,12 @@ let mkArray ptr start_idx end_idx size array_t v =
 
 let mkEmptySpec = Spec.mk_spec mkEmpty mkEmpty Spec.ClassMap.empty
 
+let env_add_abduct_rules sr  =
+  env.abduct_logic <- { env.abduct_logic with seq_rules = env.abduct_logic.seq_rules@sr }
+
 let env_add_seq_rules sr  =
   env.logic <- { env.logic with seq_rules = env.logic.seq_rules@sr };
-  env.abduct_logic <- { env.abduct_logic with seq_rules = env.abduct_logic.seq_rules@sr }
+  env_add_abduct_rules sr
 
 let env_add_rw_rules rwr  =
   env.logic <- { env.logic with rw_rules = env.logic.rw_rules@rwr };
@@ -841,9 +844,12 @@ let add_list_logic_of_struct t name rec_field =
   let n_var = Arg_var (Vars.AnyVar (0, "n")) in
   let n2_var = Arg_var (Vars.AnyVar (0, "n2")) in
 
-  let mk_unfolded_struct_ root fw_value =
-    Array.set fresh_field_values rec_field fw_value;
-    mk_unfolded_struct t root fresh_field_values in
+  let mk_unfolded_struct_ root i value =
+    let old_field_val = Array.get fresh_field_values i in
+    Array.set fresh_field_values i value;
+    let us = mk_unfolded_struct t root fresh_field_values in
+    Array.set fresh_field_values i old_field_val;
+    us in
 
   (** Expand node.
 
@@ -853,11 +859,11 @@ let add_list_logic_of_struct t name rec_field =
   let mk_expand_node_rule i subelt_type =
     if i = rec_field then
       (mk_simple_seq_rule "node_lookup_next"
-	 (mk_unfolded_struct_ i_var n_var, mk_rec_field i_var n2_var)
+	 (mk_unfolded_struct_ i_var rec_field n_var, mk_rec_field i_var n2_var)
 	 (mk_node i_var n_var, mk_rec_field i_var n2_var))
     else
       (mk_simple_seq_rule ("node_lookup_field_"^(string_of_int i))
-	 (mk_unfolded_struct_ i_var n_var, mk_field_pointer t i i_var n2_var)
+	 (mk_unfolded_struct_ i_var rec_field n_var, mk_field_pointer t i i_var n2_var)
 	 (mk_node i_var n_var, mk_field_pointer t i i_var n2_var)) in
 
   let expand_node_rules =
@@ -874,7 +880,7 @@ let add_list_logic_of_struct t name rec_field =
        RHS into its constituent fields. Afterwards the rules lseg_cons_field_lookup
        can be applied. *)
     mk_simple_seq_rule "lseg_node_lookup_first"
-      (mk_lseg_ne i_var j_var, mk_unfolded_struct_ i_var n_var)
+      (mk_lseg_ne i_var j_var, mk_unfolded_struct_ i_var rec_field n_var)
       (mk_lseg_ne i_var j_var, mk_node i_var n_var)::
     (* If we have a field on the RHS of the first node in a non_empty list segment
        on the LHS, we expand the list segment on the LHS. *)
@@ -889,19 +895,47 @@ let add_list_logic_of_struct t name rec_field =
        the node predicate. *)
       (mk_simple_seq_rule "node_rollup_left"
 	 (mk_node i_var n_var, mkEmpty)
-	 (mk_unfolded_struct_ i_var n_var, mkEmpty))::
+	 (mk_unfolded_struct_ i_var rec_field n_var, mkEmpty))::
     (* Convert all nodes on LHS to singleton list segments. *)
       (* (mk_simple_seq_rule "lseg_node_rollup_left" *)
       (* 	 (mk_lseg_ne i_var n_var, mkEmpty) *)
       (* 	 (mk_node i_var n_var, mkEmpty)):: *)
       (mk_simple_seq_rule "node_expand_right"
-	 (mk_node i_var n_var, mk_unfolded_struct_ i_var n2_var)
+	 (mk_node i_var n_var, mk_unfolded_struct_ i_var rec_field n2_var)
 	 (mk_node i_var n_var, mk_node i_var n2_var))::
       (mk_simple_seq_rule "node_rollup_right"
 	 (mkEmpty, mk_node i_var n_var)
-	 (mkEmpty, mk_unfolded_struct_ i_var n_var))::[] in
-  env_add_seq_rules rules
-    
+	 (mkEmpty, mk_unfolded_struct_ i_var rec_field n_var))::[] in
+  env_add_seq_rules rules;
+
+  (* rules for abduction of list nodes *)
+
+  (** abduce an entire node whenever we need to abduce any of the fields *)
+  let mk_abduce_node_rule i subelt_type =
+    if i = rec_field then
+      let conclusion = (mkEmpty, mkEmpty, mk_rec_field i_var n_var, mkEmpty) in
+      let premise = (mkEmpty,
+		     mk_unfolded_struct_ i_var rec_field n_var,
+		     mk_rec_field i_var n_var,
+		     mk_node i_var n_var) in
+      let without = mkPointer i_var (Arg_var (Vars.AnyVar (0, "s"))) (Arg_var (Vars.AnyVar (0, "v"))) in
+      (conclusion, [[premise]], "abduce_node_next", (without, []), [])
+    else
+      let conclusion = (mkEmpty, mkEmpty, mk_field_pointer t i i_var n_var, mkEmpty) in
+      let premise = (mkEmpty,
+		     mk_unfolded_struct_ i_var i n_var,
+		     mk_field_pointer t i i_var n_var,
+		     mk_node i_var n2_var) in
+      let without = mkPointer i_var (Arg_var (Vars.AnyVar (0, "s"))) (Arg_var (Vars.AnyVar (0, "v"))) in
+      (conclusion, [[premise]], "abduce_node_field_"^(string_of_int i), (without, []), []) in
+
+  let abduce_node_rules =
+    let rules_array = Array.mapi mk_abduce_node_rule (struct_element_types t) in
+    Array.to_list rules_array in
+
+  let abduct_rules = abduce_node_rules in
+  env_add_abduct_rules abduct_rules
+
 let add_list_logic_of_type t = match struct_name t with
   | None -> (* recursive structs are necessarily named *) ()
   | Some name ->

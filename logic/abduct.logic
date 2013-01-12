@@ -1,8 +1,10 @@
 import "llvm.logic";
 
+/*
 rule abduct_ptr :
   | |- pointer(?x,?sz,?v) -|
 without
   pointer(?x,?t,?w)
 if
  pointer(?x,?sz,?v) | |- -| pointer(?x,?sz,?v)
+*/
