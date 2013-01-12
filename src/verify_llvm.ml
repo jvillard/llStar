@@ -629,6 +629,17 @@ let cfg_nodes_of_function f =
   let lnsl = lnsl@phi_cfg in
   List.flatten (List.map snd lnsl)
 
+let pp_spec fmt (pre,post) =
+  Format.fprintf fmt "@[{%a}\n{%a}\n@."
+    Sepprover.string_inner_form pre Sepprover.string_inner_form post
+
+let dump_specs_of_function fid specs =
+  let file = Sys.getcwd() ^  "/.specs_" ^ fid in
+  let specs_out = open_out file in
+  let specs_fmt = Format.formatter_of_out_channel specs_out in
+  Format.fprintf specs_fmt "%a" (Debug.pp_list pp_spec) specs;
+  close_out specs_out
+
 let verify_function f =
   let id = value_id f in
   if not (is_declaration f) then (
@@ -651,11 +662,7 @@ let verify_function f =
       if !Lstar_config.abduction_flag then
 	let specs = Symexec.bi_abduct id cfg_nodes spec_to_verify
 	  env.logic env.abduct_logic env.abs_rules in
-	List.iter (fun (pre,post) ->
-	  Format.fprintf
-	    Format.err_formatter
-	    ("*** Spec for function %s \n{%a}\n{%a}\n") id
-	    Sepprover.string_inner_form pre Sepprover.string_inner_form post) specs;
+	dump_specs_of_function id specs;
 	specs <> []
       else
 	Symexec.verify id cfg_nodes spec_to_verify env.logic env.abs_rules in
