@@ -1,113 +1,158 @@
+import "pointer.logic";
+
 /***************************************
- * Singly-linked list segments (lseg). *
+ *  This file defines 
+ *
+ *  node
+ *  ls
+ *  lspe
+ *
  ***************************************/
 
-/**
- * Empty list segment.
- */
-equiv lseg_empty:
-  lseg(?s,?i, ?i) <=> ?i = ?i
 
-/*
-  Contradiction (lseg_ne describes non-empty list segment).
-*/
-equiv lseg_ne_empty1:
-  lseg_ne(?s,?i, ?j) => ?i = ?j <=> False
 
-/*
-  Contradiction (lseg_ne describes non-empty list segement).
-*/
-equiv lseg_ne_empty2:
-  lseg_ne(?s,?i, ?i) <=> False
-
-/*
-  Contradiction.
-    A heap cannot split into two part containing the same field.
-*/
-equiv lseg_ne_lseg_ne_contradiction1:
-  lseg_ne(?r,?i, ?j) * lseg_ne(?s,?i, ?k) <=> False
-
-equiv lseg_lseg_contradiction2:
-      lseg_ne(?r,?i, ?m) * lseg_ne(?s,?j, ?n)
-  =>  ?i = ?j <=> False
-
-/*
-  Equivalence.
-   All non-empty "lseg" list segements are converted to "lseg_ne" list segments.
-*/
-equiv lseg_non_empty1:
-  ?i != ?j => lseg(?s,?i, ?j) <=> lseg_ne(?s,?i, ?j)
-
-/*
-  Substraction rules for list segments.
-*/
-rule lseg_app_rollup2:
-  | lseg_ne(?s,?i, ?j) * lseg_ne(?s,?j, ?k)
-    |- lseg_ne(?s,?i, ?k)
+rule node_not_nil:
+  node(?s,numeric_const("0"),?y) | |-
 if
-  lseg_ne(?s,?i, ?j) * lseg_ne(?s,?j, ?k) |
-   |- 
 
-rule lseg_app_rollup3:
-  | lseg_ne(?s,?i, ?j) * lseg_ne(?s,?j, ?l) * lseg_ne(?s,?l, ?k)
-    |- lseg_ne(?s,?i, ?k)
+rule lseg_ne_not_nil:
+  lseg_ne(?s,numeric_const("0"),?y) | |-
 if
-  lseg_ne(?s,?i, ?j) * lseg_ne(?s,?j, ?l) * lseg_ne(?s,?l, ?k) |
-   |- 
 
-rule lseg_app_rollup_trans:
-  | lseg_ne(?s,?i, ?j) * lseg_ne(?s,?j, ?l) * lseg_ne(?s,?m, ?k)
-    |- lseg_ne(?s,?i, ?k)
+rule lseg_not_nil:
+  lseg(?s,numeric_const("0"),?y) | |-
 if
-  lseg_ne(?s,?i, ?l) | lseg_ne(?s,?m, ?k)
-   |- lseg_ne(?s,?l,?k)
+  | ?y=numeric_const("0") |-
 
-rule lseg_same:
-  | lseg_ne(?s,?i, ?j)
-    |- lseg_ne(?s,?i, ?k)
-without
-  ?j != ?k
+
+rule node_not_nil:
+  node(?s,?x,?y) | |- ?x!=numeric_const("0")
 if
-  lseg_ne(?s,?i, ?j) |
-   |- ?j = ?k
+  | |-
+
+rule node_not_eq:
+  node(?s,?x,?y) * node(?s,?x,?w) | |-
+if
+
+
+
+
+/*************************************
+ * Rule for unpacking Nodell 
+ *
+ *  These rules could potentially cycle forever
+ *  but due to their order cannot.
+ *************************************/
 
 /*
-  Equality of non-empty list segments.
-
-  If non-empty list segments with the same first node appear on both sides of
-  the entailment, we split the RHS segment into tail and head according to the
-  inductive case of the "lseg" definition.
-*/
-rule lseg_cons_expand:
-  | lseg_ne(?s,?i, ?j)
-    |- lseg_ne(?s,?i, ?j2)
+//Unroll node if we are looking for its next field
+rule field_remove1a:
+  |   node(?s,?x,?e1) |-  field(?x,"<node: node next>",?e2) 
 if
-  | lseg_ne(?s,?i, ?j)
-    |- node(?s,?i, _n) * lseg(?s,_n, ?j2)
+  field(?x,"<node: node next>",?e1) | field(?x,"<node: java.lang.String content>",_w) 
+     |-  ?e1=?e2 
 
-/*
-  Equivalence.
+//Unroll node if we are looking for its content field
+rule field_remove1b:
+  | node(?s,?x,?e1) |- field(?x,"<node: java.lang.String content>",?e2) 
+if
+  field(?x,"<node: java.lang.String content>",w) |  field(?x,"<node: node next>",?e1)
+     |-  w=?e2
 
-  A list segment must be either empty or non-empty.
+
+//Roll up a complete node if we have both fields.
+rule field_remove2:
+  | field(?x,"<node: node next>",?e1) * field(?x,"<node: java.lang.String content>",?z) |- 
+if
+  | node(?s,?x,?e1) |-  
 */
-equiv lseg_disj:
-      lseg(?s,?i, ?j)
-  <=> ?i = ?j
-        || lseg_ne(?s,?i, ?j)
 
-/*
-  Contradiction.
 
-  A node object cannot be null.
-*/
-equiv node_not_nil:
-  node(?s,nil(), ?n) <=>  False
 
-/*
-  Contradiction.
 
-  If two node with the same name exit (on the same side on the entailment),
-  then we have a contradiction (see field_field_contradiction1 for comparison).
-*/
-equiv node_not_eq:
-  node(?r,?x, ?n) * node(?s,?x, ?m) <=> False
+/*************************************
+ * Simple subtraction rules 
+ *************************************/
+
+
+rule lseg_ne_unroll_exists :
+| lseg_ne(?s,?x,?y) |- pointer(?x,?w,?Z)
+if
+| node(?s,?x,_fooz) * lseg(?s,_fooz,?y)  |- pointer(?x,?w,?Z)
+
+
+
+rule lseg_ne_lseg_ne_match :
+  lseg_ne(?s,?z,?w) | lseg_ne(?s,?x,?y) |- lseg_ne(?s,?x,?z)
+if
+  lseg_ne(?s,?x,?y) | |- lseg(?s,?y,?z)
+
+rule lseg_ne_node_match :
+  node(?s,?z,?w) | lseg_ne(?s,?x,?y) |- lseg_ne(?s,?x,?z)
+if
+  lseg_ne(?s,?x,?y) | |- lseg(?s,?y,?z)
+
+rule lseg_ne_pointer_match :
+  pointer(?z,?f,?w) | lseg_ne(?s,?x,?y) |- lseg_ne(?s,?x,?z)
+if
+  lseg_ne(?s,?x,?y) | |- lseg(?s,?y,?z)
+
+rule lseg_nil_match :
+  | lseg_ne(?s,?x,?y) |- lseg_ne(?s,?x,?z)
+if
+  lseg_ne(?s,?x,?y) | |- lseg(?s,?y,?z) * ?z = numeric_const("0")
+
+
+
+rule nl_lseg_ne_match :
+  lseg_ne(?s,?z,?w) | node(?s,?x,?y) |- lseg_ne(?s,?x,?z)
+if
+  node(?s,?x,?y) | |- lseg(?s,?y,?z)
+
+rule nl_node_match :
+  node(?s,?z,?w) | node(?s,?x,?y) |- lseg_ne(?s,?x,?z)
+if
+  node(?s,?x,?y) | |- lseg(?s,?y,?z)
+
+rule nl_pointer_match :
+  pointer(?z,?f,?w) | node(?s,?x,?y) |- lseg_ne(?s,?x,?z)
+if
+  lseg_ne(?s,?x,?y) | |- lseg(?s,?y,?z)
+
+
+
+
+rule lseg_left :
+  | lseg(?s,?x,?y) |- 
+if
+  | lseg_ne(?s,?x,?y) |- ;
+  | ?x=?y |- 
+
+
+rule lseg_right :
+  | |- lseg(?s,?x,?y) 
+if
+  | |- lseg_ne(?s,?x,?y) 
+or
+  | |- ?x=?y 
+
+
+/*************************************
+ * rules for contradictions 
+ *************************************/
+rule lseg_ne_pointer_contradiction:
+lseg_ne(?s,?x,?t) * pointer(?x,?sz,?z) | |- 
+if
+
+rule lseg_ne_node_contradiction :
+lseg_ne(?s,?x,?t) * node(?ss,?x,?z) | |- 
+if
+
+rule lseg_ne_lseg_ne_contr :
+lseg_ne(?s,?x,?t) * lseg_ne(?ss,?x,?z) | |-
+if
+
+rule lseg_ne_lseg_ne_contr :
+ | |- lseg_ne(?s,?x,?t) * lseg_ne(?ss,?x,?z)
+if
+ | |- x!=x 
