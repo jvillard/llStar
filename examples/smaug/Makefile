@@ -2,9 +2,11 @@ PROG_NAME=smaug
 
 LLVM_AS=llvm-as-3.1
 
-LSTAR_OPTIONS=-lists
+LSTAR_OPTIONS=-lists -d psc -abduct -abduct_file ../../logic/abduct.logic
+SPEC_FILE=/dev/null
+#LSTAR_OPTIONS=-lists -d psc
+#SPEC_FILE=$(PROG_NAME).spec
 SRC_FILE=$(PROG_NAME).bc
-SPEC_FILE=$(PROG_NAME).spec
 LOGIC_FILE=$(PROG_NAME).logic
 ABS_FILE=../../abs/lseg.abs
 SMT_FILE=/dev/null
