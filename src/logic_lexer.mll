@@ -93,9 +93,9 @@ let  not_cr_lf = [ ^ '\010' '\013']
 
 let  alpha_char = ['a' - 'z'] | ['A' - 'Z']
   
-let  simple_id_char = alpha_char | dec_digit | '_' | '.' | '$'
+let  simple_id_char = alpha_char | dec_digit | '_' | '.' | '$' | '%'
 
-let  first_id_char = alpha_char | '_' | '$'
+let  first_id_char = alpha_char | '_' | '$' | '%'
 
 let  string_char = ['\000' - '\033'] | ['\035' - '\091'] | ['\093' - '\127']   
 
