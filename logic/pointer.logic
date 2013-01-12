@@ -23,10 +23,21 @@ rule eq0_pred_left:
   without a_x != a_y |-
   if  | a_x != a_y |-  -|
 
-
+/*
 equiv eqn0_pred:
  builtin_eq(?x,?y) != numeric_const("0") <=> ?x = ?y
 without ?x = ?y
+*/
+
+rule eqn0_pred_right:
+   |  |- builtin_eq(a_x, a_y) != numeric_const("0") -|
+  without  |- a_x = a_y
+  if  |  |- a_x = a_y -|
+rule eqn0_pred_left:
+   | builtin_eq(a_x, a_y) != numeric_const("0") |-  -|
+  without a_x = a_y |-
+  if  | a_x = a_y |-  -|
+
 
 /*
 equiv eq1_pred:
@@ -51,9 +62,21 @@ equiv neqn0_pred:
  builtin_neq(?x,?y) != numeric_const("0") <=> ?x != ?y
 without ?x != ?y
 
+/*
 equiv neq1_pred:
  builtin_neq(?x,?y) = numeric_const("1") <=> ?x != ?y
 without ?x != ?y
+*/
+
+rule neq1_pred_right:
+   |  |- builtin_neq(a_x, a_y) != numeric_const("1") -|
+  without  |- a_x != a_y
+  if  |  |- a_x != a_y -|
+rule neq1_pred_left:
+   | builtin_neq(a_x, a_y) != numeric_const("1") |-  -|
+  without a_x != a_y |-
+  if  | a_x != a_y |-  -|
+
 
 equiv pointer_getelementptr0:
   !eltptr(?x,pointer_type(?gept),?p,jump(numeric_const("0"),?j))
