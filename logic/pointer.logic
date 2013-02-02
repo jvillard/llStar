@@ -2,35 +2,51 @@
  * Simple subtraction rules 
  *************************************/
 
-rewrite eq_self_pred:
- builtin_eq(?x,?x) = numeric_const("1")
+rewrite eq_eq_pred:
+ builtin_eq(?x,?y) = numeric_const("1")
+if ?x = ?y
 
-rewrite neq_self_pred:
- builtin_neq(?x,?x) = numeric_const("0")
+rewrite eq_neq_pred:
+ builtin_eq(?x,?y) = numeric_const("0")
+if ?x != ?y
 
-equiv eq0_pred:
- builtin_eq(?x,?y) = numeric_const("0") <=> ?x != ?y
+rewrite neq_eq_pred:
+ builtin_neq(?x,?y) = numeric_const("0")
+if ?x = ?y
+
+rewrite neq_neq_pred:
+ builtin_neq(?x,?y) = numeric_const("1")
+if ?x != ?y
+
+rule eq0_pred:
+ | builtin_eq(?x,?y) = numeric_const("0") |-
 without ?x != ?y
+if | ?x != ?y |-
 
-equiv eqn0_pred:
- builtin_eq(?x,?y) != numeric_const("0") <=> ?x = ?y
+rule eqn0_pred:
+ | builtin_eq(?x,?y) != numeric_const("0") |-
 without ?x = ?y
+if | ?x = ?y |-
 
-equiv eq1_pred:
- builtin_eq(?x,?y) = numeric_const("1") <=> ?x = ?y
+rule eq1_pred:
+ | builtin_eq(?x,?y) = numeric_const("1") |-
 without ?x = ?y
+if | ?x = ?y |-
 
-equiv neq0_pred:
- builtin_neq(?x,?y) = numeric_const("0") <=> ?x = ?y
+rule neq0_pred:
+ | builtin_neq(?x,?y) = numeric_const("0") |-
 without ?x = ?y
+if | ?x = ?y |-
 
-equiv neqn0_pred:
- builtin_neq(?x,?y) != numeric_const("0") <=> ?x != ?y
+rule neqn0_pred:
+ | builtin_neq(?x,?y) != numeric_const("0") |-
 without ?x != ?y
+if | ?x != ?y |-
 
-equiv neq1_pred:
- builtin_neq(?x,?y) = numeric_const("1") <=> ?x != ?y
+rule neq1_pred:
+ | builtin_neq(?x,?y) = numeric_const("1") |-
 without ?x != ?y
+if | ?x != ?y |-
 
 equiv pointer_getelementptr0:
   !eltptr(?x,pointer_type(?gept),?p,jump(numeric_const("0"),?j))
