@@ -33,19 +33,15 @@ all: build
 clean:
 	ocamlbuild -clean
 	rm -f lib/*.a lib/*.cmxa lib/*.cmxs bin/* *.subdirs
-	rm -rf corestar_src # DEV
 
 %.subdirs: %
 	ls -F $*/ | grep / | sed "s./.." | sed "s.^.-I $*/." > $*.subdirs
 
-corestar_src:
-	ln -sf "$(CORESTAR_HOME)/src" corestar_src
-
-test:
+test: build
 	cd examples; make
 
 
-.PHONY: build clean test
+.PHONY: build clean test byte
 
 -include .install.mk
 
