@@ -1036,7 +1036,6 @@ let add_logic_of_module m =
   )
 
 let go logic abduct_logic abs_rules spec_list m =
-  print_endline "It is on!";
   env.context <- module_context m;
   env.target <- Llvm_target.TargetData.create (data_layout m);
   env.logic <- logic;

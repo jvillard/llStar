@@ -1,59 +1,49 @@
-open Printf
+open Debug
 open Format
-open Llvm
 open Lstar_config
-open Cfg_core
+
+let load_logic_rules_from_file fn =
+  let l1,l2,cn = Load_logic.load_logic fn in
+  {Psyntax.empty_logic with Psyntax.seq_rules=l1; Psyntax.rw_rules=l2; Psyntax.consdecl=cn}
 
 let main () =
   parse_args ();
 
-  let ic = create_context () in
-  let imbuf = MemoryBuffer.of_file !program_file_name in
+  if log log_phase then
+    fprintf logf "@[Loading bitcode program.@.";
+  let ic = Llvm.create_context () in
+  let imbuf = Llvm.MemoryBuffer.of_file !program_file_name in
   let im = Llvm_bitreader.parse_bitcode ic imbuf in
 
-  dump_module im;
-  print_string ("\n"^
-"=== End of LLVM bitcode ========================================================\n");
-  print_string ("\n"^
-"=== Start Proof ================================================================\n\n");
+  if log log_phase then
+    fprintf logf "@[Setting up coreStar.@.";
+  let signals = (if Sys.os_type="Win32" then [] else [Sys.sigint; Sys.sigquit; Sys.sigterm]) in
+  List.iter
+    (fun s ->  Sys.set_signal s (Sys.Signal_handle (fun x -> Symexec.pp_dotty_transition_system (); exit x)))
+    signals;
+  if !Config.smt_run then Smt.smt_init();
+  (* Load abstract interpretation plugins *)
+  List.iter (fun file_name -> Plugin_manager.load_plugin file_name) !Config.abs_int_plugins;       
 
-  if !logic_file_name="" && not !Config.specs_template_mode then
-    eprintf "@\nLogic file name not specified. Can't continue....\n %s \n" usage_msg
-  else if !spec_file_name="" && not !Config.specs_template_mode then
-    eprintf "@\nSpecification file name not specified. Can't continue....\n %s \n" usage_msg
-  else if !absrules_file_name="" && not !Config.specs_template_mode then
-    eprintf "@\nAbstraction rules file name not specified. Can't continue....\n %s \n" usage_msg
-  else (
-    let signals = (if Sys.os_type="Win32" then [] else [Sys.sigint; Sys.sigquit; Sys.sigterm]) in
-    List.iter
-      (fun s ->  Sys.set_signal s (Sys.Signal_handle (fun x -> Symexec.pp_dotty_transition_system (); exit x)))
-      signals;
-    if !Config.smt_run then Smt.smt_init();
-      (* Load abstract interpretation plugins *)
-    List.iter (fun file_name -> Plugin_manager.load_plugin file_name) !Config.abs_int_plugins;       
+  if log log_phase then
+    fprintf logf "@[Loading logic.@.";
+  let logic = load_logic_rules_from_file !logic_file_name in
+  let abduct_logic = load_logic_rules_from_file !abductrules_file_name in
+  let abs_rules = load_logic_rules_from_file !absrules_file_name in
 
-    let l1,l2,cn = Load_logic.load_logic !logic_file_name in
-    let logic = {Psyntax.empty_logic with Psyntax.seq_rules=l1; Psyntax.rw_rules=l2; Psyntax.consdecl=cn} in
+  if log log_phase then
+    fprintf logf "@[Loading specs.@.";
+  let spec_list = Load.import_flatten
+    Cli_utils.specs_dirs            
+    !spec_file_name
+    Logic_parser.spec_file Logic_lexer.token in
 
-    let l1,l2,cn = Load_logic.load_logic !abductrules_file_name in
-    let abduct_logic = {Psyntax.empty_logic with Psyntax.seq_rules=l1; Psyntax.rw_rules=l2; Psyntax.consdecl=cn} in
-
-    let l1,l2,cn = Load_logic.load_abstractions !absrules_file_name in
-    let abs_rules = {Psyntax.empty_logic with Psyntax.seq_rules=l1; Psyntax.rw_rules=l2; Psyntax.consdecl=cn} in
-
-    let spec_list = Load.import_flatten
-      Cli_utils.specs_dirs            
-      !spec_file_name
-      Logic_parser.spec_file Logic_lexer.token in
-
-    let verdict = Verify_llvm.go logic abduct_logic abs_rules spec_list im in
-  print_string ("\n"^
-"=== End Proof ==================================================================\n");
-    print_string ("\nmama says "^(if verdict then "yes" else "no")^"\n");
-    Symexec.pp_dotty_transition_system ());
-
-  dispose_module im
-
+  if log log_phase then
+    fprintf logf "@[Verifying.@.";
+  let verdict = Verify_llvm.go logic abduct_logic abs_rules spec_list im in
+  print_string ("\nmama says "^(if verdict then "yes" else "no")^"\n");
+  Symexec.pp_dotty_transition_system ();
+  Llvm.dispose_module im
 
 let _ =
   System.set_signal_handlers ();
