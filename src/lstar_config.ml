@@ -41,6 +41,7 @@ let set_program_file_name_once s =
   else
     raise (Arg.Bad "More than one source file provided")
 
+(** parse command line arguments *)
 let parse_args () =
   Arg.parse arg_list set_program_file_name_once usage_msg;
   if !program_file_name = impossible_file_name then
