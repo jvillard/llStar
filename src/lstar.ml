@@ -5,13 +5,7 @@ open Lstar_config
 open Cfg_core
 
 let main () =
-  Arg.parse
-    arg_list
-    (fun s -> Format.eprintf "WARNING: Ignored argument %s.@." s)
-    usage_msg;
-
-  if !program_file_name="" then
-    failwith ("Program file name not specified. Can't continue....\n"^usage_msg^"\n");
+  parse_args ();
 
   let ic = create_context () in
   let imbuf = MemoryBuffer.of_file !program_file_name in

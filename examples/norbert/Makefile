@@ -14,7 +14,7 @@ SMT_FILE=/dev/null
 
 test: $(SRC_FILE)
 	../../bin/lstar -l $(LOGIC_FILE) -s $(SPEC_FILE) -a $(ABS_FILE) \
-	-b $(SMT_FILE) -f $(SRC_FILE) $(LSTAR_OPTIONS)
+	-b $(SMT_FILE) $(LSTAR_OPTIONS) $(SRC_FILE)
 
 clean:
 	rm -f .proof_file* .execution_core.dot .logic_rules.txt .*.icfg.dot \
