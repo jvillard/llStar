@@ -27,3 +27,4 @@ val verb_proof : unit -> bool
 val eclipse_mode : unit -> bool
 val abs_int_plugins : string list ref
 val check_memleaks : bool ref
+val outdir : string ref

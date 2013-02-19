@@ -1,3 +1,5 @@
+val outdir: string ref
+
 val program_file_name: string ref
 val logic_file_name: string ref
 val spec_file_name: string ref

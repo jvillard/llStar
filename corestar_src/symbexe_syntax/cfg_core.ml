@@ -80,7 +80,8 @@ let print_icfg_dotty
     List.iter (d_cfgedge chan s) s.succs  in
 
   if cfg_debug () then ignore (Printf.printf "\n\nPrinting iCFG as dot file...");
-  let chan = open_out (filename ^ ".icfg.dot") in
+  let fname = Filename.concat !Config.outdir (filename ^ ".icfg.dot") in
+  let chan = open_out fname in
   Printf.fprintf chan "digraph iCFG {\n\tnode [shape=box,  labeljust=l]\n";
   List.iter 
     (fun (stmts,name) -> 
@@ -109,8 +110,8 @@ let print_core
   let cstr = Format.flush_str_formatter 
      (List.iter (fun x -> pp_stmt_core Format.str_formatter x.skind;
 	             Format.pp_print_newline Format.str_formatter () ) stmts) in 
-
-  let chan = open_out (file ^ mname ^ ".core") in 
+  let fname = Filename.concat !Config.outdir (file ^ mname ^ ".core") in
+  let chan = open_out fname in 
   Printf.fprintf chan "%s" cstr; 
   close_out chan; 
 

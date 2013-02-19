@@ -5,6 +5,8 @@ let default_spec_file = "specs"
 let default_absrules_file = "abs"
 let default_abductrules_file = "../../logic/abduct.logic"
 
+let outdir = ref (Sys.getcwd() ^ Filename.dir_sep ^ "_lstar")
+
 let program_file_name = ref impossible_file_name
 let logic_file_name = ref default_logic_file
 let spec_file_name = ref default_spec_file
@@ -31,18 +33,28 @@ let arg_list = Config.args_default @ [
    "toggles abduction on");
   ("-lists", Arg.Set(auto_gen_list_logic),
    "toggles automatic list abstraction rules generation");
+  ("-outdir", Arg.Set_string(outdir),
+   "directory where to output LStar results");
 ]
 
 let usage_msg = "Usage: lstar [options] source_file"
 
 let set_program_file_name_once s =
-  if !program_file_name = impossible_file_name then
-    set_filename program_file_name s
-  else
-    raise (Arg.Bad "More than one source file provided")
+  if !program_file_name != impossible_file_name then
+    raise (Arg.Bad "More than one source file provided");
+  set_filename program_file_name s
+
 
 (** parse command line arguments *)
 let parse_args () =
   Arg.parse arg_list set_program_file_name_once usage_msg;
   if !program_file_name = impossible_file_name then
     Arg.usage arg_list usage_msg;
+  (* this is a race condition: the file could be removed between the
+     time we check whether it exists or not and the time we check whether
+     it's a directory or not... *)
+  if not ((Sys.file_exists !outdir) && (Sys.is_directory !outdir)) then
+    Unix.mkdir !outdir 0o755; (* perm = rwxr-xr-x *)
+  (* set up a few coreStar config variables *)
+  Config.outdir := !outdir;
+  Symexec.file := Filename.basename (!program_file_name);

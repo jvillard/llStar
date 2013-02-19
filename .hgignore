@@ -7,6 +7,4 @@ _build/*
 bin/*
 corestar_src.subdirs
 corestar_src
-.execution_core.dot
-.proof_file_*.txt
-examples/empty
+_lstar/

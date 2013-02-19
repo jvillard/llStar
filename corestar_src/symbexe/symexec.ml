@@ -48,7 +48,7 @@ let set_group,grouped = let x = ref false in (fun y -> x := y),(fun () -> !x)
 
 let fresh_node = let node_counter = ref 0 in fun () ->  let x = !node_counter in node_counter := x+1; x
 
-let fresh_file = let file_id = ref 0 in fun () -> let x = !file_id in file_id := x+1;  Sys.getcwd() ^  "/" ^ !file ^ ".proof_file_"^(string_of_int x)^".txt"
+let fresh_file = let file_id = ref 0 in fun () -> let x = !file_id in file_id := x+1;  !Config.outdir ^  "/" ^ !file ^ ".proof_file_"^(string_of_int x)^".txt"
 
 
 type node = {
@@ -108,7 +108,7 @@ let startnodes : node list ref = ref []
 let make_start_node node = startnodes := node::!startnodes
 
 let pp_dotty_transition_system () =
-  let foname = (!file) ^ ".execution_core.dot~" in
+  let foname = Filename.concat !Config.outdir ((!file) ^ ".execution_core.dot~") in
   let dotty_out = open_out foname in
   let dotty_outf = formatter_of_out_channel dotty_out in
   if Config.symb_debug() then printf "\n Writing transition system file execution_core.dot  \n";
@@ -152,9 +152,10 @@ let pp_dotty_transition_system () =
     !graphe;
   fprintf dotty_outf "\n\n\n}@.";
   close_out dotty_out;
-  let fname = (!file) ^ ".execution_core.dot" in
+  let fname = Filename.concat !Config.outdir ((!file) ^ ".execution_core.dot") in
   if Sys.file_exists fname then Sys.remove fname;
-  Sys.rename foname (!file ^ ".execution_core.dot")
+  Unix.link foname fname;
+  Unix.unlink foname
 
 
 let add_node (label : string) (ty : ntype) (cfg : cfg_node option) =

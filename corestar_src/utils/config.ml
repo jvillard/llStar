@@ -60,6 +60,8 @@ let set_abs_int_plugins (comma_sep_lis : string) : unit =
 
 let check_memleaks = ref false
 
+let outdir = ref (Sys.getcwd())
+
 let args_default = [
 ("-q", Arg.Clear(symb_debug_ref), "Run in quiet mode" );
 ("-v", Arg.Set(verb_proof_ref), "Verbose proofs");

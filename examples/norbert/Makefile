@@ -17,7 +17,6 @@ test: $(SRC_FILE)
 	-b $(SMT_FILE) $(LSTAR_OPTIONS) $(SRC_FILE)
 
 clean:
-	rm -f .proof_file* .execution_core.dot .logic_rules.txt .*.icfg.dot \
-              $(SRC_FILE)
+	rm -rf _lstar $(SRC_FILE)
 
 .PHONY: test
