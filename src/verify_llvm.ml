@@ -255,7 +255,14 @@ let ppred_of_gep x t ptr lidx =
   let jump_chain = jump_chain_of_lidx lidx in
   mkPPred ("eltptr", [x; args_of_type t; ptr; jump_chain])
 
+
+(** the current function context
+ * contains indirection information for basic blocks (see
+ * cfg_node_of_instr, Br case), and basic alloca information
+ * TODO: for now, allocas are global to the function.
+*)
 type fun_env = {
+  mutable fun_alloca_pred: pform; (** current footprint of local variables *)
   mutable fun_blk_label: string;
   mutable fun_br_to_orig: string -> string;
   mutable fun_br_to_dest: string -> string -> string;
@@ -265,7 +272,8 @@ type fun_env = {
 }
 
 let mk_empty_fun_env () =
-  { fun_blk_label = "";
+  { fun_alloca_pred = mkEmpty;
+    fun_blk_label = "";
     fun_br_to_orig = (fun br -> br);
     fun_br_to_dest = (fun br dest -> dest);
     fun_br_blocks = [];
@@ -295,13 +303,16 @@ let args_sizeof t =
 let cfg_node_of_instr fun_env instr = match instr_opcode instr with
   (* Terminator Instructions *)
   | Opcode.Ret ->
-    if num_operands instr != 0 then
-      let ret_val = operand instr 0 in
-      let p0 = Arg_var(Vars.concretep_str ("@parameter"^(string_of_int 0)^":")) in
-      let post = mkEQ(ret_arg, p0) in
-      let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
-      [mk_node (Core.Assignment_core  ([], spec, [args_of_value ret_val])); mk_node Core.End]
-    else [mk_node Core.End]
+    (* the return instruction consumes the footprint of local
+       variables and sets the return value*)
+    let (post,params) =
+      if num_operands instr != 0 then
+	let ret_val = operand instr 0 in
+	let p0 = Arg_var(Vars.concretep_str ("@parameter"^(string_of_int 0)^":")) in
+	mkEQ(ret_arg, p0), [args_of_value ret_val]
+      else mkEmpty, [] in
+    let spec = Spec.mk_spec fun_env.fun_alloca_pred post Spec.ClassMap.empty in
+    [mk_node (Core.Assignment_core  ([], spec, params)); mk_node Core.End]
   | Opcode.Br ->
     (* this is how you get a block's label using the ocaml bindings... *)
     let label_of_bblock b =
@@ -399,6 +410,7 @@ let cfg_node_of_instr fun_env instr = match instr_opcode instr with
     let alloca = mkSPred ("alloca", [x; sz]) in
     let pointer = mkPointer x sz e in
     let post = mkStar alloca pointer in
+    fun_env.fun_alloca_pred <- mkStar fun_env.fun_alloca_pred post;
     let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([], spec, []))]
   | Opcode.Load ->
