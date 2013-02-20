@@ -34,11 +34,7 @@ let import_flatten_extra_rules dirs filename extra_rules fileparser lexer =
       (acc, already_included))
     else (
     let already_included = filename::already_included in
-    if log log_phase then
-      fprintf logf "@[<4>Parsing logic in@ %s.@." filename;
     let file_entry_list = System.parse_file fileparser lexer filename "logic" in
-    if log log_phase then
-      fprintf logf "@[Parsed %s.@." filename;
     List.fold_left
       (fun (acc,already_included) entry ->
 	match entry with
