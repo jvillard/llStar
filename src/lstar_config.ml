@@ -1,39 +1,57 @@
 (* known bug: lstar cannot analyse a file named /. *)
 let impossible_file_name = "/."
-let default_logic_file = "logic"
-let default_spec_file = "specs"
-let default_absrules_file = "abs"
-let default_abductrules_file = "../../logic/abduct.logic"
+let default_logic_files = ["logic"; "$prog$.logic"]
+let default_spec_files = ["spec"; "$prog$.spec"]
+let default_absrules_files = ["abs"; "$prog$.abs"]
+let default_abductrules_files = ["abduct"; "$prog$.abduct"]
+let devnull = "/dev/null"
 
 let outdir = ref (Sys.getcwd() ^ Filename.dir_sep ^ "_lstar")
 
 let program_file_name = ref impossible_file_name
 let program_base_name = ref ""
-let output_ll = ref "/."
-let logic_file_name = ref default_logic_file
-let spec_file_name = ref default_spec_file
-let absrules_file_name = ref default_absrules_file
-let abductrules_file_name = ref default_abductrules_file
+let program_chopped_name = ref ""
+let output_ll = ref impossible_file_name
+let logic_file_name = ref impossible_file_name
+let spec_file_name = ref impossible_file_name
+let absrules_file_name = ref impossible_file_name
+let abductrules_file_name = ref impossible_file_name
 
 let optimise_bc = ref true
 let auto_gen_list_logic = ref false
 let abduction_flag = ref false
 
-let set_filename fnref fn =
+let set_file_name fnref fn =
   if not (Sys.file_exists fn) then raise (Arg.Bad "File does not exist");
   fnref := fn
 
-let set_bool bref b = bref := b
+let prog_regexp = Str.regexp "\\$prog\\$"
 
+(** must be called *after* program_*_name have been set (normally
+    after Arg.parse) *)
+let set_file_name_with_defaults fnref defaults =
+  let rec aux = function
+    | [] -> fnref := devnull
+    | defn::tl ->
+      let fname = Str.global_replace prog_regexp !program_chopped_name defn in
+      try
+	set_file_name fnref fname;
+	if Config.log Config.log_phase then
+	  Format.fprintf Debug.logf "@[Auto-picked %s@]@\n" fname;
+      with Arg.Bad _ -> aux tl in
+  if !fnref = impossible_file_name then aux defaults
+
+let set_bool bref b = bref := b
+  
 let arg_list = Config.args_default @ [
-  ("-l", Arg.String(set_filename logic_file_name),
-   "logic file name (default: "^default_logic_file^")");
-  ("-s", Arg.String(set_filename spec_file_name),
-   "spec file name (default: "^default_spec_file^")");
-  ("-a", Arg.String(set_filename absrules_file_name),
-   "abstraction rules file name (default: "^default_absrules_file^")");
-  ("-abduct_file", Arg.String(set_filename abductrules_file_name),
-   "abduction rules file name (default: "^default_abductrules_file^")");
+  ("-l", Arg.String(set_file_name logic_file_name),
+   "logic file name (default: "^List.hd default_logic_files^")");
+  ("-s", Arg.String(set_file_name spec_file_name),
+   "spec file name (default: "^List.hd default_spec_files^")");
+  ("-a", Arg.String(set_file_name absrules_file_name),
+   "abstraction rules file name (default: "^List.hd default_absrules_files^")");
+  ("-abduct_file", Arg.String(set_file_name abductrules_file_name),
+   "abduction rules file name (default: "^List.hd default_abductrules_files^")");
   ("-abduct", Arg.Set(abduction_flag),
    "toggles abduction on");
   ("-lists", Arg.Set(auto_gen_list_logic),
@@ -41,7 +59,7 @@ let arg_list = Config.args_default @ [
   ("-outdir", Arg.Set_string(outdir),
    "directory where to output LStar results");
   ("-outputll", Arg.Set_string(output_ll),
-   "output ASCII bitcode to specified file (leave empty to disable) (default: [outdir]/[program_base_name].ll");
+   "output ASCII bitcode to specified file (leave empty to disable) (default: [outdir]/[program_base_name].ll)");
   ("-runopts", Arg.Bool(set_bool optimise_bc),
    "run some (hardcoded) LLVM optimisations on the bitcode to ease verification (default: true)");
 ]
@@ -51,10 +69,13 @@ let usage_msg = "Usage: lstar [options] source_file"
 let set_program_file_name_once s =
   if !program_file_name != impossible_file_name then
     raise (Arg.Bad "More than one source file provided");
-  set_filename program_file_name s;
+  set_file_name program_file_name s;
   program_base_name := Filename.basename s;
+  program_chopped_name := (
+    try Filename.chop_extension !program_base_name
+    with Invalid_argument _ -> !program_base_name);
   if (!output_ll = "/.") then
-    output_ll := !program_base_name ^ ".ll"
+    output_ll := !program_chopped_name ^ ".ll"
 
 (** parse command line arguments *)
 let parse_args () =
@@ -74,4 +95,11 @@ let parse_args () =
     Unix.mkdir !outdir 0o755; (* perm = rwxr-xr-x *)
   (* set up a few coreStar config variables *)
   Config.outdir := !outdir;
-  Symexec.file := Filename.basename (!program_file_name);
+  Symexec.file := !program_base_name;
+
+  (* try to find the logic/abs/specs/... files if they haven't been given *)
+  List.iter (fun (a,b) -> set_file_name_with_defaults a b)
+    [(logic_file_name, default_logic_files);
+     (absrules_file_name, default_absrules_files);
+     (spec_file_name, default_spec_files);
+     (abductrules_file_name, default_abductrules_files)]

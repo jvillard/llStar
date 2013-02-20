@@ -2,6 +2,7 @@ val outdir: string ref
 
 val program_file_name: string ref
 val program_base_name: string ref
+val program_chopped_name: string ref
 val output_ll: string ref
 val logic_file_name: string ref
 val spec_file_name: string ref

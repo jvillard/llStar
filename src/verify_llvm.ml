@@ -101,7 +101,7 @@ let spec_of_fun_id fid =
   let rec aux = function
     | Logic_spec.Funspec(i, spec)::ss when i = fid -> spec
     | _::ss -> aux ss
-    | [] -> warn ("no spec found for "^fid); mkEmptySpec in
+    | [] -> if not !Lstar_config.abduction_flag then warn ("no spec found for "^fid); mkEmptySpec in
   aux env.specs
 
 
