@@ -58,6 +58,12 @@ let set_program_file_name_once s =
 
 (** parse command line arguments *)
 let parse_args () =
+  (* before parsing the arguments, try to guess some of them for coreStar *)
+  if (System.getenv "JSTAR_SMT_PATH") = "" then
+    Unix.putenv "JSTAR_SMT_PATH" "z3";
+  if (System.getenv "JSTAR_SMT_ARGUMENTS") = "" then
+    Unix.putenv "JSTAR_SMT_ARGUMENTS" "-in -smt2";
+
   Arg.parse arg_list set_program_file_name_once usage_msg;
   if !program_file_name = impossible_file_name then
     Arg.usage arg_list usage_msg;
