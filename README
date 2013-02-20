@@ -20,33 +20,12 @@
 
 * Requirements and How to Get Them
 
-  Read this section carefully!
-
-  LStar requires OCaml, LLVM 3.1, and z3. Additionally, coreStar is
-  required to compile LStar from source. The requirements are detailed
-  below, in reverse order of exoticism. LStar has been developped
-  under Linux, but other environments might be viable.
+  LStar requires OCaml, LLVM 3.1, and z3. The requirements are
+  detailed below, in reverse order of exoticism. LStar has been
+  developped under Linux, but other environments might be viable.
 
   In short, get z3 and set the environment variables as shown below,
   and install LLVM and OCaml.
-
-** coreStar
-
-   coreStar is a symbolic execution engine for separation logic, the
-   formal theory underlying LStar. It is *included* in standard
-   distributions of LStar, so no action should be required to install
-   it. Alternatively, it can be fetched from
-
-     https://github.com/seplogic/corestar
-
-   LStar expects coreStar src/ directory to be under corestar_src/, at
-   the same level as its own src/ directory. Simply unpack coreStar
-   somewhere and set up a symbolic link inside the LStar directory to
-   corestar/src/:
-
-"""
-ln -s /where/corestar/is/src /where/lstar/is/corestar_src
-"""
 
 ** z3
 
@@ -116,43 +95,39 @@ CFLAGS=-I,/usr/lib/ocaml/llvm-3.1
 * Build Instructions
 
   Simply go to the LStar directory and type make. This should produce
-  the LStar binary at bin/lstar. If not, maybe read the "requirements" section
-  above a second time. I hope this works for you!
+  the LStar binary at bin/lstar. Let me know if this does not work for
+  you!
 
 
 * Usage
 
-  LStar can be invoked from the command line as follows:
+  LStar can be invoked from the command line as follows, where
+  <bitcode_module> is the .bc file you want to analyse.
 
-  ./bin/lstar -l <logic_file_name>
-              -a <abstraction_file_name>
-              -s <spec_file_name>
-              -f <bitcode_module>
+  ./bin/lstar [options] bitcode_module
 
-  The meaning of each option is as follows:
+  The main options you may want to specify are as follows (see the
+  output of "./bin/lstar -help" for more options):
 
-  - <bitcode_module> should be the .bc file you want to analyse.
-
-  - <spec_file_name> is the file that contains specifications for each
+  - -s <spec_file_name>: a file that contains specifications for each
     function in the bitcode module above. Specs are given as "f:
     {pre}{post}" where "f" is the name of the function, "pre" its
     intended precondition, and "post" its intended postcondition. See
     the examples included in the distribution for examples of the
     syntax (examples/*/*.spec).
 
-  - <logic_file_name> is a file containing what logical rules LStar
+  - -l <logic_file_name>: a file containing what logical rules LStar
     should use to manipulate symbolic states. A first guess can be to
     use the default file provided in the distribution, and located at
-    "logic/llvm.logic". Other logic sample files are included in
-    "logic/", including some rudimentary support for arithmetic in
-    case there isn't an SMT solver available.
+    "logic/llvm.logic".
 
-  - <abstraction_file_name> is a file containing abstraction rules
+  - -a <abstraction_file_name>: a file containing abstraction rules
     that LStar uses to approximate the symbolic state when trying to
     find loop invariants. See the "abs/" directory for examples
     (currently, only singly-linked lists).
 
-  It's easier to start from the examples included in the distribution.
+  An easy way to start is to look at the Makefiles in the examples
+  included in the distribution.
 
 
 * Examples Included in the Distribution
@@ -167,7 +142,7 @@ CFLAGS=-I,/usr/lib/ocaml/llvm-3.1
   singly-linked list, simply type
 """
 cd examples/smaug
-make test
+make
 """
 
   Other examples include Norbert, a program that allocates a struct
