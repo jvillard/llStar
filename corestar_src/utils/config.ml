@@ -32,7 +32,7 @@ let log_parse = 1 lsl 7
 let log_cfg = 1 lsl 8
 let log_smt = 1 lsl 9
 
-let log_active = ref(0)
+let log_active = ref(log_phase)
   (* -1 means all, 0 means one, in general use lor *)
 
 let log x = !log_active land x <> 0

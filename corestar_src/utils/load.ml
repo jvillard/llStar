@@ -30,7 +30,7 @@ let import_flatten_extra_rules dirs filename extra_rules fileparser lexer =
 	System.find_file_from_dirs dirs filename
       with Not_found  ->  (failwith ("Cannot find file " ^ filename)) in
     if List.mem filename already_included then
-      (if log log_phase then
+      (if log log_parse then
         fprintf logf "@[<4>File %s@ already included.@]@\n" filename;
       (acc, already_included))
     else (

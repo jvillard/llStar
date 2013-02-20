@@ -1047,7 +1047,7 @@ let add_logic_of_module m =
   let typs = List.filter filter_struct typs in
   List.iter add_logic_of_struct typs;
   if !Lstar_config.auto_gen_list_logic then (
-    print_endline "Generating list logic for the module...";
+    print_endline "Generating list logic for the module";
     List.iter add_list_logic_of_type typs
   )
 
@@ -1059,7 +1059,7 @@ let go logic abduct_logic abs_rules spec_list m =
   env.abs_rules <- abs_rules;
   env.specs <- spec_list;
   if log log_phase then
-    Format.fprintf logf "Generating logic for the module...@\n";
+    Format.fprintf logf "Generating logic for the module@\n";
   add_logic_of_module m;
   dump_logic_rules "logic_rules.txt" (env.logic.seq_rules);
   if !Lstar_config.abduction_flag then (
