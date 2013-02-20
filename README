@@ -20,38 +20,32 @@
 
 * Requirements and How to Get Them
 
-  LStar requires OCaml, LLVM 3.1, and z3. The requirements are
-  detailed below, in reverse order of exoticism. LStar has been
+  LStar requires OCaml, LLVM 3.1, and an SMT solver. The requirements
+  are detailed below, in reverse order of exoticism. LStar has been
   developped under Linux, but other environments might be viable.
 
-  In short, get z3 and set the environment variables as shown below,
-  and install LLVM and OCaml.
+  The executive summary is: install z3, LLVM, and OCaml.
 
-** z3
+** SMT solver
 
-   z3 is an SMT solver used to solve the arithmetic constraints found
-   during the proof process. It is called by coreStar indirectly from
-   LStar. Due to its closed-source nature, it cannot and is *not*
-   included with LStar. However, binaries for Linux and Windows are
-   available from
+   An SMT solver is used to solve the arithmetic constraints found
+   during the proof process. By default, LStar assumes that z3 is
+   installed and accessible in your $PATH. You can get z3 here:
 
-     http://research.microsoft.com/en-us/um/redmond/projects/z3/download.html
+     http://z3.codeplex.com/
 
-   The rest of this document assumes that a working version of z3 is
-   installed on the system. Moreover, you have to tell LStar where to
-   find z3. This is achieved by setting the following environment
-   variables:
+   Alternatively, you can specify which SMT solver to use by setting
+   the following environment variables.
 
 """
-# *change* this to wherever z3 is on your system
+# wherever the SMT solver is on your system
 export JSTAR_SMT_PATH=$HOME/local/bin/z3
-# keep this as it is, but do set it somewhere
+# these options are correct for z3
 export JSTAR_SMT_ARGUMENTS="-in -smt2"
 """
 
-   coreStar, and thus LStar, should also work with other SMT
-   solvers. See the coreStar documentation if you want to use this
-   feature.
+   See the coreStar documentation for more information about using a
+   different SMT solver. LStar has been tested using z3 version 4.2.
 
 ** LLVM
 
