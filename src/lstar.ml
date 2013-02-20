@@ -1,18 +1,17 @@
 open Debug
 open Format
-open Lstar_config
 
 let load_logic_rules_from_file fn =
   let l1,l2,cn = Load_logic.load_logic fn in
   {Psyntax.empty_logic with Psyntax.seq_rules=l1; Psyntax.rw_rules=l2; Psyntax.consdecl=cn}
 
 let main () =
-  parse_args ();
+  Lstar_config.parse_args ();
 
   if log log_phase then
-    fprintf logf "@[Loading bitcode program.@.";
+    fprintf logf "@[Loading bitcode program %s.@." !Lstar_config.program_file_name;
   let ic = Llvm.create_context () in
-  let imbuf = Llvm.MemoryBuffer.of_file !program_file_name in
+  let imbuf = Llvm.MemoryBuffer.of_file !Lstar_config.program_file_name in
   let im = Llvm_bitreader.parse_bitcode ic imbuf in
 
   if !Lstar_config.optimise_bc then (
@@ -58,15 +57,15 @@ let main () =
 
   if log log_phase then
     fprintf logf "@[Loading logic.@.";
-  let logic = load_logic_rules_from_file !logic_file_name in
-  let abduct_logic = load_logic_rules_from_file !abductrules_file_name in
-  let abs_rules = load_logic_rules_from_file !absrules_file_name in
+  let logic = load_logic_rules_from_file !Lstar_config.logic_file_name in
+  let abduct_logic = load_logic_rules_from_file !Lstar_config.abductrules_file_name in
+  let abs_rules = load_logic_rules_from_file !Lstar_config.absrules_file_name in
 
   if log log_phase then
     fprintf logf "@[Loading specs.@.";
   let spec_list = Load.import_flatten
     Cli_utils.specs_dirs            
-    !spec_file_name
+    !Lstar_config.spec_file_name
     Logic_parser.spec_file Logic_lexer.token in
 
   if log log_phase then
