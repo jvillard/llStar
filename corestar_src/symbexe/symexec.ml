@@ -21,6 +21,7 @@ open Sepprover
 open Spec
 open Specification
 open Vars
+open Config
 
 
 type execType = Abduct | Check | SymExec
@@ -111,7 +112,7 @@ let pp_dotty_transition_system () =
   let foname = Filename.concat !Config.outdir ((!file) ^ ".execution_core.dot~") in
   let dotty_out = open_out foname in
   let dotty_outf = formatter_of_out_channel dotty_out in
-  if Config.symb_debug() then printf "\n Writing transition system file execution_core.dot  \n";
+  if log log_symb then printf "\n Writing transition system file execution_core.dot  \n";
   fprintf dotty_outf "digraph main { \nnode [shape=box,  labeljust=l];\n\n";
   Idmap.iter
     (fun cfg nodes -> (
@@ -246,7 +247,7 @@ let add_id_abs_formset cfg = tabulate (add_abs_heap_node cfg)
 let add_id_formset_edge src label sheaps cfg =
   match sheaps with
     [] ->
-      if Config.symb_debug() then printf "\n\nInconsistent heap. Skip it!\n%!";
+      if log log_symb then printf "\n\nInconsistent heap. Skip it!\n%!";
       let idd = add_good_node "Inconsistent" in ignore (add_edge_with_proof src idd ExecE (label ^"\n Inconsistent"));
 	[]
   | _ ->
@@ -354,7 +355,7 @@ let check_postcondition (heaps : formset_entry list) (sheap : formset_entry) =
 	  | None -> false
 	  | Some frames -> (not !Config.check_memleaks) or List.fold_left (fun b f -> b && (Sepprover.is_pure f)) true frames)
         heaps in
-    if Config.symb_debug() then
+    if log log_symb then
       printf "\n\nPost okay \n%!";
     (* let idd = add_good_node ("EXIT: "^(Pprinter.name2str m.name)) in *)
     ignore (add_edge_with_proof node id ExitE "exit");
@@ -410,7 +411,7 @@ let heap_pprinter f h =
 let rec exec (n : cfg_node) (sheap : formset_entry) =
   let sheap_noid = fst sheap in
   let sheap = (sheap_noid, snd sheap) in
-(*  if Config.symb_debug() then
+(*  if log log_symb then
     Format.printf "Output to %i with heap@\n   %a@\n" (node_get_id n) (string_ts_form (Rterm.rao_create ())) sform_noid; *)
   execute_core_stmt n sheap
 
@@ -429,7 +430,7 @@ and execs_with_function
   let succs = g n in
   match succs with
     [] ->
-      if Config.symb_debug() then printf "Exit node %i\n%!" (n.sid);
+      if log log_symb then printf "Exit node %i\n%!" (n.sid);
       sheaps
   |  _ -> f succs
 
@@ -445,11 +446,11 @@ and execute_core_stmt
     (sheap : formset_entry)
     : formset_entry list =
   let sheap_noid = fst sheap in
-  if Config.symb_debug() then begin
+  if log log_symb then begin
     Format.printf "@\nExecuting statement:@ %a%!" Pprinter_core.pp_stmt_core n.skind;
     Format.printf "@\nwith heap :@\n    %a@\n@\n@.%!" heap_pprinter sheap_noid
   end;
-  if Config.symb_debug() then
+  if log log_symb then
     (Format.printf "\nStarting execution of node %i \n%!" (n.sid);
     Format.printf "@\nExecuting statement:@ %a%!" Pprinter_core.pp_stmt_core n.skind;
     Format.printf "@\nwith heap :@\n    %a@\n@\n@.%!" heap_pprinter sheap_noid;);
@@ -458,14 +459,14 @@ and execute_core_stmt
     (* Update the labels formset, if sheap already implied then fine, otherwise or it in. *)
     (let id = n.sid in
     try
-      if Config.symb_debug() then
+      if log log_symb then
         Format.printf "@\nPre-abstraction heap:@\n    %a@.%!" heap_pprinter sheap_noid;
       (* TODO: Introduce curr_abduct_abs_rules? *)
       let frames_abs = Sepprover.abs !curr_abs_rules (inner_form_af_to_form sheap_noid) in
       let antiframes_abs = Sepprover.abs !curr_abs_rules (inner_form_af_to_af sheap_noid) in
       let antiframes_abs =
         if frames_abs != [] && antiframes_abs = [] then [ empty_inner_form ] else antiframes_abs in
-      if Config.symb_debug() then
+      if log log_symb then
         (List.iter (fun heap -> Format.printf "@\nPost-abstraction heap:@\n    %a@.%!" string_inner_form heap) frames_abs;
         match !exec_type with
         | Abduct -> List.iter (fun saf -> Format.printf "@\nPost-abstraction antiheap:@\n    %a@.%!" string_inner_form saf) antiframes_abs;
@@ -473,7 +474,7 @@ and execute_core_stmt
       (* Obtain abstract values of abstracted heaps using abstract interpretation *)
       let frames_abs = List.map (fun heap -> Sepprover.abstract_val heap) frames_abs in
       let antiframes_abs = List.map (fun heap -> Sepprover.abstract_val heap) antiframes_abs in
-      if Config.symb_debug() then
+      if log log_symb then
         (List.iter (fun heap -> Format.printf "@\nPost-abstract_val heap:@\n    %a@.%!" string_inner_form heap) frames_abs;
         match !exec_type with
         | Abduct -> List.iter (fun saf -> Format.printf "@\nPost-abstract_val antiheap:@\n    %a@.%!" string_inner_form saf) antiframes_abs;
@@ -488,11 +489,11 @@ and execute_core_stmt
             ("Abstract@"^(Debug.toString Pprinter_core.pp_stmt_core n.skind))))
         sheaps_abs;
 
-      if Config.symb_debug() then
+      if log log_symb then
         (Format.printf "\nAbstracted heaps before filtering: \n%!";
         List.iter (fun (heap, id) -> Format.printf "@\n    %a\n@.%!" heap_pprinter heap;) sheaps_abs;);
       let formset = (formset_table_find id) in
-      if Config.symb_debug() then
+      if log log_symb then
         (Format.printf "\nPreviously abstracted heaps: \n%!";
         List.iter (fun (heap, id) -> Format.printf "@\n    %a\n@.%!" heap_pprinter heap;) formset;);
       let sheaps_abs = map_option
@@ -526,14 +527,14 @@ and execute_core_stmt
           )
         )
         sheaps_abs in
-      if Config.symb_debug() then
+      if log log_symb then
         (Format.printf "\nAbstracted heaps after filtering: \n%!";
         List.iter (fun (heap, id) -> Format.printf "@\n    %a\n@.%!" heap_pprinter heap;) sheaps_abs;);
 
       formset_table_replace id (sheaps_abs @ formset);
       execs_one n sheaps_abs
     with Contained ->
-      if Config.symb_debug() then Format.printf "Formula contained.\n%!"; [])
+      if log log_symb then Format.printf "Formula contained.\n%!"; [])
 
   | Goto_stmt_core _ -> execs_one n [sheap]
 
@@ -668,7 +669,7 @@ let check_and_get_frame (pre_heap,id) post_sheap =
   let frame = frame_inner !curr_logic (inner_form_af_to_form post_sheap_noid) (inner_form_af_to_form pre_heap) in
   match frame with
     Some frame ->
-                 if Config.symb_debug() then
+                 if log log_symb then
                         (printf "\n\nOld expression okay \n%!";
                         ignore (add_edge_with_proof node id ExitE "exit");
                         frame)
@@ -767,7 +768,7 @@ let bi_abduct
       match Sepprover.convert (spec.pre) with
         None -> printf "@{<b>WARNING@}: %s has an unsatisfiable precondition@.%!" mname; []
       |	Some pre ->
-        if Config.symb_debug() then
+        if log log_symb then
           Printf.printf "\nStarting abduction...\n%!";
         exec_type := Abduct;
          let id = add_good_node ("Start "^mname) in
@@ -777,7 +778,7 @@ let bi_abduct
         let specs = List.map
           (fun (heap,_) -> (Sepprover.conjoin_inner pre (inner_form_af_to_af heap), inner_form_af_to_form heap))
           posts in
-        if Config.symb_debug()
+        if log log_symb
         then begin
           Format.printf "\nCandidate specs: \n%!";
           List.iter (fun (spec_pre, spec_post) ->
@@ -786,12 +787,12 @@ let bi_abduct
             ) specs;
         end;
         (* eliminate those for which the symbolic execution does not go through *)
-        if Config.symb_debug() then
+        if log log_symb then
             Printf.printf "\nStarting symbolic execution...\n%!";
         let cnt = ref 0 in
         let specs' = List.filter (fun (spec_pre, spec_post) ->
           cnt := !cnt + 1;
-          if Config.symb_debug()
+          if log log_symb
           then begin
             Printf.printf "\nSymbolic execution for:\n%!";
             Format.printf "@\nSpec pre:@\n    %a@.%!" string_inner_form spec_pre;

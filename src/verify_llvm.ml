@@ -6,6 +6,7 @@ open ValueKind
 open Cfg_core
 open Psyntax
 open Logic_spec
+open Config
 
 (** used to catch metadata information in values *)
 exception MetaData of llvalue

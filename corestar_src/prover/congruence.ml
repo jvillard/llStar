@@ -17,6 +17,7 @@ open Misc
 open Persistentarray
 open Printing
 open Psyntax
+open Config
 
 (*  Implementation of paper:
     Fast congruence closure and extensions
@@ -699,7 +700,7 @@ module PersistentCC (A : GrowablePersistentArray) : PCC =
       printf "@\n";*)
       if List.mem a visited then 
 	begin 
-	  if Config.smt_debug() then (
+	  if log log_smt then (
 	    printf "Cycle in ts@\n";
 	    print ts; 
 	    printf "Visited@\n @[";

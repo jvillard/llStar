@@ -17,6 +17,7 @@ open Format
 open Load
 open Psyntax
 open System
+open Config
 
 let load_logic_extra_rules 
     dirs filename extra_rules 

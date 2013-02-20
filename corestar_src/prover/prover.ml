@@ -23,7 +23,7 @@ open Psyntax
 open Backtrack
 open Smt
 open Vars
-
+open Config
 
 let empty_sequent () =
   {
@@ -164,7 +164,7 @@ let check wheres seq : bool  =
           begin
             let sf = convert_to_inner pf in 
             let (f,ts) = convert_ground seq.ts sf in 
-            if Config.smt_debug() then 
+            if log log_smt then 
                Format.printf "[Calling SMT to discharge a pure guard]@\nguard:@\n%a@\nheap:@\n%a@\n" 
                pp_ts_formula (mk_ts_form ts f) pp_sequent seq;  
             Smt.finish_him ts seq.assumption f

@@ -1,3 +1,4 @@
+open Config
 open Debug
 open Format
 

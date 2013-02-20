@@ -44,7 +44,7 @@
  * going to a new line ("@."). The first complication that may appear is that
  * a message belongs not to one log_category but to several log categories
  * log_a, log_b, and log_c.
- *    if log_active land (log_a lor log_b lor log_c) <> 0 then
+ *    if !log_active land (log_a lor log_b lor log_c) <> 0 then
  *      fprintf logf "Some message.@."
  * The second complication is that the message might be long.
  *    if log log_category then
@@ -68,20 +68,9 @@
 open Microsoft.FSharp.Compatibility
 F#*)
 open Format
+open Config
 
 let safe = true
-
-let log_exec = 1 lsl 0
-let log_load = 1 lsl 1
-let log_logic = 1 lsl 2
-let log_phase = 1 lsl 3
-let log_prove = 1 lsl 4
-let log_specs = 1 lsl 5
-
-let log_active = log_phase
-  (* -1 means all, 0 means one, in general use lor *)
-
-let log x = log_active land x <> 0
 
 let logf = std_formatter
 
@@ -106,7 +95,7 @@ let merge_formatters frm1 frm2 =
 
 let proof_dump = ref (merge_formatters 
 		  (Format.formatter_of_buffer buffer_dump)
-		  (flagged_formatter Format.std_formatter (log log_prove || (Config.verb_proof()))))
+		  (flagged_formatter Format.std_formatter (log log_prove)))
 
 (*IF-OCAML*)
 exception Unsupported 

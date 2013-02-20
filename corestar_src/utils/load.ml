@@ -13,6 +13,7 @@
 
 (* File to read a logic file and its imports. *)
 
+open Config
 open Debug
 open Format
 

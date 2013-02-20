@@ -13,13 +13,6 @@
 
 
 val safe : bool
-val log_specs : int
-val log_phase : int
-val log_load : int
-val log_prove : int
-val log_exec : int
-val log_logic : int
-val log : int -> bool
 val logf : Format.formatter
 val debug : bool
 val buffer_dump : Buffer.t

@@ -22,6 +22,7 @@ open List
 open Psyntax
 open Smtsyntax
 open Unix
+open Config
 
 exception SMT_error of string
 exception SMT_fatal_error
@@ -48,7 +49,7 @@ let send_custom_commands =
   let cc = open_in !Config.smt_custom_commands in
   try while true do begin
     let cmd = input_line cc in
-    if Config.smt_debug() then printf "@[%s@." cmd;
+    if log log_smt then printf "@[%s@." cmd;
     if Str.string_match decl_re cmd 0 then
       predeclared := StringSet.add (Str.matched_group 1 cmd) !predeclared;
     output_string !smtin cmd;
@@ -65,7 +66,7 @@ let smt_init () : unit =
   else
     try
       begin
-        if Config.smt_debug() then printf "@[Initialising SMT@.";
+        if log log_smt then printf "@[Initialising SMT@.";
         let args = System.getenv "JSTAR_SMT_ARGUMENTS" in
         let command = Filename.quote !smtpath ^ " " ^ args in
         if log log_phase then
@@ -74,7 +75,7 @@ let smt_init () : unit =
         smtout := o;  smtin := i;  smterr := e;
         smtout_lex := Lexing.from_channel !smtout;
         Config.smt_run := true;
-        if Config.smt_debug() then printf "@[SMT running.@]";
+        if log log_smt then printf "@[SMT running.@]";
         output_string i "(set-option :print-success false)\n";
         send_custom_commands (); flush i
       end
@@ -89,7 +90,7 @@ let smt_init () : unit =
 let smt_fatal_recover () : unit  =
   printf "@[<2>@{<b>SMT ERROR:@}@ ";
   printf "The SMT solver <%s> stopped unexpectedly.@." !smtpath;
-  if Config.smt_debug() then
+  if log log_smt then
     begin
       printf "@[Error report from the solver:@.";
       try while true do printf "@[%s@." (input_line !smterr) done
@@ -322,7 +323,7 @@ let smt_command
     (cmd : string)
     : unit =
   try
-    if Config.smt_debug() then printf "@[%s@." cmd;
+    if log log_smt then printf "@[%s@." cmd;
     print_flush();
     output_string !smtin cmd;
     output_string !smtin "\n";
@@ -347,17 +348,17 @@ let smt_assert (ass : string) : unit =
 let smt_check_sat () : bool =
     try
       let x = Hashtbl.find smt_memo !smt_onstack in
-      if Config.smt_debug() then printf "@[[Found memoised SMT call!]@.";
+      if log log_smt then printf "@[[Found memoised SMT call!]@.";
       x
     with Not_found ->
       smt_command "(check-sat)";
       let x = match smt_listen () with
         | Sat -> true
         | Unsat -> false
-        | Unknown -> if Config.smt_debug() then printf
+        | Unknown -> if log log_smt then printf
           "@[[Warning: smt returned 'unknown' rather than 'sat']@."; true
         | _ -> failwith "TODO" in
-      if Config.smt_debug () then printf "@[  %b@." x;
+      if log log_smt then printf "@[  %b@." x;
       Hashtbl.add smt_memo !smt_onstack x;
       x
 
@@ -459,7 +460,7 @@ let true_sequent_smt (seq : sequent) : bool =
   else
   (Clogic.plain seq.assumption  &&  Clogic.plain seq.obligation
     &&
-   ((if Config.smt_debug() then printf "@[Calling SMT to prove@\n %a@." Clogic.pp_sequent seq);
+   ((if log log_smt then printf "@[Calling SMT to prove@\n %a@." Clogic.pp_sequent seq);
     finish_him seq.ts seq.assumption seq.obligation)))
 
 
@@ -470,7 +471,7 @@ let frame_sequent_smt (seq : sequent) : bool =
   else
   (Clogic.plain seq.obligation
     &&
-   ((if Config.smt_debug() then printf "@[Calling SMT to get frame from@\n %a@." Clogic.pp_sequent seq);
+   ((if log log_smt then printf "@[Calling SMT to get frame from@\n %a@." Clogic.pp_sequent seq);
     finish_him seq.ts seq.assumption seq.obligation)))
 
 
@@ -482,7 +483,7 @@ let ask_the_audience
     : term_structure =
   if (not !Config.smt_run) then raise Backtrack.No_match
   else try
-    if Config.smt_debug() then
+    if log log_smt then
       begin
         printf "@[Calling SMT to update congruence closure@.";
         printf "@[Current formula:@\n %a@." Clogic.pp_ts_formula (Clogic.mk_ts_form ts form)
@@ -513,12 +514,12 @@ types; *)
     in smt_assert assm_query;
 
     (* check for a contradiction *)
-    if Config.smt_debug() then printf "@[[Checking for contradiction in assumption]@.";
+    if log log_smt then printf "@[[Checking for contradiction in assumption]@.";
     if smt_check_unsat() then (smt_reset(); raise Assm_Contradiction);
 
     (* check whether there are any new equalities to find; otherwise raise Backtrack.No_match *)
     (*
-    if Config.smt_debug() then printf "[Checking for new equalities]@\n";
+    if log log_smt then printf "[Checking for new equalities]@\n";
     smt_push();
     let reps = get_args_rep ts in
     let rep_sexps = String.concat " " (map (fun (x,y) -> string_sexp_neq (snd x,snd y))

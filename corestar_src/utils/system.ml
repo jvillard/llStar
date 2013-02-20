@@ -11,6 +11,7 @@
       LICENSE.txt
  ********************************************************)
 
+open Config
 open Debug
 open Corestar_std
 
