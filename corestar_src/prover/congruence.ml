@@ -699,11 +699,13 @@ module PersistentCC (A : GrowablePersistentArray) : PCC =
       printf "@\n";*)
       if List.mem a visited then 
 	begin 
-	  printf "Cycle in ts@\n";
-	  print ts; 
-	  printf "Visited@\n @[";
-	  List.iter (printf "%i@ ") visited;
-	  printf "@]@\n";
+	  if Config.smt_debug() then (
+	    printf "Cycle in ts@\n";
+	    print ts; 
+	    printf "Visited@\n @[";
+	    List.iter (printf "%i@ ") visited;
+	    printf "@]@\n";
+	  );
           true
 	end 
       else if List.mem a b then 

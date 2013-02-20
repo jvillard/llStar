@@ -1,4 +1,5 @@
-open Printf
+open Format
+open Debug
 open Llvm
 open TypeKind
 open ValueKind
@@ -601,7 +602,6 @@ let cfg_nodes_of_block fun_env lnsl b =
   (* insert label command from the block's label l, followed by the sequence
      of commands of the block *)
   let l = value_id (value_of_block b) in
-  print_endline ("Processing block "^l);
   fun_env.fun_blk_label <- l;
   fun_env.fun_cur_blk_phi_nodes <- [];
   let label_node = mk_node (Core.Label_stmt_core l) in
@@ -643,7 +643,10 @@ let dump_specs_of_function fid specs =
 let verify_function f =
   let id = value_id f in
   if not (is_declaration f) then (
-    print_endline ("verifying "^id);
+    if !Lstar_config.abduction_flag then
+      Format.fprintf logf "Abducing spec of function %s...@\n" id
+    else
+      Format.fprintf logf "Verifying function %s...@\n" id;
     let cfg_nodes = cfg_nodes_of_function f in
     let spec = spec_of_fun_id id in
     (* replace "@parameter%i%:" logical values with the function arguments *)
@@ -1042,8 +1045,8 @@ let go logic abduct_logic abs_rules spec_list m =
   env.abduct_logic <- abduct_logic;
   env.abs_rules <- abs_rules;
   env.specs <- spec_list;
-  print_endline ("Added specs for "^string_of_int (List.length spec_list)^" functions");
-  print_endline "Generating logic for the module... ";
+  if log log_phase then
+    Format.fprintf logf "Generating logic for the module...@\n";
   add_logic_of_module m;
   dump_logic_rules "logic_rules.txt" (env.logic.seq_rules);
   if !Lstar_config.abduction_flag then (

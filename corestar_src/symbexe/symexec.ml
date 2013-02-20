@@ -326,7 +326,7 @@ let call_jsr_static (sheap,id) spec il node =
             Sepprover.pprint_counter_example ();
             flush_str_formatter ())
         in
-        printf "@[<2>@{<b>ERROR@}: While executing node %d:@\n%a@.%!"
+        printf "@[<2>@{<b>ERROR@}: While executing node %d:@\n%a@]@\n%!"
           node.sid
           Pprinter_core.pp_stmt_core node.skind;
         Sepprover.print_counter_example ();
@@ -364,9 +364,9 @@ let check_postcondition (heaps : formset_entry list) (sheap : formset_entry) =
     (match !exec_type with
     | Abduct | SymExec ->
       (let et = "Cannot prove postcondition" in
-      printf "@{<b>ERROR@}: %s.@.!" et;
+      printf "@{<b>ERROR@}: %s.@\n%!" et;
       Sepprover.print_counter_example ();
-      printf "@{<b>(end of error)@}@.%!";
+      printf "@{<b>(end of error)@}@\n%!";
       Printing.pp_json_node (match node.cfg with None -> -1 | Some x -> x.sid) et (Sepprover.get_counter_example());
       List.iter
         (fun (heap, id) ->

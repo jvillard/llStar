@@ -32,21 +32,21 @@ let main () =
 
   let fname = Filename.concat !Config.outdir !Lstar_config.program_base_name in
   if log log_phase then
-    fprintf logf "@[Outputting analysed bitcode in %s.@." fname;
+    fprintf logf "@[Analysed bitcode in %s.@." fname;
   ignore (Llvm_bitwriter.write_bitcode_file im fname);
 
   let llvm_dis_pid =
     if !Lstar_config.output_ll <> "" then (
       let llname = Filename.concat !Config.outdir !Lstar_config.output_ll in
       if log log_phase then
-	fprintf logf "@[Outputting ASCII version in %s.@." llname;
+	fprintf logf "@[ASCII version in %s.@." llname;
       Some(Unix.create_process "llvm-dis-3.1" [|"llvm-dis-3.1";
 						"-o"; llname;
 						fname|] Unix.stdin Unix.stdout Unix.stderr)
     ) else None in
 
   if log log_phase then
-    fprintf logf "@[Setting up coreStar.@.";
+    fprintf logf "@[<2>Setting up coreStar.@\n";
   let signals = (if Sys.os_type="Win32" then [] else [Sys.sigint; Sys.sigquit; Sys.sigterm]) in
   List.iter
     (fun s ->  Sys.set_signal s (Sys.Signal_handle (fun x -> Symexec.pp_dotty_transition_system (); exit x)))
@@ -54,24 +54,27 @@ let main () =
   if !Config.smt_run then Smt.smt_init();
   (* Load abstract interpretation plugins *)
   List.iter (fun file_name -> Plugin_manager.load_plugin file_name) !Config.abs_int_plugins;       
+  print_newline ();
 
   if log log_phase then
-    fprintf logf "@[Loading logic.@.";
+    fprintf logf "@[<2>Loading logic.@\n";
   let logic = load_logic_rules_from_file !Lstar_config.logic_file_name in
   let abduct_logic = load_logic_rules_from_file !Lstar_config.abductrules_file_name in
   let abs_rules = load_logic_rules_from_file !Lstar_config.absrules_file_name in
+  print_newline ();
 
   if log log_phase then
-    fprintf logf "@[Loading specs.@.";
+    fprintf logf "@[<2>Loading specs.@\n";
   let spec_list = Load.import_flatten
     Cli_utils.specs_dirs            
     !Lstar_config.spec_file_name
     Logic_parser.spec_file Logic_lexer.token in
+  print_newline ();
 
   if log log_phase then
-    fprintf logf "@[Verifying.@.";
+    fprintf logf "@[<2>Analysing module...@\n";
   let verdict = Verify_llvm.go logic abduct_logic abs_rules spec_list im in
-  print_string ("\nmama says "^(if verdict then "yes" else "no")^"\n");
+  fprintf logf "@.@[Mama says %s@." (if verdict then "yes" else "no");
   Symexec.pp_dotty_transition_system ();
   Llvm.dispose_module im;
   match llvm_dis_pid with

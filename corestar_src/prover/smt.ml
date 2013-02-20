@@ -69,12 +69,12 @@ let smt_init () : unit =
         let args = System.getenv "JSTAR_SMT_ARGUMENTS" in
         let command = Filename.quote !smtpath ^ " " ^ args in
         if log log_phase then
-          fprintf logf "@[execute <%s>@." command;
+          fprintf logf "@[execute <%s>@]" command;
         let o, i, e = Unix.open_process_full command (environment()) in
         smtout := o;  smtin := i;  smterr := e;
         smtout_lex := Lexing.from_channel !smtout;
         Config.smt_run := true;
-        if Config.smt_debug() then printf "@[SMT running.@.";
+        if Config.smt_debug() then printf "@[SMT running.@]";
         output_string i "(set-option :print-success false)\n";
         send_custom_commands (); flush i
       end
