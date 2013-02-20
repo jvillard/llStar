@@ -8,17 +8,22 @@ let default_abductrules_file = "../../logic/abduct.logic"
 let outdir = ref (Sys.getcwd() ^ Filename.dir_sep ^ "_lstar")
 
 let program_file_name = ref impossible_file_name
+let program_base_name = ref ""
+let output_ll = ref "/."
 let logic_file_name = ref default_logic_file
 let spec_file_name = ref default_spec_file
 let absrules_file_name = ref default_absrules_file
 let abductrules_file_name = ref default_abductrules_file
 
+let optimise_bc = ref true
 let auto_gen_list_logic = ref false
 let abduction_flag = ref false
 
 let set_filename fnref fn =
   if not (Sys.file_exists fn) then raise (Arg.Bad "File does not exist");
   fnref := fn
+
+let set_bool bref b = bref := b
 
 let arg_list = Config.args_default @ [
   ("-l", Arg.String(set_filename logic_file_name),
@@ -35,6 +40,10 @@ let arg_list = Config.args_default @ [
    "toggles automatic list abstraction rules generation");
   ("-outdir", Arg.Set_string(outdir),
    "directory where to output LStar results");
+  ("-outputll", Arg.Set_string(output_ll),
+   "output ASCII bitcode to specified file (leave empty to disable) (default: [outdir]/[program_base_name].ll");
+  ("-runopts", Arg.Bool(set_bool optimise_bc),
+   "run some (hardcoded) LLVM optimisations on the bitcode to ease verification (default: true)");
 ]
 
 let usage_msg = "Usage: lstar [options] source_file"
@@ -42,8 +51,10 @@ let usage_msg = "Usage: lstar [options] source_file"
 let set_program_file_name_once s =
   if !program_file_name != impossible_file_name then
     raise (Arg.Bad "More than one source file provided");
-  set_filename program_file_name s
-
+  set_filename program_file_name s;
+  program_base_name := Filename.basename s;
+  if (!output_ll = "/.") then
+    output_ll := !program_base_name ^ ".ll"
 
 (** parse command line arguments *)
 let parse_args () =

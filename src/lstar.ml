@@ -15,6 +15,37 @@ let main () =
   let imbuf = Llvm.MemoryBuffer.of_file !program_file_name in
   let im = Llvm_bitreader.parse_bitcode ic imbuf in
 
+  if !Lstar_config.optimise_bc then (
+    if log log_phase then
+      fprintf logf "@[Running LLVM passes on bitcode.@.";
+    let pm = Llvm.PassManager.create () in
+    Llvm_scalar_opts.add_constant_propagation pm;
+    Llvm_scalar_opts.add_dead_store_elimination pm;
+    Llvm_scalar_opts.add_aggressive_dce pm;
+    Llvm_scalar_opts.add_memory_to_register_promotion pm;
+    Llvm_scalar_opts.add_ind_var_simplification pm;    
+    Llvm_scalar_opts.add_correlated_value_propagation pm;
+    Llvm_ipo.add_argument_promotion pm;
+    Llvm_ipo.add_global_dce pm;
+    Llvm_ipo.add_ipc_propagation pm;
+    ignore (Llvm.PassManager.run_module im pm)
+  );
+
+  let fname = Filename.concat !Config.outdir !Lstar_config.program_base_name in
+  if log log_phase then
+    fprintf logf "@[Outputting analysed bitcode in %s.@." fname;
+  ignore (Llvm_bitwriter.write_bitcode_file im fname);
+
+  let llvm_dis_pid =
+    if !Lstar_config.output_ll <> "" then (
+      let llname = Filename.concat !Config.outdir !Lstar_config.output_ll in
+      if log log_phase then
+	fprintf logf "@[Outputting ASCII version in %s.@." llname;
+      Some(Unix.create_process "llvm-dis-3.1" [|"llvm-dis-3.1";
+						"-o"; llname;
+						fname|] Unix.stdin Unix.stdout Unix.stderr)
+    ) else None in
+
   if log log_phase then
     fprintf logf "@[Setting up coreStar.@.";
   let signals = (if Sys.os_type="Win32" then [] else [Sys.sigint; Sys.sigquit; Sys.sigterm]) in
@@ -43,7 +74,11 @@ let main () =
   let verdict = Verify_llvm.go logic abduct_logic abs_rules spec_list im in
   print_string ("\nmama says "^(if verdict then "yes" else "no")^"\n");
   Symexec.pp_dotty_transition_system ();
-  Llvm.dispose_module im
+  Llvm.dispose_module im;
+  match llvm_dis_pid with
+  | Some(pid) -> ignore (Unix.waitpid [] pid);
+  | None -> ()
+  
 
 let _ =
   System.set_signal_handlers ();

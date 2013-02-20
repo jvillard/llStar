@@ -634,7 +634,7 @@ let pp_spec fmt (pre,post) =
     Sepprover.string_inner_form pre Sepprover.string_inner_form post
 
 let dump_specs_of_function fid specs =
-  let file = Filename.concat !Lstar_config.outdir (fid ^ ".specs") in
+  let file = Filename.concat !Lstar_config.outdir (!Lstar_config.program_base_name ^ "." ^ fid ^ ".specs") in
   let specs_out = open_out file in
   let specs_fmt = Format.formatter_of_out_channel specs_out in
   Format.fprintf specs_fmt "%a" (Debug.pp_list pp_spec) specs;
@@ -687,7 +687,7 @@ let gen_seq_rules_of_equiv name (equiv_left, equiv_right) =
 
 (** dumps logic rules into a file in the current directory *)
 let dump_logic_rules name rs =
-  let file = Filename.concat !Lstar_config.outdir name in
+  let file = Filename.concat !Lstar_config.outdir (!Lstar_config.program_base_name ^ "." ^ name) in
   let rules_out = open_out file in
   let rules_fmt = Format.formatter_of_out_channel rules_out in
   Format.fprintf rules_fmt "@[%a@." (Debug.pp_list pp_sequent_rule) rs;

@@ -8,7 +8,7 @@ export CORESTAR_HOME
 SRC_DIR=src
 CORESTAR_DIR=corestar_src
 MAINS=lstar
-LIBS=llvm llvm_executionengine llvm_bitreader llvm_target dynlink str unix
+LIBS=llvm llvm_bitreader llvm_bitwriter llvm_ipo llvm_scalar_opts llvm_target dynlink str unix
 LFLAGS=-cc,g++,-I,/usr/lib/ocaml/llvm-3.1,-cclib,-lffi
 CFLAGS=-I,/usr/lib/ocaml/llvm-3.1
 OB_FLAGS=-cflags -dtypes -lflags $(LFLAGS) -cflags $(CFLAGS)
