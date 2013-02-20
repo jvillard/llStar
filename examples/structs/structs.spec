@@ -17,17 +17,13 @@ setint:
   {pointer(@parameter0:,sizeof(integer_type(numeric_const("32"))),_w)}
   {pointer(@parameter0:,sizeof(integer_type(numeric_const("32"))),numeric_const("0"))}
 
-/* this function does *not* modify its argument, since its passed by value.
- The s in the post-condition is actually a variable allocated on the stack by LLVM.
- Nevertheless, we prove that the copy at s is set to 0.
+/* this function is modified by LLVM which does not appear to support passing
+ * structs by value...
 */
-yay_int:
-  {pointer(@parameter0:,pointer_type(named_type("struct.ij")),_v)
+yay_int: {pointer(@parameter0:,sizeof(pointer_type(named_type("struct.ij"))),_v)
       * pointer(_v,sizeof(named_type("struct.ij")),_w)}
-  {pointer(@parameter0:,pointer_type(named_type("struct.ij")),_v)
-      * pointer(_v,sizeof(named_type("struct.ij")),_w)
-      * pointer(s,sizeof(integer_type(numeric_const("32"))),numeric_const("0"))
-      * pointer(builtin_plus(s,numeric_const("4")),sizeof(integer_type(numeric_const("32"))),numeric_const("0"))}
+  {pointer(@parameter0:,sizeof(pointer_type(named_type("struct.ij"))),_v)
+      * pointer(_v,sizeof(named_type("struct.ij")),_w)}
 
 setifield:
   {pointer(@parameter0:,sizeof(named_type("struct.oneint")),_v)}

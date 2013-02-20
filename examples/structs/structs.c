@@ -23,7 +23,10 @@ int f(int a) {
   p = malloc(sizeof(struct ole));
   if (!p) return a;
   p->data = malloc(sizeof(int));
-  if (!(p->data)) return a;
+  if (!(p->data)) {
+    free(p);
+    return a;
+  }
   /* p->next = p; */ /* this is equivalent to the line below */
   *((struct ole **)((void *)p+sizeof(int *))) = p;
   *(p->next->data) = a;

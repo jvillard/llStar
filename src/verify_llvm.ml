@@ -657,9 +657,9 @@ let verify_function f =
   let id = value_id f in
   if not (is_declaration f) then (
     if !Lstar_config.abduction_flag then
-      Format.fprintf logf "Abducing spec of function %s...@\n" id
+      Format.fprintf logf "@[Abducing spec of function %s...@]%!@\n" id
     else
-      Format.fprintf logf "Verifying function %s...@\n" id;
+      Format.fprintf logf "@[Verifying function %s...@]%!@\n" id;
     let cfg_nodes = cfg_nodes_of_function f in
     let spec = spec_of_fun_id id in
     (* replace "@parameter%i%:" logical values with the function arguments *)

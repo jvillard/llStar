@@ -347,20 +347,39 @@ exception Contained
 let check_postcondition (heaps : formset_entry list) (sheap : formset_entry) =
   let sheap_noid = fst sheap in
   let node = snd sheap in
-  try
+  let check_post check_memleaks =
     let heap,id =
       List.find
         (fun (heap,id) ->
           match frame_inner !curr_logic (inner_form_af_to_form sheap_noid) (inner_form_af_to_form heap) with
 	  | None -> false
-	  | Some frames -> (not !Config.check_memleaks) or List.fold_left (fun b f -> b && (Sepprover.is_pure f)) true frames)
+	  | Some frames ->
+	    if not check_memleaks && !Config.check_memleaks then
+	      (* we couldn't find a leak-free post, let's output the
+		 leaky ones to the user *)
+	      List.iter
+		(fun f ->
+		  if not (Sepprover.is_pure f) then
+		    Format.fprintf Debug.logf
+		      "@{<b>WARNING@}: Potential memory leak.@\n%!@[<2>Extra heap left:@\n%a@]@\n@{<b>(end of warning)@}@\n%!"
+		      string_inner_form f;)
+		frames;
+	    (not check_memleaks)
+	    or List.fold_left (fun b f -> b && (Sepprover.is_pure f)) true frames)
         heaps in
     if log log_symb then
       printf "\n\nPost okay \n%!";
     (* let idd = add_good_node ("EXIT: "^(Pprinter.name2str m.name)) in *)
     ignore (add_edge_with_proof node id ExitE "exit");
     true
-    (* add_edge id idd "";*)
+    (* add_edge id idd "";*) in
+  try
+    if !Config.check_memleaks then
+      try
+	check_post true
+      with
+	Not_found -> check_post false
+    else check_post false
   with Not_found ->
     (match !exec_type with
     | Abduct | SymExec ->

@@ -55,25 +55,22 @@ let main () =
   if !Config.smt_run then Smt.smt_init();
   (* Load abstract interpretation plugins *)
   List.iter (fun file_name -> Plugin_manager.load_plugin file_name) !Config.abs_int_plugins;       
-  print_newline ();
 
   if log log_phase then
-    fprintf logf "@[<2>Loading logic.@\n";
+    fprintf logf "@.@[<2>Loading logic.@\n";
   let logic = load_logic_rules_from_file !Lstar_config.logic_file_name in
   let abduct_logic = load_logic_rules_from_file !Lstar_config.abductrules_file_name in
   let abs_rules = load_logic_rules_from_file !Lstar_config.absrules_file_name in
-  print_newline ();
 
   if log log_phase then
-    fprintf logf "@[<2>Loading specs.@\n";
+    fprintf logf "@.@[<2>Loading specs.@\n";
   let spec_list = Load.import_flatten
     Cli_utils.specs_dirs            
     !Lstar_config.spec_file_name
     Logic_parser.spec_file Logic_lexer.token in
-  print_newline ();
 
   if log log_phase then
-    fprintf logf "@[<2>Analysing module...@\n";
+    fprintf logf "@.@[Analysing module...@\n";
   let verdict = Verify_llvm.go logic abduct_logic abs_rules spec_list im in
   fprintf logf "@.@[Mama says %s@." (if verdict then "yes" else "no");
   Symexec.pp_dotty_transition_system ();

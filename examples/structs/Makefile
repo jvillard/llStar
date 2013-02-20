@@ -10,7 +10,7 @@ ABS_FILE=/dev/null
 SMT_FILE=/dev/null
 
 %.bc: %.c
-	clang -emit-llvm -c -o $@ $?
+	clang -emit-llvm -O0 -c -o $@ $?
 
 test: $(SRC_FILE)
 	../../bin/lstar -l $(LOGIC_FILE) -s $(SPEC_FILE) -a $(ABS_FILE) -b $(SMT_FILE) $(LSTAR_OPTIONS) $(SRC_FILE)

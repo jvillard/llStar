@@ -79,7 +79,8 @@ let abs_int_plugins = ref []
 let set_abs_int_plugins (comma_sep_lis : string) : unit = 
   abs_int_plugins := Str.split (Str.regexp ":") comma_sep_lis
 
-let check_memleaks = ref false
+let check_memleaks = ref true
+let set_bool bref b = bref := b
 
 let outdir = ref (Sys.getcwd())
 
@@ -92,6 +93,6 @@ let args_default = [
 ("-b", Arg.Set_string(smt_custom_commands), "Background predicate");
 ("-ai", Arg.String(set_abs_int_plugins), "Colon separated list of AI plugins filenames");
 ("-join", Arg.Set(abs_int_join_ref), "On abstraction join heaps over their numeric part");
-("-mem", Arg.Set(check_memleaks), "Checks for memory leaks");
+("-memleaks", Arg.Bool(set_bool check_memleaks), "Checks for memory leaks (default: true)");
 ("-d", Arg.String(String.iter set_debug_char), "Set debug modes (deprecated, see -log)");
 ]
