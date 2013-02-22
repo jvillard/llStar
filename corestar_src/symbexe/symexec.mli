@@ -15,7 +15,6 @@
 type ntype = Plain | Good | Error | Abs | UnExplored
 type etype = ExecE | AbsE | ContE | ExitE
 type id = int
-val file : string ref
 val set_group : bool -> unit
 type node = {
   mutable content : string;

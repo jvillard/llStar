@@ -49,6 +49,13 @@ let add_location i = function
 let find_location i =
   try Hashtbl.find locations i with Not_found -> unknown_location
 
+let pp_location loc =
+  let source_fname = !Config.source_file in
+  Format.fprintf Debug.logf "File \"%s\", line %d, character %d:@\n"
+    source_fname loc.begin_line loc.begin_column
+
+let pp_node i = pp_location (find_location i)
+
 let pp_json_location l t c =
   if Config.eclipse_mode() then (
   printf "@\njson {\"error_pos\": {";

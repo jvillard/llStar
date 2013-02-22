@@ -83,6 +83,8 @@ let check_memleaks = ref true
 let set_bool bref b = bref := b
 
 let outdir = ref (Sys.getcwd())
+let source_file = ref "" (* coreStar clients should set this! *)
+let source_base_name = ref "" (* and this! *)
 
 let args_default = [
 ("-q", Arg.Unit(clear_logs), "Run in quiet mode" );

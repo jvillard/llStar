@@ -10,9 +10,9 @@ let main () =
   Lstar_config.parse_args ();
 
   if log log_phase then
-    fprintf logf "@[<2>Loading bitcode program %s@\n" !Lstar_config.program_file_name;
+    fprintf logf "@[<2>Loading bitcode program %s@\n" !Lstar_config.bitcode_file_name;
   let ic = Llvm.create_context () in
-  let imbuf = Llvm.MemoryBuffer.of_file !Lstar_config.program_file_name in
+  let imbuf = Llvm.MemoryBuffer.of_file !Lstar_config.bitcode_file_name in
   let im = Llvm_bitreader.parse_bitcode ic imbuf in
 
   if !Lstar_config.optimise_bc then (
@@ -31,7 +31,7 @@ let main () =
     ignore (Llvm.PassManager.run_module im pm)
   );
 
-  let fname = Filename.concat !Config.outdir !Lstar_config.program_base_name in
+  let fname = Filename.concat !Config.outdir !Lstar_config.bitcode_base_name in
   if log log_phase then
     fprintf logf "@[Analysed bitcode in %s@]@\n" fname;
   ignore (Llvm_bitwriter.write_bitcode_file im fname);

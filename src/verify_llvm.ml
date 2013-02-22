@@ -299,8 +299,27 @@ let args_sizeof t =
   let size64 = Llvm_target.store_size env.target t in
   Arg_op("numeric_const", [Arg_string(Int64.to_string size64)])
 
+let location_of_instr instr =
+  let dbg_mdkind_id = mdkind_id env.context "dbg" in
+  match metadata instr dbg_mdkind_id with
+  | None -> None
+  | Some md ->
+    let line, col =
+      match (int64_of_const (operand md 0), int64_of_const (operand md 1)) with
+      | Some l, Some c -> Int64.to_int l, Int64.to_int c
+      | _ -> assert false (* I hate these bindings... *) in
+    let loc = {Printing.begin_line = line; Printing.begin_column = col;
+	       Printing.end_line = line;   Printing.end_column = col; } in
+    Some loc
+
 (** compile an llvm instruction into a CoreStar program *) 
-let cfg_node_of_instr fun_env instr = match instr_opcode instr with
+let cfg_node_of_instr fun_env instr =
+  let mk_node stmt =
+    let loc = location_of_instr instr in
+    let node = Cfg_core.mk_node stmt in
+    Printing.add_location node.sid loc;
+    node in
+  match instr_opcode instr with
   (* Terminator Instructions *)
   | Opcode.Ret ->
     (* the return instruction consumes the footprint of local
@@ -647,7 +666,7 @@ let pp_spec fmt (pre,post) =
     Sepprover.string_inner_form pre Sepprover.string_inner_form post
 
 let dump_specs_of_function fid specs =
-  let file = Filename.concat !Lstar_config.outdir (!Lstar_config.program_base_name ^ "." ^ fid ^ ".specs") in
+  let file = Filename.concat !Lstar_config.outdir (!Lstar_config.bitcode_base_name ^ "." ^ fid ^ ".specs") in
   let specs_out = open_out file in
   let specs_fmt = Format.formatter_of_out_channel specs_out in
   Format.fprintf specs_fmt "%a" (Debug.pp_list pp_spec) specs;
@@ -688,7 +707,20 @@ let verify_function f =
 let env_add_gvar gvar =
   env.gvars <- (value_id gvar, args_of_type (type_of gvar), args_of_value gvar)::env.gvars
 
+let set_source_name m =
+  match get_named_metadata m "llvm.dbg.cu" with
+  | [||] -> ()
+  | amd ->
+    let md = Array.get amd 0 in
+    match get_mdstring (operand md 4), get_mdstring (operand md 3) with
+    | Some dir, Some file ->
+      let src_name = Filename.concat dir file in
+      Config.source_file := src_name;
+      Config.source_base_name := Filename.basename src_name
+    | _ -> ()
+
 let verify_module m =
+  set_source_name m;
   iter_globals env_add_gvar m;
   iter_functions verify_function m
 
@@ -703,7 +735,7 @@ let gen_seq_rules_of_equiv name (equiv_left, equiv_right) =
 
 (** dumps logic rules into a file in the current directory *)
 let dump_logic_rules name rs =
-  let file = Filename.concat !Lstar_config.outdir (!Lstar_config.program_base_name ^ "." ^ name) in
+  let file = Filename.concat !Lstar_config.outdir (!Lstar_config.bitcode_base_name ^ "." ^ name) in
   let rules_out = open_out file in
   let rules_fmt = Format.formatter_of_out_channel rules_out in
   Format.fprintf rules_fmt "@[%a@." (Debug.pp_list pp_sequent_rule) rs;

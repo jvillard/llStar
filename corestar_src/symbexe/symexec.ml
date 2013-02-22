@@ -41,15 +41,13 @@ type etype = ExecE | AbsE | ContE | ExitE
 
 type id = int
 
-let file = ref ""
-
 let proof_succeeded = ref true
 
 let set_group,grouped = let x = ref false in (fun y -> x := y),(fun () -> !x)
 
 let fresh_node = let node_counter = ref 0 in fun () ->  let x = !node_counter in node_counter := x+1; x
 
-let fresh_file = let file_id = ref 0 in fun () -> let x = !file_id in file_id := x+1;  !Config.outdir ^  "/" ^ !file ^ ".proof_file_"^(string_of_int x)^".txt"
+let fresh_file = let file_id = ref 0 in fun () -> let x = !file_id in file_id := x+1;  !Config.outdir ^  "/" ^ !Config.source_base_name ^ ".proof_file_"^(string_of_int x)^".txt"
 
 
 type node = {
@@ -109,7 +107,7 @@ let startnodes : node list ref = ref []
 let make_start_node node = startnodes := node::!startnodes
 
 let pp_dotty_transition_system () =
-  let foname = Filename.concat !Config.outdir ((!file) ^ ".execution_core.dot~") in
+  let foname = Filename.concat !Config.outdir ((!Config.source_base_name) ^ ".execution_core.dot~") in
   let dotty_out = open_out foname in
   let dotty_outf = formatter_of_out_channel dotty_out in
   if log log_symb then printf "\n Writing transition system file execution_core.dot  \n";
@@ -153,7 +151,7 @@ let pp_dotty_transition_system () =
     !graphe;
   fprintf dotty_outf "\n\n\n}@.";
   close_out dotty_out;
-  let fname = Filename.concat !Config.outdir ((!file) ^ ".execution_core.dot") in
+  let fname = Filename.concat !Config.outdir ((!Config.source_base_name) ^ ".execution_core.dot") in
   if Sys.file_exists fname then Sys.remove fname;
   Unix.link foname fname;
   Unix.unlink foname
@@ -327,6 +325,7 @@ let call_jsr_static (sheap,id) spec il node =
             Sepprover.pprint_counter_example ();
             flush_str_formatter ())
         in
+	Printing.pp_node node.sid;
         printf "@[<2>@{<b>ERROR@}: While executing node %d:@\n%a@]@\n%!"
           node.sid
           Pprinter_core.pp_stmt_core node.skind;
@@ -360,6 +359,7 @@ let check_postcondition (heaps : formset_entry list) (sheap : formset_entry) =
 	      List.iter
 		(fun f ->
 		  if not (Sepprover.is_pure f) then
+		    Printing.pp_node (match node.cfg with None -> -1 | Some x -> x.sid);
 		    Format.fprintf Debug.logf
 		      "@{<b>WARNING@}: Potential memory leak.@\n%!@[<2>Extra heap left:@\n%a@]@\n@{<b>(end of warning)@}@\n%!"
 		      string_inner_form f;)
@@ -384,6 +384,7 @@ let check_postcondition (heaps : formset_entry list) (sheap : formset_entry) =
     (match !exec_type with
     | Abduct | SymExec ->
       (let et = "Cannot prove postcondition" in
+      Printing.pp_node (match node.cfg with None -> -1 | Some x -> x.sid);
       printf "@{<b>ERROR@}: %s.@\n%!" et;
       Sepprover.print_counter_example ();
       printf "@{<b>(end of error)@}@\n%!";
@@ -695,6 +696,7 @@ let check_and_get_frame (pre_heap,id) post_sheap =
                  else
                         frame
   | None ->
+      Printing.pp_node (match node.cfg with None -> -1 | Some x -> x.sid);
       let et = "Cannot prove frame for old expression" in
       (printf "@{<b>ERROR:@} %s.@.%!" et;
       Sepprover.print_counter_example ();

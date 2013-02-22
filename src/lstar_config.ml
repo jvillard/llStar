@@ -8,9 +8,9 @@ let devnull = "/dev/null"
 
 let outdir = ref (Sys.getcwd() ^ Filename.dir_sep ^ "_lstar")
 
-let program_file_name = ref impossible_file_name
-let program_base_name = ref ""
-let program_chopped_name = ref ""
+let bitcode_file_name = ref impossible_file_name
+let bitcode_base_name = ref ""
+let bitcode_chopped_name = ref ""
 let output_ll = ref impossible_file_name
 let logic_file_name = ref impossible_file_name
 let spec_file_name = ref impossible_file_name
@@ -22,18 +22,18 @@ let auto_gen_list_logic = ref false
 let abduction_flag = ref false
 
 let set_file_name fnref fn =
-  if not (Sys.file_exists fn) then raise (Arg.Bad "File does not exist");
+  if not (Sys.file_exists fn) then raise (Arg.Bad ("File "^fn^" does not exist"));
   fnref := fn
 
 let prog_regexp = Str.regexp "\\$prog\\$"
 
-(** must be called *after* program_*_name have been set (normally
+(** must be called *after* bitcode_*_name have been set (normally
     after Arg.parse) *)
 let set_file_name_with_defaults fnref defaults =
   let rec aux = function
     | [] -> fnref := devnull
     | defn::tl ->
-      let fname = Str.global_replace prog_regexp !program_chopped_name defn in
+      let fname = Str.global_replace prog_regexp !bitcode_chopped_name defn in
       try
 	set_file_name fnref fname;
 	if Config.log Config.log_phase then
@@ -59,23 +59,24 @@ let arg_list = Config.args_default @ [
   ("-outdir", Arg.Set_string(outdir),
    "directory where to output LStar results");
   ("-outputll", Arg.Set_string(output_ll),
-   "output ASCII bitcode to specified file (leave empty to disable) (default: [outdir]/[program_base_name].ll)");
+   "output ASCII bitcode to specified file (leave empty to disable) (default: [outdir]/[bitcode_base_name].ll)");
   ("-runopts", Arg.Bool(set_bool optimise_bc),
    "run some (hardcoded) LLVM optimisations on the bitcode to ease verification (default: true)");
 ]
 
 let usage_msg = "Usage: lstar [options] source_file"
 
-let set_program_file_name_once s =
-  if !program_file_name != impossible_file_name then
+let set_bitcode_file_name_once s =
+  if !bitcode_file_name != impossible_file_name then
     raise (Arg.Bad "More than one source file provided");
-  set_file_name program_file_name s;
-  program_base_name := Filename.basename s;
-  program_chopped_name := (
-    try Filename.chop_extension !program_base_name
-    with Invalid_argument _ -> !program_base_name);
+  bitcode_base_name := Filename.basename s;
+  let fname = Filename.concat (Sys.getcwd()) !bitcode_base_name in
+  set_file_name bitcode_file_name fname;
+  bitcode_chopped_name := (
+    try Filename.chop_extension !bitcode_base_name
+    with Invalid_argument _ -> !bitcode_base_name);
   if (!output_ll = "/.") then
-    output_ll := !program_chopped_name ^ ".ll"
+    output_ll := !bitcode_chopped_name ^ ".ll"
 
 (** parse command line arguments *)
 let parse_args () =
@@ -85,8 +86,8 @@ let parse_args () =
   if (System.getenv "JSTAR_SMT_ARGUMENTS") = "" then
     Unix.putenv "JSTAR_SMT_ARGUMENTS" "-in -smt2";
 
-  Arg.parse arg_list set_program_file_name_once usage_msg;
-  if !program_file_name = impossible_file_name then
+  Arg.parse arg_list set_bitcode_file_name_once usage_msg;
+  if !bitcode_file_name = impossible_file_name then
     Arg.usage arg_list usage_msg;
   (* this is a race condition: the file could be removed between the
      time we check whether it exists or not and the time we check whether
@@ -95,7 +96,8 @@ let parse_args () =
     Unix.mkdir !outdir 0o755; (* perm = rwxr-xr-x *)
   (* set up a few coreStar config variables *)
   Config.outdir := !outdir;
-  Symexec.file := !program_base_name;
+  Config.source_file := !bitcode_file_name;
+  Config.source_base_name := !bitcode_base_name;
 
   (* try to find the logic/abs/specs/... files if they haven't been given *)
   List.iter (fun (a,b) -> set_file_name_with_defaults a b)
