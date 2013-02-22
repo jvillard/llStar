@@ -101,8 +101,7 @@ let is_file ext fn =
   StringH.ends_with (String.lowercase ext) (String.lowercase fn)
 
 let set_signal_handlers () =
-  let old = Sys.signal Sys.sigpipe Sys.Signal_ignore in
-  assert (old = Sys.Signal_default)
+  ignore (Sys.signal Sys.sigpipe Sys.Signal_ignore)
 
 (* TODO(rgrig): Thee should probably depend on the terminal. *)
 (* TODO(rgrig): Is there a (nice) ncurses ocaml inerface? *)
