@@ -366,7 +366,7 @@ let cfg_node_of_instr fun_env instr =
   | Opcode.Invoke -> implement_this "Invoke block terminator"
   | Opcode.Invalid2 -> failwith "\"Invalid\" instruction"
   | Opcode.Unreachable ->
-    (* if llvm thinks it's unreachable, let's tell hopstar by assuming False *)
+    (* if llvm thinks it's unreachable, let's tell LStar by assuming False *)
     let spec = Spec.mk_spec [] mkFalse Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([],spec,[]))]
   | Opcode.Invalid -> failwith "\"Invalid\" instruction"
