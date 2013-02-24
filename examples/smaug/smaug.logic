@@ -1,2 +1,2 @@
-import "../../logic/llvm.logic";
-import "../../logic/lseg.logic";
+import "../../rules/llvm.logic";
+import "../../rules/lseg.logic";
