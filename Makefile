@@ -38,7 +38,7 @@ clean:
 	ls -F $*/ | grep / | sed "s./.." | sed "s.^.-I $*/." > $*.subdirs
 
 test: build
-	cd examples; make
+	$(MAKE) -C examples
 
 
 .PHONY: build clean test byte
