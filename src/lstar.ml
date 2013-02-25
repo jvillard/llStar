@@ -1,15 +1,10 @@
 open Format
 (* coreStar modules *)
 open Config
-open Cfg_core
 open Debug
 open Psyntax
 (* LStar modules *)
-open Llexpression
-open Llfunction
 open Llutils
-open Logic_spec
-open Rulegen
 
 let verify_function logic abduct_logic abstraction_rules specs f =
   let fid = value_id f in
@@ -18,13 +13,13 @@ let verify_function logic abduct_logic abstraction_rules specs f =
       fprintf logf "@[Abducing spec of function %s...@." fid
     else
       fprintf logf "@[Verifying function %s...@." fid;
-    let cfg_nodes = cfg_nodes_of_function specs f in
-    let spec = spec_of_fun_id specs fid in
+    let cfg_nodes = Llfunction.cfg_nodes_of_function specs f in
+    let spec = Logic_spec.spec_of_fun_id specs fid in
     (* we apply 2 substitutions to the spec *)
     (* subst 1: 
      * replace "@parameter%i%:" logical values with the function arguments *)
     let rec add_param_subst (i,subst) fun_param =
-      let arg = args_of_value fun_param in
+      let arg = Llexpression.args_of_value fun_param in
       let param = Vars.concretep_str ("@parameter"^(string_of_int i)^":") in
       (i+1, add_subst param arg subst) in
     let (_,subst) = Llvm.fold_left_params add_param_subst (0,empty) f in
@@ -41,8 +36,8 @@ let verify_function logic abduct_logic abstraction_rules specs f =
       { spec with
 	Spec.pre = subst_form subst spec.Spec.pre;
 	Spec.post = subst_form subst spec.Spec.post; } in
-    stmts_to_cfg cfg_nodes;
-    print_icfg_dotty [(cfg_nodes, fid)] fid;
+    Cfg_core.stmts_to_cfg cfg_nodes;
+    Cfg_core.print_icfg_dotty [(cfg_nodes, fid)] fid;
     if !Lstar_config.abduction_flag then
       let specs = Symexec.bi_abduct fid cfg_nodes spec_to_verify
 	logic abduct_logic abstraction_rules in
@@ -115,8 +110,7 @@ let initialise_logic llmod =
     fprintf logf "@.@[<2>Loading logic and specs@\n";
   let load_logic_rules_from_file fn =
     let l1,l2,cn = Load_logic.load_logic fn in
-    {Psyntax.empty_logic with
-      Psyntax.seq_rules=l1; Psyntax.rw_rules=l2; Psyntax.consdecl=cn} in
+    { empty_logic with seq_rules=l1; rw_rules=l2; consdecl=cn} in
   let logic = load_logic_rules_from_file !Lstar_config.logic_file_name in
   let abduct_logic = load_logic_rules_from_file !Lstar_config.abductrules_file_name in
   let abs_rules = load_logic_rules_from_file !Lstar_config.absrules_file_name in
@@ -126,7 +120,7 @@ let initialise_logic llmod =
     Logic_parser.spec_file Logic_lexer.token in
   if log log_phase then
     fprintf logf "@.@[<2>Generating logic for the module";
-  let (module_logic, module_abduct_logic) = logic_of_module llmod in
+  let (module_logic, module_abduct_logic) = Rulegen.logic_of_module llmod in
   let logic = add_logic logic module_logic in
   let abduct_logic = add_logic abduct_logic module_abduct_logic in
   dump_into_file "logic_rules.txt"

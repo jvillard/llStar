@@ -23,8 +23,6 @@ let mkPointer ptr ptr_t v = mkSPred ("pointer", [ptr; ptr_t; v])
 let mkArray ptr start_idx end_idx size array_t v =
   mkSPred ("array", [ptr; start_idx; end_idx; size; array_t; v])
 
-let mkEmptySpec = Spec.mk_spec mkEmpty mkEmpty Spec.ClassMap.empty
-
 let args_sizeof target t =
   let size64 = Llvm_target.store_size target t in
   Arg_op("numeric_const", [Arg_string(Int64.to_string size64)])

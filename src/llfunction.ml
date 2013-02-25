@@ -9,12 +9,6 @@ open Cfg_core
 open Llexpression
 open Llutils
 
-(** returns the spec of function id [fid] if it is known *)
-let rec spec_of_fun_id specs fid = match specs with
-  | Logic_spec.Funspec(i, spec)::ss when i = fid -> spec
-  | _::ss -> spec_of_fun_id ss fid
-  | [] -> if not !Lstar_config.abduction_flag then warn ("no spec found for "^fid); mkEmptySpec
-
 (** context when translating a function
  * contains indirection information for basic blocks (see
  * cfg_node_of_instr, Br case), and basic alloca information
@@ -302,7 +296,7 @@ let cfg_node_of_instr specs fun_env instr =
 	if i = max_param_idx then []
 	else args_of_value (operand instr i)::(params_from_idx (i+1)) in
       let params = params_from_idx 0 in
-      let call_spec = spec_of_fun_id specs fid in
+      let call_spec = Logic_spec.spec_of_fun_id specs fid in
       [mk_node (Core.Assignment_core ([Vars.concretep_str id],
 				      call_spec,
 				      params))]
