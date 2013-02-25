@@ -129,3 +129,18 @@ let collect_types_in_module m =
   let o = (LltypeSet.empty,LlvalueSet.empty) in
   let (typs, _) = fold_left_functions collect_types_in_function o m in
   LltypeSet.elements typs
+
+
+(*** pretty printing *)
+let pp_spec fmt (pre,post) =
+  Format.fprintf fmt "@[{%a}\n{%a}\n@."
+    Sepprover.string_inner_form pre Sepprover.string_inner_form post
+
+(** dump things into files in the output directory *)
+let dump_into_file suffix pp_stuff stuff =
+  let fname = Filename.concat !Lstar_config.outdir
+    (!Lstar_config.bitcode_base_name ^ "." ^ suffix) in
+  let file_out = open_out fname in
+  let file_fmt = Format.formatter_of_out_channel file_out in
+  Format.fprintf file_fmt "@[%a@." pp_stuff stuff;
+  close_out file_out
