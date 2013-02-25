@@ -20,12 +20,23 @@ let verify_function logic abduct_logic abstraction_rules specs f =
       fprintf logf "@[Verifying function %s...@." fid;
     let cfg_nodes = cfg_nodes_of_function specs f in
     let spec = spec_of_fun_id specs fid in
-    (* replace "@parameter%i%:" logical values with the function arguments *)
+    (* we apply 2 substitutions to the spec *)
+    (* subst 1: 
+     * replace "@parameter%i%:" logical values with the function arguments *)
     let rec add_param_subst (i,subst) fun_param =
       let arg = args_of_value fun_param in
       let param = Vars.concretep_str ("@parameter"^(string_of_int i)^":") in
       (i+1, add_subst param arg subst) in
     let (_,subst) = Llvm.fold_left_params add_param_subst (0,empty) f in
+    (* subst 2: 
+     * apply the existential Hoare rule: make sure the
+       existentials in the post match those of the pre of the same
+       name. To achieve this, let's replace them by regular variables. *)
+    let pre_ev = ev_form spec.Spec.pre in
+    let subst = vs_fold
+      (fun v subst ->
+	let pvar = Arg_var (Vars.freshp_str (Vars.string_var v)) in
+	add_subst v pvar subst) pre_ev subst in
     let spec_to_verify =
       { spec with
 	Spec.pre = subst_form subst spec.Spec.pre;

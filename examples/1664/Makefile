@@ -6,7 +6,7 @@ LSTAR_OPTIONS=-runopts false
 SRC_FILE=$(PROG_NAME).bc
 
 %.bc: %.c
-	clang -emit-llvm -c -o $@ $?
+	clang -emit-llvm -g -c -o $@ $?
 
 test: $(SRC_FILE)
 	../../bin/lstar $(LSTAR_OPTIONS) $(SRC_FILE) 
