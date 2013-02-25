@@ -144,6 +144,8 @@ type rewrite_rule = {
   rewrite_name : string;
   saturate : bool;
 }
+val pp_rewrite_guard : Format.formatter -> rewrite_guard -> unit
+val pp_rewrite_rule : Format.formatter -> rewrite_rule -> unit
 type equiv_rule = string * pform * pform * pform * pform
 type rules =
     SeqRule of sequent_rule

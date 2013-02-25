@@ -500,7 +500,22 @@ type rewrite_rule =
     saturate : bool;
   } 
       
-      
+let pp_rewrite_guard f rg =
+  let p a b c = fprintf f "@\n@[<4>%s %a@]" a b c in
+  if rg.without_form <> [] then
+    p "without" string_form rg.without_form;
+  if rg.if_form <> [] then
+    p "if" string_form rg.if_form;
+  if rg.rewrite_where <> [] then
+    p "where" (pp_list string_where) rg.rewrite_where
+
+let pp_rewrite_rule f rw =
+  fprintf f "@\n@[<2>rewrite %s%s:"
+    rw.rewrite_name (if rw.saturate then "*" else "");
+  fprintf f "@\n@[<4>%s(%a) <=>@, %a@]"
+    rw.function_name (list_format "," string_args) rw.arguments string_args rw.result;
+  pp_rewrite_guard f rw.guard;
+  fprintf f "@]"
 
 type equiv_rule = string * (pform) * (pform) * (pform) * (pform)
 
