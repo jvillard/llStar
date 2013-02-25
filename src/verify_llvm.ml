@@ -32,6 +32,13 @@ let dump_logic_rules name rs =
   Format.fprintf rules_fmt "@[%a@." (Debug.pp_list pp_sequent_rule) rs;
   close_out rules_out
 
+let dump_rewrite_rules name rs =
+  let file = Filename.concat !Lstar_config.outdir (!Lstar_config.bitcode_base_name ^ "." ^ name) in
+  let rules_out = open_out file in
+  let rules_fmt = Format.formatter_of_out_channel rules_out in
+  Format.fprintf rules_fmt "@[%a@." (Debug.pp_list pp_rewrite_rule) rs;
+  close_out rules_out
+
 let verify_function logic abduct_logic abstraction_rules specs f =
   let id = value_id f in
   if not (is_declaration f) then (
@@ -77,6 +84,7 @@ let go logic abduct_logic abs_rules spec_list m =
   let logic = add_logic logic module_logic in
   let abduct_logic = add_logic abduct_logic module_abduct_logic in
   dump_logic_rules "logic_rules.txt" (logic.seq_rules);
+  dump_rewrite_rules "rewrite_rules.txt" (logic.rw_rules);
   if !Lstar_config.abduction_flag then (
     dump_logic_rules "abduct_rules.txt" (abduct_logic.seq_rules)
   );
