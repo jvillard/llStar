@@ -50,7 +50,7 @@ let verify_function logic abduct_logic abstraction_rules specs f =
 let verify_module logic abduct_logic abstruction_rules specs m =
   (* iter_globals env_add_gvar m; *) (* TODO: handle global variables *)
   let verif_fun = verify_function logic abduct_logic abstruction_rules specs in
-  let verdict = Llvm.fold_left_functions (fun b f -> verif_fun f) true m in
+  let verdict = Llvm.fold_left_functions (fun b f -> b && verif_fun f) true m in
   fprintf logf "@.@[Mama says %s@." (if verdict then "yes" else "no")
 
 let initialise_llvm () =
