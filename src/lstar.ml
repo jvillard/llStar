@@ -12,14 +12,14 @@ open Logic_spec
 open Rulegen
 
 let verify_function logic abduct_logic abstraction_rules specs f =
-  let id = value_id f in
+  let fid = value_id f in
   if not (Llvm.is_declaration f) then (
     if !Lstar_config.abduction_flag then
-      fprintf logf "@[Abducing spec of function %s...@]%!@\n" id
+      fprintf logf "@[Abducing spec of function %s...@." fid
     else
-      fprintf logf "@[Verifying function %s...@]%!@\n" id;
+      fprintf logf "@[Verifying function %s...@." fid;
     let cfg_nodes = cfg_nodes_of_function specs f in
-    let spec = spec_of_fun_id specs id in
+    let spec = spec_of_fun_id specs fid in
     (* replace "@parameter%i%:" logical values with the function arguments *)
     let rec add_param_subst (i,subst) fun_param =
       let arg = args_of_value fun_param in
@@ -31,35 +31,28 @@ let verify_function logic abduct_logic abstraction_rules specs f =
 	Spec.pre = subst_form subst spec.Spec.pre;
 	Spec.post = subst_form subst spec.Spec.post; } in
     stmts_to_cfg cfg_nodes;
-    print_icfg_dotty [(cfg_nodes, id)] id;
+    print_icfg_dotty [(cfg_nodes, fid)] fid;
     if !Lstar_config.abduction_flag then
-      let specs = Symexec.bi_abduct id cfg_nodes spec_to_verify
+      let specs = Symexec.bi_abduct fid cfg_nodes spec_to_verify
 	logic abduct_logic abstraction_rules in
-      dump_into_file (id ^ ".specs") (Debug.pp_list pp_spec) specs;
+      dump_into_file (fid ^ ".specs") (Debug.pp_list pp_spec) specs;
       specs <> []
     else
-      Symexec.verify id cfg_nodes spec_to_verify logic abstraction_rules
+      Symexec.verify fid cfg_nodes spec_to_verify logic abstraction_rules
   ) else true
 
 let verify_module logic abduct_logic abstruction_rules specs m =
-  set_source_name m;
   (* iter_globals env_add_gvar m; *) (* TODO: handle global variables *)
   let verif_fun = verify_function logic abduct_logic abstruction_rules specs in
-  Llvm.fold_left_functions (fun b f -> verif_fun f) true m
+  let verdict = Llvm.fold_left_functions (fun b f -> verif_fun f) true m in
+  fprintf logf "@.@[Mama says %s@." (if verdict then "yes" else "no")
 
-let load_logic_rules_from_file fn =
-  let l1,l2,cn = Load_logic.load_logic fn in
-  {Psyntax.empty_logic with Psyntax.seq_rules=l1; Psyntax.rw_rules=l2; Psyntax.consdecl=cn}
-
-let main () =
-  Lstar_config.parse_args ();
-
+let initialise_llvm () =
   if log log_phase then
     fprintf logf "@[<2>Loading bitcode program %s@\n" !Lstar_config.bitcode_file_name;
   let ic = Llvm.create_context () in
   let imbuf = Llvm.MemoryBuffer.of_file !Lstar_config.bitcode_file_name in
   let llmod = Llvm_bitreader.parse_bitcode ic imbuf in
-
   if !Lstar_config.optimise_bc then (
     if log log_phase then
       fprintf logf "@[Running LLVM passes on bitcode@]@\n";
@@ -75,12 +68,10 @@ let main () =
     Llvm_ipo.add_ipc_propagation pm;
     ignore (Llvm.PassManager.run_module llmod pm)
   );
-
   let fname = Filename.concat !Config.outdir !Lstar_config.bitcode_base_name in
   if log log_phase then
     fprintf logf "@[Analysed bitcode in %s@]@\n" fname;
   ignore (Llvm_bitwriter.write_bitcode_file llmod fname);
-
   let llvm_dis_pid =
     if !Lstar_config.output_ll <> "" then (
       let llname = Filename.concat !Config.outdir !Lstar_config.output_ll in
@@ -90,36 +81,40 @@ let main () =
 						"-o"; llname;
 						fname|] Unix.stdin Unix.stdout Unix.stderr)
     ) else None in
+  llcontext := Llvm.module_context llmod;
+  lltarget := Llvm_target.TargetData.create (Llvm.data_layout llmod);
+  if log log_phase then fprintf logf "@]";
+  (llvm_dis_pid,llmod)
 
+let initialise_corestar llmod =
   if log log_phase then
     fprintf logf "@.@[<2>Setting up coreStar@\n";
+  set_source_name llmod;
   let signals = (if Sys.os_type="Win32" then [] else [Sys.sigint; Sys.sigquit; Sys.sigterm]) in
   List.iter
     (fun s ->  Sys.set_signal s (Sys.Signal_handle (fun x -> Symexec.pp_dotty_transition_system (); exit x)))
     signals;
   if !Config.smt_run then Smt.smt_init();
   (* Load abstract interpretation plugins *)
-  List.iter (fun file_name -> Plugin_manager.load_plugin file_name) !Config.abs_int_plugins;       
+  List.iter (fun file_name -> Plugin_manager.load_plugin file_name) !Config.abs_int_plugins;
+  if log log_phase then fprintf logf "@]"
 
+let initialise_logic llmod =
   if log log_phase then
-    fprintf logf "@.@[<2>Loading logic@\n";
+    fprintf logf "@.@[<2>Loading logic and specs@\n";
+  let load_logic_rules_from_file fn =
+    let l1,l2,cn = Load_logic.load_logic fn in
+    {Psyntax.empty_logic with
+      Psyntax.seq_rules=l1; Psyntax.rw_rules=l2; Psyntax.consdecl=cn} in
   let logic = load_logic_rules_from_file !Lstar_config.logic_file_name in
   let abduct_logic = load_logic_rules_from_file !Lstar_config.abductrules_file_name in
   let abs_rules = load_logic_rules_from_file !Lstar_config.absrules_file_name in
-
-  if log log_phase then
-    fprintf logf "@.@[<2>Loading specs@\n";
   let spec_list = Load.import_flatten
     Cli_utils.specs_dirs            
     !Lstar_config.spec_file_name
     Logic_parser.spec_file Logic_lexer.token in
-
   if log log_phase then
-    fprintf logf "@.@[Analysing module@\n";
-  llcontext := Llvm.module_context llmod;
-  lltarget := Llvm_target.TargetData.create (Llvm.data_layout llmod);
-  if log log_phase then
-    fprintf logf "Generating logic for the module@\n";
+    fprintf logf "@.@[<2>Generating logic for the module";
   let (module_logic, module_abduct_logic) = logic_of_module llmod in
   let logic = add_logic logic module_logic in
   let abduct_logic = add_logic abduct_logic module_abduct_logic in
@@ -130,15 +125,23 @@ let main () =
   if !Lstar_config.abduction_flag then
     dump_into_file "abduct_rules.txt"
       (Debug.pp_list pp_sequent_rule) abduct_logic.seq_rules;
-  let verdict = verify_module logic abduct_logic abs_rules spec_list llmod in
-  fprintf logf "@.@[Mama says %s@." (if verdict then "yes" else "no");
+  if log log_phase then fprintf logf "@]@\n";
+  (logic,abduct_logic,abs_rules,spec_list)
+
+(** run LStar *)
+let go () =
+  Lstar_config.parse_args ();
+  let (wait_pid,llmod) = initialise_llvm () in
+  initialise_corestar llmod;
+  let (logic,abduct_logic,abs_rules,spec_list) = initialise_logic llmod in
+  verify_module logic abduct_logic abs_rules spec_list llmod;
   Symexec.pp_dotty_transition_system ();
   Llvm.dispose_module llmod;
-  match llvm_dis_pid with
+  match wait_pid with
   | Some(pid) -> ignore (Unix.waitpid [] pid);
   | None -> ()
-  
 
+(** toplevel *)
 let _ =
   System.set_signal_handlers ();
   let mf = {
@@ -152,4 +155,4 @@ let _ =
   set_formatter_tag_functions mf;
   pp_set_formatter_tag_functions err_formatter mf;
   set_tags true; pp_set_tags err_formatter true;
-  main ()
+  go ()
