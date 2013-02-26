@@ -1,3 +1,4 @@
+import "eq.logic";
 import "pointer.logic";
 import "lseg.logic";
 

@@ -1,52 +1,6 @@
-/*************************************
- * Simple subtraction rules 
+/**********************************************
+ * Generally useful rules about getelementptr 
  *************************************/
-
-rewrite eq_eq_pred:
- builtin_eq(?x,?y) = numeric_const("1")
-if ?x = ?y
-
-rewrite eq_neq_pred:
- builtin_eq(?x,?y) = numeric_const("0")
-if ?x != ?y
-
-rewrite neq_eq_pred:
- builtin_neq(?x,?y) = numeric_const("0")
-if ?x = ?y
-
-rewrite neq_neq_pred:
- builtin_neq(?x,?y) = numeric_const("1")
-if ?x != ?y
-
-rule eq0_pred:
- | builtin_eq(?x,?y) = numeric_const("0") |-
-without ?x != ?y
-if | ?x != ?y |-
-
-rule eqn0_pred:
- | builtin_eq(?x,?y) != numeric_const("0") |-
-without ?x = ?y
-if | ?x = ?y |-
-
-rule eq1_pred:
- | builtin_eq(?x,?y) = numeric_const("1") |-
-without ?x = ?y
-if | ?x = ?y |-
-
-rule neq0_pred:
- | builtin_neq(?x,?y) = numeric_const("0") |-
-without ?x = ?y
-if | ?x = ?y |-
-
-rule neqn0_pred:
- | builtin_neq(?x,?y) != numeric_const("0") |-
-without ?x != ?y
-if | ?x != ?y |-
-
-rule neq1_pred:
- | builtin_neq(?x,?y) = numeric_const("1") |-
-without ?x != ?y
-if | ?x != ?y |-
 
 equiv pointer_getelementptr0:
   !eltptr(?x,pointer_type(?gept),?p,jump(numeric_const("0"),?j))
@@ -58,6 +12,11 @@ equiv pointer_getelementptr_void:
 
 equiv jump_end:
   !eltptr(?x,?t,?y,jump_end()) <=> ?x = ?y
+
+
+/*************************************
+ * Simple subtraction rules 
+ *************************************/
 
 rule ptr_same_root_same_size:
  | pointer(?x,?sz,?v) |- pointer(?x,?sz,?w)
@@ -79,6 +38,7 @@ without
  ?n != ?m
 if
  malloced(?mb,?n) | |- ?n = ?m
+
 
 /*************************************
  * rules for contradictions 
