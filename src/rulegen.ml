@@ -26,14 +26,14 @@ let gen_seq_rules_of_equiv name (equiv_left, equiv_right) =
 (** the physical offset inside the struct, as a logical expression *)
 let offset_of_field struct_t i =
   let offset = Llvm_target.offset_of_element !lltarget struct_t i in
-  Arg_op("numeric_const", [Arg_string(Int64.to_string offset)])
+  args_int64 offset
 
 let offset_of_field_end struct_t i =
   let offset = Llvm_target.offset_of_element !lltarget struct_t i in
   let field_type = Array.get (struct_element_types struct_t) i in
   let field_size = Llvm_target.store_size !lltarget field_type in
   let field_end = Int64.add offset field_size in
-  Arg_op("numeric_const", [Arg_string(Int64.to_string field_end)])
+  args_int64 field_end
 
 (* a few definitions to make the rule definitions more readable *)
 let args_sizeof_field struct_t i =
@@ -101,12 +101,12 @@ let eltptr_logic_of_type t = match struct_name t with
     (** the physical offset inside the struct, as a logical expression *)
     let offset_of_field i =
       let offset = Llvm_target.offset_of_element !lltarget t i in
-      Arg_op("numeric_const", [Arg_string(Int64.to_string offset)]) in
+      args_int64 offset in
     let x_var = Arg_var (Vars.AnyVar (0, "x")) in
     let root_var = Arg_var (Vars.AnyVar (0, "r")) in
     let jump_var = Arg_var (Vars.AnyVar (0, "j")) in
     let subelt_eltptr_rules i subelt_type =
-      let jump = Arg_op ("jump", [args_num i; jump_var]) in
+      let jump = Arg_op ("jump", [args_int i; jump_var]) in
       let equiv_left =
 	mkPPred ("eltptr", [x_var; args_struct_t;
 			    root_var; jump]) in

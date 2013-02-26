@@ -13,7 +13,9 @@ open Llutils
 let ret_arg = Arg_var(Spec.ret_v1)
 
 (* shorthands for integer expressions *)
-let args_num i = Arg_op("numeric_const",[Arg_string (string_of_int i)])
+let args_int i = Arg_op("numeric_const",[Arg_string (string_of_int i)])
+let args_int64 i = Arg_op("numeric_const", [Arg_string(Int64.to_string i)])
+let args_num i = Arg_op("numeric_const",[Arg_string i])
 let args_num_0 = Arg_op("numeric_const",[Arg_string "0"])
 let args_num_1 = Arg_op("numeric_const",[Arg_string "1"])
 
@@ -25,7 +27,7 @@ let mkArray ptr start_idx end_idx size array_t v =
 
 let args_sizeof target t =
   let size64 = Llvm_target.store_size target t in
-  Arg_op("numeric_const", [Arg_string(Int64.to_string size64)])
+  args_int64 size64
 
 let rec args_of_type t = match (classify_type t) with
   | Void -> Arg_op("void_type",[])
@@ -36,7 +38,7 @@ let rec args_of_type t = match (classify_type t) with
   | Fp128
   | Ppc_fp128 -> Arg_op("float_type", [])
   | Label -> Arg_op("label_type", [])
-  | Integer -> Arg_op("integer_type", [args_num (integer_bitwidth t)])
+  | Integer -> Arg_op("integer_type", [args_int (integer_bitwidth t)])
   | TypeKind.Function -> (* silly name clash *)
     let ret_type = return_type t in
     let par_types = param_types t in
@@ -64,7 +66,7 @@ and args_of_type_array ta =
   Array.to_list (Array.map args_of_type ta)
 
 let args_of_int_const v = match int64_of_const v with
-  | Some i -> Arg_op("numeric_const", [Arg_string(Int64.to_string i)])
+  | Some i -> args_int64 i
   | None -> Arg_var (Vars.freshe ())
 
 let rec args_of_const_expr v = match constexpr_opcode v with
