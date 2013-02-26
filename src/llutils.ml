@@ -122,7 +122,7 @@ let collect_types_in_function o f =
   let o = collect_type o (type_of f) in
   fold_left_blocks collect_types_in_block o f
 
-(** collects all the types referred to by the functions of module m *)
+(** collects all the types referred to by the functions of module [m] *)
 let collect_types_in_module m =
   (* we only care about the types that are used inside functions,
      so let's collect only those *)
