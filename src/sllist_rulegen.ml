@@ -15,12 +15,9 @@ let list_logic_of_struct t name rec_field =
     Array.map (fun _ -> Arg_var (Vars.freshe ())) (struct_element_types t) in
 
   let mk_rec_field root value = mk_field_pointer t rec_field root value in
-  let mk_lseg b e = mkSPred ("lseg", [name;b;e]) in
-  let mk_lseg_ne b e = mkSPred ("lseg_ne", [name;b;e]) in
   let mk_node ptr value = mkSPred ("node", [name;ptr; value]) in
 
   let i_var = Arg_var (Vars.AnyVar (0, "i")) in
-  let j_var = Arg_var (Vars.AnyVar (0, "j")) in
   let n_var = Arg_var (Vars.AnyVar (0, "n")) in
   let n2_var = Arg_var (Vars.AnyVar (0, "n2")) in
 
@@ -35,7 +32,7 @@ let list_logic_of_struct t name rec_field =
 
       If we have a node predicate on the LHS of an implication and one of the
       fields of the node object appears on the RHS, then we rewrite the node in terms
-      of its constituent fields. *)
+      of its constituent fields. TODO: and match the field! *)
   let mk_expand_node_rule i subelt_type =
     if i = rec_field then
       (mk_simple_seq_rule "node_lookup_next"
@@ -54,20 +51,6 @@ let list_logic_of_struct t name rec_field =
       * the ones that don't are included in the distribution instead of generated
       * see logic/lseg.logic *)
   let symex_rules =
-    (* Equality of list segment nodes.
-
-       If the RHS contains a node of a LHS list segment, we expand the node on the
-       RHS into its constituent fields. Afterwards the rules lseg_cons_field_lookup
-       can be applied. *)
-    mk_simple_seq_rule "lseg_node_lookup_first"
-      (mk_lseg_ne i_var j_var, mk_unfolded_struct_ i_var rec_field n_var)
-      (mk_lseg_ne i_var j_var, mk_node i_var n_var)::
-    (* If we have a field on the RHS of the first node in a non_empty list segment
-       on the LHS, we expand the list segment on the LHS. *)
-      (let v = Arg_var (Vars.freshe ()) in
-       mk_simple_seq_rule "lseg_cons_field_lookup"
-	 (mkStar (mk_lseg v j_var) (mk_node i_var v), mk_rec_field i_var n_var)
-	 (mk_lseg_ne i_var j_var, mk_rec_field i_var n_var))::
       expand_node_rules@
     (* Collapse to node.
 
@@ -80,12 +63,7 @@ let list_logic_of_struct t name rec_field =
       (* (mk_simple_seq_rule "lseg_node_rollup_left" *)
       (* 	 (mk_lseg_ne i_var n_var, mkEmpty) *)
       (* 	 (mk_node i_var n_var, mkEmpty)):: *)
-      (mk_simple_seq_rule "node_expand_right"
-	 (mk_node i_var n_var, mk_unfolded_struct_ i_var rec_field n2_var)
-	 (mk_node i_var n_var, mk_node i_var n2_var))::
-      (mk_simple_seq_rule "node_rollup_right"
-	 (mkEmpty, mk_node i_var n_var)
-	 (mkEmpty, mk_unfolded_struct_ i_var rec_field n_var))::[] in
+	[] in
   let symex_logic = {empty_logic with seq_rules = symex_rules; } in
 
   (* rules for abduction of list nodes *)

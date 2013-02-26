@@ -35,51 +35,29 @@ rule node_not_eq:
 if
 
 
-
-
-/*************************************
- * Rule for unpacking Nodell 
- *
- *  These rules could potentially cycle forever
- *  but due to their order cannot.
- *************************************/
-
-/*
-//Unroll node if we are looking for its next field
-rule field_remove1a:
-  |   node(?s,?x,?e1) |-  field(?x,"<node: node next>",?e2) 
-if
-  field(?x,"<node: node next>",?e1) | field(?x,"<node: java.lang.String content>",_w) 
-     |-  ?e1=?e2 
-
-//Unroll node if we are looking for its content field
-rule field_remove1b:
-  | node(?s,?x,?e1) |- field(?x,"<node: java.lang.String content>",?e2) 
-if
-  field(?x,"<node: java.lang.String content>",w) |  field(?x,"<node: node next>",?e1)
-     |-  w=?e2
-
-
-//Roll up a complete node if we have both fields.
-rule field_remove2:
-  | field(?x,"<node: node next>",?e1) * field(?x,"<node: java.lang.String content>",?z) |- 
-if
-  | node(?s,?x,?e1) |-  
-*/
-
-
-
-
 /*************************************
  * Simple subtraction rules 
  *************************************/
 
+rule node_equal:
+  | node(?s,?i,?n) |- node(?s,?j,?n2)
+if
+  node(?s,?i,?n) | |- ?n = ?n2
 
-rule lseg_ne_unroll_exists :
+rule lseg_ne_unroll_node_exists:
+  | lseg_ne(?s,?i,?j) |- node(?s,?i,?n)
+if
+  | node(?s,?i,_v) * lseg(?s,_v,?j) |- node(?s,?i,?n)
+
+rule lseg_ne_unroll_first_exists :
 | lseg_ne(?s,?x,?y) |- pointer(?x,?w,?Z)
 if
 | node(?s,?x,_fooz) * lseg(?s,_fooz,?y)  |- pointer(?x,?w,?Z)
 
+rule lseg_ne_unroll_offset_exists :
+| lseg_ne(?s,?x,?y) |- pointer(builtin_plus(?x,?offset),?w,?Z)
+if
+| node(?s,?x,_fooz) * lseg(?s,_fooz,?y)  |- pointer(builtin_plus(?x,?offset),?w,?Z)
 
 
 rule lseg_ne_lseg_ne_match :
