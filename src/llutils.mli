@@ -1,3 +1,12 @@
+(*** Uncomment this when LStar segfaults: it's most likely that the
+     bindings are used incorrectly *)
+(*
+val type_of : Llvm.llvalue -> Llvm.lltype
+val classify_value : Llvm.llvalue -> Llvm.ValueKind.t
+val instr_opcode : Llvm.llvalue -> Llvm.Opcode.t
+val operand : Llvm.llvalue -> int -> Llvm.llvalue
+*)
+
 val warn : string -> unit
 val implement_this : string -> 'a
 val add_logic : Psyntax.logic -> Psyntax.logic -> Psyntax.logic
