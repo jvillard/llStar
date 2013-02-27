@@ -61,7 +61,7 @@ let rec args_of_type t = match (classify_type t) with
   | Vector ->
     let elt_t = element_type t in
     Arg_op("vector_type", [args_of_type elt_t])
-  | Metadata -> raise (MetaData (const_null t))
+  | Metadata -> Arg_op("MD_type", [])
 and args_of_type_array ta =
   Array.to_list (Array.map args_of_type ta)
 
