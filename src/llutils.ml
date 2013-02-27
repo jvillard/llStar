@@ -6,6 +6,32 @@ open TypeKind
 (* coreStar modules *)
 open Psyntax
 
+(*** Uncomment this when LStar segfaults: it's most likely that the
+     bindings are used incorrectly *)
+
+(*
+let debug_value_call s f v =
+  Format.print_flush ();
+  print_endline ("about to call "^s);
+  dump_value v;
+  Format.print_flush ();
+  let result = f v in
+  print_endline "did the call";
+  result
+
+let type_of v =
+  debug_value_call "type_of" type_of v
+
+let classify_value v =
+  debug_value_call "classify_value" classify_value v
+
+let instr_opcode v =
+  debug_value_call "instr_opcode" instr_opcode v
+
+let operand v i =
+  debug_value_call ("operand"^(string_of_int i)) (fun v -> operand v i) v
+*)
+
 (*** Generic sugar *)
 let warn s = print_endline ("WARNING: "^s)
 let implement_this s = failwith ("Not implemented: "^s)
@@ -122,7 +148,7 @@ let collect_types_in_function o f =
   let o = collect_type o (type_of f) in
   fold_left_blocks collect_types_in_block o f
 
-(** collects all the types referred to by the functions of module m *)
+(** collects all the types referred to by the functions of module [m] *)
 let collect_types_in_module m =
   (* we only care about the types that are used inside functions,
      so let's collect only those *)
