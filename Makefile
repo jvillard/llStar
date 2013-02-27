@@ -34,6 +34,9 @@ clean:
 	ocamlbuild -clean
 	rm -f lib/*.a lib/*.cmxa lib/*.cmxs bin/* *.subdirs
 
+mrproper: clean
+	$(MAKE) -C examples clean
+
 %.subdirs: %
 	ls -F $*/ | grep / | sed "s./.." | sed "s.^.-I $*/." > $*.subdirs
 
@@ -41,7 +44,7 @@ test: build
 	$(MAKE) -C examples
 
 
-.PHONY: build clean test byte
+.PHONY: build clean mrproper test native byte
 
 -include .install.mk
 
