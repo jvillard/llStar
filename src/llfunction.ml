@@ -64,7 +64,7 @@ let cfg_node_of_instr specs fun_env instr =
       if num_operands instr != 0 then
 	let ret_val = operand instr 0 in
 	let p0 = Arg_var(Vars.concretep_str ("@parameter"^(string_of_int 0)^":")) in
-	mkEQ(ret_arg, p0), [args_of_value ret_val]
+	mkStar (mk_lltype_ppred ret_arg (type_of ret_val)) (mkEQ(ret_arg, p0)), [args_of_value ret_val]
       else mkEmpty, [] in
     let spec = Spec.mk_spec fun_env.fun_alloca_pred post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core  ([], spec, params)); mk_node Core.End]
@@ -89,10 +89,10 @@ let cfg_node_of_instr specs fun_env instr =
       (* the boolean value whose truth we're branching upon *)
       let args_cond = args_of_value (operand instr 0) in
       let assume_then_spec = Spec.mk_spec mkEmpty
-	(mkEQ (args_num_1, args_cond)) Spec.ClassMap.empty in
+	(mkEQ (bvargs_of_int 1 1, args_cond)) Spec.ClassMap.empty in
       let assume_then = mk_node (Core.Assignment_core ([],assume_then_spec,[])) in
       let assume_else_spec = Spec.mk_spec mkEmpty
-	(mkEQ (args_num_0, args_cond)) Spec.ClassMap.empty in
+	(mkEQ (bvargs_of_int 1 0, args_cond)) Spec.ClassMap.empty in
       let assume_else = mk_node (Core.Assignment_core ([],assume_else_spec,[])) in
       let then_label = mk_br_block fun_env then_label_orig assume_then in
       let else_label = mk_br_block fun_env else_label_orig assume_else in
@@ -109,41 +109,45 @@ let cfg_node_of_instr specs fun_env instr =
   (* Standard Binary Operators *)
   | Opcode.Add
   | Opcode.FAdd ->
-    let id = value_id instr in
+    let id = Vars.concretep_str (value_id instr) in
     let v1 = args_of_value (operand instr 0) in
     let v2 = args_of_value (operand instr 1) in
     let pre = mkEmpty in
     let post = mkEQ (ret_arg, Arg_op("builtin_plus", [v1; v2])) in
+    let post = mkStar (mk_lltype_ppred (Arg_var id) (type_of instr)) post in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
+    [mk_node (Core.Assignment_core ([id],spec,[]))]
   | Opcode.Sub
   | Opcode.FSub ->
-    let id = value_id instr in
+    let id = Vars.concretep_str (value_id instr) in
     let v1 = args_of_value (operand instr 0) in
     let v2 = args_of_value (operand instr 1) in
     let pre = mkEmpty in
     let post = mkEQ (ret_arg, Arg_op("builtin_minus", [v1; v2])) in
+    let post = mkStar (mk_lltype_ppred (Arg_var id) (type_of instr)) post in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
+    [mk_node (Core.Assignment_core ([id],spec,[]))]
   | Opcode.Mul
   | Opcode.FMul ->
-    let id = value_id instr in
+    let id = Vars.concretep_str (value_id instr) in
     let v1 = args_of_value (operand instr 0) in
     let v2 = args_of_value (operand instr 1) in
     let pre = mkEmpty in
     let post = mkEQ (ret_arg, Arg_op("builtin_mult", [v1; v2])) in
+    let post = mkStar (mk_lltype_ppred (Arg_var id) (type_of instr)) post in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
+    [mk_node (Core.Assignment_core ([id],spec,[]))]
   | Opcode.UDiv
   | Opcode.SDiv
   | Opcode.FDiv ->
-    let id = value_id instr in
+    let id = Vars.concretep_str (value_id instr) in
     let v1 = args_of_value (operand instr 0) in
     let v2 = args_of_value (operand instr 1) in
     let pre = mkEmpty in
     let post = mkEQ (ret_arg, Arg_op("builtin_div", [v1; v2])) in
+    let post = mkStar (mk_lltype_ppred (Arg_var id) (type_of instr)) post in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
+    [mk_node (Core.Assignment_core ([id],spec,[]))]
   | Opcode.URem
   | Opcode.SRem
   | Opcode.FRem -> implement_this "?rem instr"
@@ -156,30 +160,32 @@ let cfg_node_of_instr specs fun_env instr =
   | Opcode.Xor -> implement_this "bitwise op instr"
   (* Memory Operators *)
   | Opcode.Alloca ->
-    let id = value_id instr in
+    let id = Vars.concretep_str (value_id instr) in
     let ptr_t = type_of instr in
     let value_t = element_type ptr_t in
     let sz = args_sizeof !lltarget value_t in
-    let x = Arg_var (Vars.concretep_str id) in
     let e = Arg_var (Vars.freshe ()) in
-    let alloca = mkSPred ("alloca", [x; sz]) in
-    let pointer = mkPointer x sz e in
-    let post = mkStar alloca pointer in
-    fun_env.fun_alloca_pred <- mkStar fun_env.fun_alloca_pred post;
+    let heap_id = mkStar (mkSPred ("alloca", [Arg_var id; sz]))
+      (mkPointer (Arg_var id) sz e) in
+    fun_env.fun_alloca_pred <- mkStar fun_env.fun_alloca_pred heap_id;
+    let x = ret_arg in
+    let heap = mkStar (mkSPred ("alloca", [x; sz])) (mkPointer x sz e) in
+    let post = pconjunction (mk_lltype_ppred x ptr_t) heap in
     let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([], spec, []))]
+    [mk_node (Core.Assignment_core ([id], spec, []))]
   | Opcode.Load ->
-    let id = value_id instr in
+    let id = Vars.concretep_str (value_id instr) in
     (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00225 *)
     let ptr_v = operand instr 0 in
     let ptr = args_of_value ptr_v in
     let value_t = type_of instr in
     let e = Arg_var (Vars.freshe ()) in
     let pointer = mkPointer ptr (args_sizeof !lltarget value_t) e in
+    let ret_type = mk_lltype_ppred ret_arg value_t in
     let pre = pointer in
-    let post = pconjunction (mkEQ(ret_arg, e)) pointer in
+    let post = pconjunction ret_type (pconjunction (mkEQ(e, ret_arg)) pointer) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([Vars.concretep_str id], spec, []))]
+    [mk_node (Core.Assignment_core ([id], spec, []))]
   | Opcode.Store ->
     (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00343 *)
     let value = operand instr 0 in

@@ -2,6 +2,7 @@
 
 (* LLVM modules *)
 open Llvm
+open Llvm_target
 open TypeKind
 open ValueKind
 (* coreStar modules *)
@@ -13,11 +14,12 @@ open Llutils
 let ret_arg = Arg_var(Spec.ret_v1)
 
 (* shorthands for integer expressions *)
-let args_int i = Arg_op("numeric_const",[Arg_string (string_of_int i)])
-let args_int64 i = Arg_op("numeric_const", [Arg_string(Int64.to_string i)])
-let args_num i = Arg_op("numeric_const",[Arg_string i])
-let args_num_0 = Arg_op("numeric_const",[Arg_string "0"])
-let args_num_1 = Arg_op("numeric_const",[Arg_string "1"])
+let numargs i = Arg_op("numeric_const",[Arg_string i])
+let numargs_of_int i = numargs (string_of_int i)
+let numargs_of_int64 i = numargs (Int64.to_string i)
+let bvargs sz i = Arg_op("bv_const",[Arg_string sz; Arg_string i])
+let bvargs_of_int sz i = bvargs (string_of_int sz) (string_of_int i)
+let bvargs_of_int64 sz i = bvargs (string_of_int sz) (Int64.to_string i)
 
 (* a few functions for creating predicates. Adds a layer of
    type-safety and avoids catastrophic typos *)
@@ -27,7 +29,7 @@ let mkArray ptr start_idx end_idx size array_t v =
 
 let args_sizeof target t =
   let size64 = Llvm_target.store_size target t in
-  args_int64 size64
+  numargs_of_int64 size64
 
 let rec args_of_type t = match (classify_type t) with
   | Void -> Arg_op("void_type",[])
@@ -38,7 +40,7 @@ let rec args_of_type t = match (classify_type t) with
   | Fp128
   | Ppc_fp128 -> Arg_op("float_type", [])
   | Label -> Arg_op("label_type", [])
-  | Integer -> Arg_op("integer_type", [args_int (integer_bitwidth t)])
+  | Integer -> Arg_op("integer_type", [numargs_of_int (integer_bitwidth t)])
   | TypeKind.Function -> (* silly name clash *)
     let ret_type = return_type t in
     let par_types = param_types t in
@@ -65,33 +67,41 @@ let rec args_of_type t = match (classify_type t) with
 and args_of_type_array ta =
   Array.to_list (Array.map args_of_type ta)
 
+let mk_type_ppred argv argt =
+  mkPPred ("type", [argv; argt])
+
+let mk_lltype_ppred argv llt =
+  mk_type_ppred argv (args_of_type llt)
+
 let args_of_int_const v = match int64_of_const v with
-  | Some i -> args_int64 i
+  | Some i ->
+    let sz = integer_bitwidth (type_of v) in
+    bvargs_of_int64 sz i
   | None -> Arg_var (Vars.freshe ())
 
 let rec args_of_const_expr v = match constexpr_opcode v with
   | Opcode.Add ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_plus", [x; y])
+    Arg_op("builtin_bvadd", [x; y])
   | Opcode.Sub ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_minus", [x; y])
+    Arg_op("builtin_bvsub", [x; y])
   | Opcode.Mul ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_mult", [x; y])
+    Arg_op("builtin_bvmul", [x; y])
   | Opcode.UDiv
   | Opcode.SDiv ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_div", [x; y])
+    Arg_op("builtin_bvdiv", [x; y])
   | Opcode.URem
   | Opcode.SRem ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_rem", [x; y])
+    Arg_op("builtin_bvrem", [x; y])
   | Opcode.FAdd
   | Opcode.FSub
   | Opcode.FMul
@@ -103,24 +113,24 @@ let rec args_of_const_expr v = match constexpr_opcode v with
   | Opcode.Shl ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_shl", [x; y])
+    Arg_op("builtin_bvshl", [x; y])
   | Opcode.LShr
   | Opcode.AShr ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_shr", [x; y])
+    Arg_op("builtin_bvshr", [x; y])
   | Opcode.And ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_and", [x; y])
+    Arg_op("builtin_bvand", [x; y])
   | Opcode.Or ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_or", [x; y])
+    Arg_op("builtin_bvor", [x; y])
   | Opcode.Xor ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_xor", [x; y])
+    Arg_op("builtin_bvxor", [x; y])
   (* /TODO CoreStar/z3 *)
   | Opcode.Unwind | Opcode.LandingPad | Opcode.Resume | Opcode.AtomicRMW
   | Opcode.AtomicCmpXchg | Opcode.Fence | Opcode.InsertValue
@@ -137,19 +147,19 @@ let rec args_of_const_expr v = match constexpr_opcode v with
     Arg_var (Vars.freshe ())
 
 and args_of_value v = match classify_value v with
-  | NullValue -> args_num_0
+  | NullValue -> implement_this "NullValue"
   | Argument -> Arg_var (Vars.concretep_str (value_id v))
   | BasicBlock -> failwith "Invalid bitcode? Unexpected BasickBlock value"
   | InlineAsm -> Arg_var (Vars.freshe ())
   | MDNode -> raise (MetaData v)
   | MDString -> raise (MetaData v)
   | BlockAddress -> Arg_op("block_addr", [args_of_value (operand v 0)])
-  | ConstantAggregateZero -> args_num_0
+  | ConstantAggregateZero -> implement_this "ConstantAggregateZero"
   | ConstantArray -> args_of_composite_value "array" v
   | ConstantExpr -> args_of_const_expr v
   | ConstantFP -> Arg_var (Vars.freshe ())
   | ConstantInt -> args_of_int_const v
-  | ConstantPointerNull -> args_num_0
+  | ConstantPointerNull -> bvargs_of_int (pointer_size !lltarget) 0
   | ConstantStruct -> args_of_composite_value "struct" v
   | ConstantVector -> args_of_composite_value "vector" v
   | Function -> Arg_op("function", [args_of_value (operand v 0)])
