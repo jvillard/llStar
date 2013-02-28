@@ -306,7 +306,9 @@ let rec sexp_of_args = function
   | Arg_op (name, args) | Arg_cons (name, args) ->
     let op_name = id_munge ("op_"^name) in
     let (args_exp, args_types) = sexp_of_args_list args in
-    let expr = Printf.sprintf "(%s %s)" op_name args_exp in
+    let expr =
+      if args = [] then op_name
+      else Printf.sprintf "(%s %s)" op_name args_exp in
     let result_type = SType_var (fresh_type_index ()) in
     let op_type = lookup_type op_name in
     if name <> "tuple" then
