@@ -103,14 +103,6 @@ let smt_fatal_recover () : unit  =
   Config.smt_run := false
 
 
-
-(* concatenate n instances of string s *)
-let rec nstr (s : string) (n : int) : string =
-  match n with
-  | 0 -> ""
-  | _ -> s^(nstr s (n-1))
-
-
 (* Partition a list into sublists of equal elements *)
 let rec equiv_partition
     (eq : 'a -> 'a -> bool)
@@ -156,23 +148,92 @@ let id_munge =
     end
 
 
-(* Datatype to hold smt type annotations *)
-
+(** Datatype to hold smt type annotations *)
 type smt_type =
-  | SMT_IntVar of Vars.var
-  | SMT_BvVar of string * Vars.var
-  | SMT_Pred of string * int
-  | SMT_Op of string * int
+| SType_var of int (** type variable *)
+| SType_elastic_bv of int (** bitvector of unknown size with a type id *)
+| SType_bv of string (** bitvector of known size *)
+| SType_bool (** boolean sort *)
+| SType_int (** mathematical integer sort *)
+| SType_fun of smt_type list * smt_type (** function type *)
+(* I don't think SMT-LIB does higher-order but hopefully it won't show up... *)
 
-module SMTTypeSet =
-  Set.Make(struct
-    type t = smt_type
-    let compare = compare
-  end)
-type smttypeset = SMTTypeSet.t
+let rec pp_smt_type f = function
+| SType_var i -> fprintf f "tvar%d" i
+| SType_elastic_bv i -> fprintf f "(_ BitVec bvar%d)" i
+| SType_bv sz -> fprintf f "(_ BitVec %s)" sz
+| SType_bool -> fprintf f "Bool"
+| SType_int -> fprintf f "Int"
+| SType_fun (stl, rt) ->
+  fprintf f "(%a) -> %a" (list_format "" pp_smt_type) stl pp_smt_type rt
 
-let smt_union_list (l : smttypeset list) : smttypeset =
-  fold_right SMTTypeSet.union l SMTTypeSet.empty
+
+let rec refines ta tb =
+  match (ta, tb) with
+  | (SType_var i, SType_var j) -> j <= i
+  | (_, SType_var _) -> true
+  | (SType_elastic_bv i, SType_elastic_bv j) -> j <= i
+  | (SType_bv _, SType_elastic_bv _) -> true
+  | (SType_elastic_bv _, SType_bv _) -> false
+  | (SType_int, SType_int) | (SType_bool, SType_bool) -> true
+  | (SType_fun (tla,ra), SType_fun (tlb, rb)) when length tla = length tlb ->
+    List.fold_left (fun b (tta,ttb) -> b && refines ttb tta) (refines ra rb) (combine tla tlb)
+  | (SType_var _, _) -> false
+  | _ -> false
+
+(*** naive implementation of a union-find structure *)
+let uf = Hashtbl.create 256
+let uf_find i =
+  let rec lookup i = try lookup (Hashtbl.find uf i) with Not_found -> i in
+  lookup i
+let uf_union i j =
+  if i <> j then
+    let ri = uf_find i in
+    let rj = uf_find j in
+    if ri <> rj then
+      if refines ri rj then Hashtbl.add uf rj ri
+      else Hashtbl.add uf ri rj
+
+(** unification of types *)
+let unify ta tb =
+  let ta = uf_find ta in
+  let tb = uf_find tb in
+  let rec aux (ta, tb) =
+    match (ta, tb) with
+    | (SType_var _, _) | (_, SType_var _)
+    | (SType_elastic_bv _, SType_elastic_bv _)
+    | (SType_elastic_bv _, SType_bv _) | (SType_bv _, SType_elastic_bv _) ->
+      uf_union ta tb
+    | (SType_bv s1, SType_bv s2) when s1 = s2 -> ()
+    | (SType_int, SType_int) | (SType_bool, SType_bool) -> ()
+    | (SType_fun (tla,ra), SType_fun (tlb, rb)) when length tla = length tlb ->
+      iter aux ((ra,rb)::(combine tla tlb))
+    | _ ->
+      if log log_smt then
+	fprintf logf "type mismatch: %a # %a@." pp_smt_type ta pp_smt_type tb;
+      raise (Invalid_argument "type mismatch") in
+  aux (ta, tb)
+
+let rec unify_list = function
+  | a::b::tl -> unify a b; unify_list (b::tl)
+  | _::[] | [] -> ()
+
+(** next fresh index for type variables and elastic bitvectors *)
+let __typeindex = ref 0
+let fresh_type_index () =
+  __typeindex := !__typeindex +1;
+  !__typeindex -1
+
+(** typing context *)
+let typing_context = Hashtbl.create 256
+let lookup_type id =
+  try Hashtbl.find typing_context id
+  with Not_found ->
+    let t = SType_var (fresh_type_index ()) in    
+    Hashtbl.add typing_context id t;
+    t
+let flush_typing_context () = Hashtbl.clear typing_context
+
 
 (** bitvector operations *)
 let bvops =
@@ -182,179 +243,174 @@ let bvops =
      "bvshl"; "bvlshr"; "bvashr";
      "bvor"; "bvand"; "bvnot"; "bvnand"; "bvnor"; "bvxnor"]
 
-(** mathematical integers operations and relations
-builtin_div
-builtin_ge
-builtin_gt
-builtin_le
-builtin_lt
-builtin_minus
-builtin_mult
-builtin_plus
-*)
+(** mathematical integer operations *)
+let intops =
+  [("builtin_plus", "+");
+   ("builtin_minus", "-");
+   ("builtin_mult", "*");
+   ("builtin_div", "/");
+  ]
 
-let rec args_smttype typed_vars (arg : Psyntax.args) : smttypeset =
-  match arg with
+let intbinrels =
+  [("GT", ">");
+   ("GE", ">=");
+   ("LT", "<");
+   ("LE", "<=");
+  ]
+
+(** feeds the typing context and type unification thingy with info
+    gathered from the give args. *)
+(* The type inference part is more or less the algorithm W. *)
+let rec sexp_of_args = function
   | Arg_var v ->
-    (* untyped variables are given type Int by default (maybe we could
-       do a bit of type inference instead) *)
-    if StringSet.mem (Vars.string_var v) typed_vars then SMTTypeSet.empty
-    else SMTTypeSet.singleton (SMT_IntVar(v))
+    let vname = id_munge (Vars.string_var v) in
+    let tv = lookup_type vname in
+    (vname, tv)
   | Arg_string s ->
     let rxp = (Str.regexp "^\\(-?[0-9]+\\)") in
-    if Str.string_match rxp s 0 then SMTTypeSet.empty
-    else SMTTypeSet.singleton (SMT_Op("string_const_"^s, 0))
-  | Arg_op ("builtin_plus",args) -> smt_union_list (map (args_smttype typed_vars) args)
-  | Arg_op ("builtin_minus",args) -> smt_union_list (map (args_smttype typed_vars) args)
-  | Arg_op ("builtin_mult",args) -> smt_union_list (map (args_smttype typed_vars) args)
-  | Arg_op (bvop,args) when List.mem_assoc bvop bvops ->
-    (* this should always return SMTTypeSet.empty since all variables
-       appearing in there must be bit-vectors and thus have explicit
-       types in the formula *)
-    smt_union_list (map (args_smttype typed_vars) args)
-  | Arg_op ("numeric_const", [Arg_string(a)]) -> SMTTypeSet.empty
-  | Arg_op ("bv_const", [Arg_string(sz); Arg_string(n)]) -> SMTTypeSet.empty
-  | Arg_op (name, args) ->
-    let s = SMTTypeSet.singleton (SMT_Op(("op_"^name), (length args))) in
-    smt_union_list (s::(map (args_smttype typed_vars) args))
-  | Arg_cons (name, args) -> smt_union_list (map (args_smttype typed_vars) args)
-  | Arg_record fldlist -> SMTTypeSet.empty
+    let expr =
+      if Str.string_match rxp s 0 then
+	Str.matched_group 1 s
+      else (
+	(* if it's not an int that SMT-LIB will recognise, we need to
+	   declare it as such (let's pretend strings are ints...) *)
+	Hashtbl.add typing_context ("string_const_"^s) SType_int;
+	"string_const_"^s
+      ) in
+    (expr, SType_int)
+  | Arg_op (intop, [a1;a2]) when List.mem_assoc intop intops ->
+    (* SMT-LIB knows about these operations, so we don't add their
+       types to the typing context *)
+    let (e1, t1) = sexp_of_args a1 in
+    let (e2, t2) = sexp_of_args a2 in
+    let expr = Printf.sprintf "(%s %s %s)" (List.assoc intop intops) e1 e2 in
+    unify_list (SType_int::t1::t2::[]);
+    (expr, SType_int)
+  | Arg_op (bvop, [a1;a2]) when List.mem_assoc bvop bvops ->
+    (* SMT-LIB knows about these operations, so we don't add their
+       types to the typing context *)
+    let (e1, t1) = sexp_of_args a1 in
+    let (e2, t2) = sexp_of_args a2 in
+    let expr = Printf.sprintf "(%s %s %s)" (List.assoc bvop bvops) e1 e2 in
+    (* all the arguments must be bit-vectors but we cannot know their
+       size from the opcode [bvop] alone. If there is no way to tell
+       we will need to pick a bitwidth in the end. *)
+    let t = SType_elastic_bv (fresh_type_index ()) in
+    unify_list (t::t1::t2::[]);
+    (expr, t)
+  | Arg_op ("numeric_const", [Arg_string(a)]) -> (a, SType_int)
+  | Arg_op ("bv_const", [Arg_string(sz); Arg_string(n)]) ->
+    (Printf.sprintf "(_ bv%s %s)" n sz, SType_bv sz)
+  | Arg_op (name, args) | Arg_cons (name, args) ->
+    let op_name = id_munge ("op_"^name) in
+    let (args_exp, args_types) = sexp_of_args_list args in
+    let expr = Printf.sprintf "(%s %s)" op_name args_exp in
+    let result_type = SType_var (fresh_type_index ()) in
+    let op_type = lookup_type op_name in
+    if name <> "tuple" then
+      unify (SType_fun (args_types, result_type)) op_type;
+    (expr, result_type)
+  | Arg_record fldlist ->
+    (* TODO: implement records *)
+    ("", SType_var (fresh_type_index ()))
+and sexp_of_args_list = function
+  | [] -> ("", [])
+  | a::al ->
+    let (e, t) = sexp_of_args a in
+    let (el, tl) = sexp_of_args_list al in
+    (" " ^ e ^ el, t::tl)
 
+let sexp_of_eq (a1, a2) =
+  let (e1, t1) = sexp_of_args a1 in
+  let (e2, t2) = sexp_of_args a2 in
+  unify t1 t2;
+  Printf.sprintf "(= %s %s)" e1 e2
 
-(* Functions to convert various things to sexps & get types *)
+let sexp_of_neq (a1, a2) =
+  let (e1, t1) = sexp_of_args a1 in
+  let (e2, t2) = sexp_of_args a2 in
+  let t1, t2 = uf_find t1, uf_find t2 in
+  if not (refines t1 t2) && not (refines t2 t1) then
+    (* incompatible types! *)
+    "true"
+  else Printf.sprintf "(distinct %s %s)" e1 e2
 
-let rec string_sexp_args (arg : Psyntax.args) : string =
-  match arg with
-  | Arg_var v -> id_munge(Vars.string_var v)
-  | Arg_string s ->
-          let rxp = (Str.regexp "^\\(-?[0-9]+\\)") in
-          if Str.string_match rxp s 0 then (Str.matched_group 1 s)
-          else id_munge("string_const_"^s)
-  | Arg_op ("builtin_plus",[a1;a2]) ->
-    Printf.sprintf "(+ %s %s)" (string_sexp_args a1) (string_sexp_args a2)
-  | Arg_op ("builtin_minus",[a1;a2]) ->
-    Printf.sprintf "(- %s %s)" (string_sexp_args a1) (string_sexp_args a2)
-  | Arg_op ("builtin_mult",[a1;a2]) ->
-    Printf.sprintf "(* %s %s)" (string_sexp_args a1) (string_sexp_args a2)
-  | Arg_op ("numeric_const", [Arg_string(a)]) -> a
-  | Arg_op (bvop,[a1;a2])  when List.mem_assoc bvop bvops ->
-    Printf.sprintf "(%s %s %s)" (List.assoc bvop bvops) (string_sexp_args a1) (string_sexp_args a2)
-  | Arg_op ("bv_const", [Arg_string(sz);Arg_string(n)]) ->
-    Printf.sprintf "(_ bv%s %s)" sz n
-  | Arg_op (name,[]) -> id_munge ("op_"^name)
-  | Arg_op (name,args) ->
-          Printf.sprintf "(%s %s)" (id_munge("op_"^name)) (string_sexp_args_list args)
-  | Arg_record _ -> ""  (* shouldn't happen as converted to preds *)
-  | Arg_cons _ -> failwith "TODO"
-and string_sexp_args_list (argsl : Psyntax.args list) : string =
-  match argsl with
-  | [] -> ""
-  | a::al -> (string_sexp_args a) ^ " " ^ (string_sexp_args_list al)
+let sexp_of_pred = function
+  | (bip, (Arg_op ("tuple",[a1;a2]))) when List.mem_assoc bip intbinrels ->
+    let (args_exp, args_types) = sexp_of_args_list [a1;a2] in
+    let expr = Printf.sprintf "(%s %s)" (List.assoc bip intbinrels) args_exp in
+    unify_list (SType_int::args_types);
+    (expr, SType_bool)
+  | (s, Arg_op ("tuple",al)) ->
+    let name = id_munge("pred_"^s) in
+    let (args_exp, args_types) = sexp_of_args_list al in
+    let op_type = lookup_type name in
+    unify op_type (SType_fun (args_types, SType_bool));
+    (Printf.sprintf "(%s %s)" name args_exp,
+     SType_bool)
+  | _ -> failwith "TODO"
 
-
-let string_sexp_eq (a : Psyntax.args * Psyntax.args) : string =
-  match a with (a1, a2) ->
-  Printf.sprintf "(= %s %s)" (string_sexp_args a1) (string_sexp_args a2)
-
-
-let string_sexp_neq (a : Psyntax.args * Psyntax.args) : string =
-  match a with a1, a2 ->
-  Printf.sprintf "(distinct %s %s)" (string_sexp_args a1) (string_sexp_args a2)
-
-
-let string_sexp_pred typed_vars (p : string * Psyntax.args) : (string * smttypeset) =
-  match p with
-  | ("GT",(Arg_op ("tuple",[a1;a2]))) ->
-    (Printf.sprintf "(> %s)" (string_sexp_args_list [a1;a2]), SMTTypeSet.empty)
-  | ("LT",(Arg_op ("tuple",[a1;a2]))) ->
-    (Printf.sprintf "(< %s)" (string_sexp_args_list [a1;a2]), SMTTypeSet.empty)
-  | ("GE",(Arg_op ("tuple",[a1;a2]))) ->
-    (Printf.sprintf "(>= %s)" (string_sexp_args_list [a1;a2]), SMTTypeSet.empty)
-  | ("LE",(Arg_op ("tuple",[a1;a2]))) ->
-    (Printf.sprintf "(<= %s)" (string_sexp_args_list [a1;a2]), SMTTypeSet.empty)
-  | ("type", args) -> ("true", SMTTypeSet.empty)
-  | (name, args) ->
-    let name = id_munge("pred_"^name) in
-    match args with
-    | Arg_op ("tuple",al) ->
-      let types = SMTTypeSet.add (SMT_Pred(name,(length al))) (args_smttype typed_vars args) in
-      ((if al = [] then name else
-          Printf.sprintf "(%s %s)" name (string_sexp_args_list al)),
-       types)
-    | _ -> failwith "TODO"
-
-let typed_vars_of_form (ts : term_structure) (form : formula) =
-  let add_typed_variable varnames smttypes v = function
-    | Arg_op("integer_type", [Arg_op("numeric_const", [Arg_string(sz)])]) ->
-      (StringSet.add (Vars.string_var v) varnames,
-       SMTTypeSet.add (SMT_BvVar(sz,v)) smttypes)
-    | Arg_op("pointer_type", _) ->
-      (StringSet.add (Vars.string_var v) varnames,
-       SMTTypeSet.add (SMT_BvVar("32",v)) smttypes)
-    | _ -> (varnames, smttypes) in
-  let f (varnames, smttypes) (s, th) =
-    match (s, get_pargs false ts [] th) with
-    | ("type", Arg_op("tuple", [Arg_var v; tv])) ->
-      add_typed_variable varnames smttypes v tv
-    | _ -> (varnames, smttypes) in
-  RMSet.fold f (StringSet.empty, SMTTypeSet.empty) form.plain
-
-
-let rec string_sexp_form
-    (typed_varnames : StringSet.t)
-    (ts : term_structure)
-    (form : formula)
-    : (string * smttypeset) =
-  let (form_typed_varnames, form_types) = typed_vars_of_form ts form in
-  let typed_varnames = StringSet.union form_typed_varnames typed_varnames in
-  (* Construct equalities and inequalities *)
-  let eqs = map (fun (a1,a2) -> ((get_pargs_norecs false ts [] a1),
-                                   (get_pargs_norecs false ts [] a2))) form.eqs in
-  let neqs = map (fun (a1,a2) -> ((get_pargs_norecs false ts [] a1),
-                                    (get_pargs_norecs false ts [] a2))) form.neqs in
-  let eq_sexp = String.concat " " (map string_sexp_eq eqs) in
-  let neq_sexp = String.concat " " (map string_sexp_eq neqs) in
-
-  let eqneqs = (let a,b = split (eqs@neqs) in a@b) in
-  let eq_types = smt_union_list (map (args_smttype typed_varnames) eqneqs) in
-
-  let disj_list, disj_type_list =
-     split (map (fun (f1,f2) ->
-                  let f1s, f1v = string_sexp_form typed_varnames ts f1 in
-                  let f2s, f2v = string_sexp_form typed_varnames ts f2 in
-                  ( "(or " ^ f1s ^ " " ^ f2s ^ ")",
-                    SMTTypeSet.union f1v f2v ) ) form.disjuncts) in
+let rec sexp_of_form ts form =
+  let eqs =
+    map
+      (fun (a1,a2) ->
+	(get_pargs_norecs false ts [] a1, get_pargs_norecs false ts [] a2))
+      form.eqs in
+  let neqs =
+    map
+      (fun (a1,a2) ->
+	(get_pargs_norecs false ts [] a1, get_pargs_norecs false ts [] a2))
+      form.neqs in
+  let eq_sexp = String.concat " " (map sexp_of_eq eqs) in
+  let neq_sexp = String.concat " " (map sexp_of_neq neqs) in
+  let disj_list =
+    map
+      (fun (f1,f2) ->
+	let f1s = sexp_of_form ts f1 in
+	let f2s = sexp_of_form ts f2 in
+	"(or " ^ f1s ^ " " ^ f2s ^ ")")
+      form.disjuncts in
   let disj_sexp = String.concat " " disj_list in
-  let disj_types = smt_union_list disj_type_list in
-
-  let plain_list, plain_type_list =
-     split ( map (string_sexp_pred typed_varnames)
-            ( RMSet.map_to_list form.plain
-            (fun (s,r) -> (s, get_pargs_norecs false ts [] r)))) in
+  let plain_list =
+    map (fun u -> fst (sexp_of_pred u))
+      (RMSet.map_to_list form.plain
+	 (fun (s,r) -> (s, get_pargs_norecs false ts [] r))) in
   let plain_sexp = String.concat " " plain_list in
+  let form_sexp = "(and true "^eq_sexp^" "^neq_sexp^" "^disj_sexp^" "^plain_sexp^")" in
+  form_sexp
 
-  let plain_types = smt_union_list plain_type_list in
+let sexp_of_sort s =
+  (* lookup "final" type of id, ie the representative of idt *)
+  match uf_find s with
+  | SType_bool -> "Bool"
+  | SType_int -> "Int"
+  | SType_bv sz ->
+    Printf.sprintf "(_ BitVec %s)" sz
+  | SType_elastic_bv i ->
+    (* if we don't know the size of the bit-vector at this point, we
+       have to pick one. 12 is as good a size as any I guess... *)
+    unify (SType_bv "12") (SType_elastic_bv i);
+    "(_ BitVec 12)"
+  | SType_var i ->
+    (* let's decide that this identifier is of type Int *)
+    unify SType_int (SType_var i);
+    "Int"
+  | SType_fun (argtl, resl) -> raise (Invalid_argument "Unexpected function type")
 
-  let types = smt_union_list [form_types; eq_types; disj_types; plain_types] in
+let rec sexp_of_sort_list = function
+  | [] -> ""
+  | t::tl -> " " ^ (sexp_of_sort t) ^ (sexp_of_sort_list tl)
 
-  let form_sexp = "(and true " ^ eq_sexp ^ " " ^ neq_sexp ^ " " ^
-                                 disj_sexp ^ " " ^ plain_sexp ^ ")"  in
-  (form_sexp, types)
-
-
-let string_sexp_decl (t : smt_type) : string =
-  match t with
-  | SMT_IntVar v ->
-      Printf.sprintf "(declare-fun %s () Int)" (id_munge (Vars.string_var v))
-  | SMT_BvVar (sz, v) ->
-      Printf.sprintf "(declare-fun %s () (_ BitVec %s))" (id_munge (Vars.string_var v)) sz
-  | SMT_Pred (s,i)
-      -> Printf.sprintf "(declare-fun %s (%s) Bool)" (id_munge s) (nstr "Int " i)
-  | SMT_Op (s,i)
-      -> Printf.sprintf "(declare-fun %s (%s) Int)" (id_munge s) (nstr "Int " i)
+let decl_sexp_of_typed_id id idt =
+  match (uf_find idt) with
+  | SType_fun (argtl, resl) ->
+    Printf.sprintf "(declare-fun %s (%s) %s)"
+      id (sexp_of_sort_list argtl) (sexp_of_sort resl)
+  | _ ->
+    Printf.sprintf "(declare-fun %s () %s)" id (sexp_of_sort idt)
 
 
-(* Main SMT IO functions *)
+(*** Main SMT IO functions *)
 
 let smt_listen () =
   match Smtparse.main Smtlex.token !smtout_lex with
@@ -372,16 +428,11 @@ let smt_command
     flush !smtin;
   with End_of_file | Sys_error _ -> raise SMT_fatal_error
 
-let send_types types =
-  let name = function
-    | SMT_IntVar v -> Vars.string_var v
-    | SMT_BvVar (_, v) -> Vars.string_var v
-    | SMT_Pred (n, _)
-    | SMT_Op (n, _) -> n in
-  let f x =
-    if not (StringSet.mem (name x) !predeclared) then
-      smt_command (string_sexp_decl x) in
-  SMTTypeSet.iter f types
+let send_all_types () =
+  let f id idt =
+    if not (StringSet.mem id !predeclared) then
+      smt_command (decl_sexp_of_typed_id id idt) in
+  Hashtbl.iter f typing_context
 
 let smt_assert (ass : string) : unit =
   let cmd = "(assert " ^ ass ^ " )" in
@@ -425,70 +476,76 @@ let smt_reset () : unit =
   assert (!smt_onstack = [[]])
 
 
-(* Check whether two args are equal under the current assumptions *)
+(** Check whether two args are equal under the current assumptions *)
 let smt_test_eq (a1 : Psyntax.args) (a2 : Psyntax.args) : bool =
+  let s = sexp_of_neq (a1,a2) in
   smt_push();
-  smt_assert (string_sexp_neq (a1,a2));
+  smt_assert s;
   let r = smt_check_unsat() in
   smt_pop(); r
 
-let decl_evars (types : smttypeset) (s : string) : string =
-  let v2s = function
-    | SMT_IntVar (Vars.EVar (i, e) as v) ->
-        "(" ^ id_munge (Vars.string_var v) ^ " Int)"
-    | SMT_BvVar (sz, Vars.EVar (i, e)) ->
-        "(" ^ id_munge (Vars.string_var (Vars.EVar(i,e))) ^ " (_ BitVec "^sz^"))"
-    | _ -> "" in
-  let prefix = SMTTypeSet.fold (fun v p -> v2s v ^ p) types "" in
-  if prefix = "" then s else "(exists (" ^ prefix ^ ") " ^ s ^ ")"
+let exists_sexp idl sexp =
+  (* lookup "final" type of id, ie the representative of idt *)
+  let exists_decls =
+    fold_left
+      (fun s id ->
+	Printf.sprintf "%s (%s %s)" s id (sexp_of_sort (lookup_type id)))
+      ""
+      idl in
+  if idl = [] then sexp
+  else Printf.sprintf "(exists %s %s)" exists_decls sexp
 
-(* try to establish that the pure parts of a sequent are valid using the SMT solver *)
+(** try to establish that the pure parts of a sequent are valid using the SMT solver *)
 let finish_him
     (ts : term_structure)
     (asm : formula)
     (obl : formula)
     : bool =
   try
-    (* Push a frame to allow reuse of prover *)
-    smt_push();
-
-    let (typed_varnames, form_types) = typed_vars_of_form ts asm in
-
-    (* Construct equalities and ineqalities from ts *)
+    flush_typing_context ();
     let eqs = filter (fun (a,b) -> a <> b) (get_eqs_norecs ts) in
     let neqs = filter (fun (a,b) -> a <> b) (get_neqs_norecs ts) in
-    let asm_eq_sexp = String.concat " " (map string_sexp_eq eqs) in
-    let asm_neq_sexp = String.concat " " (map string_sexp_neq neqs) in
+    let asm_eq_sexp = String.concat " " (map sexp_of_eq eqs) in
+    let asm_neq_sexp = String.concat " " (map sexp_of_neq neqs) in
+    let _ = map sexp_of_args (get_args_all ts) in
+    let asm_sexp = sexp_of_form ts asm in
+    let obl_sexp = sexp_of_form ts obl in
+    (* Construct the query *)
+    let asm_sexp = "(and true "^asm_eq_sexp^" "^asm_neq_sexp^" "^asm_sexp^") " in
+    let eq_neq_vset =
+      ev_args_list (let (a,b) = split (eqs@neqs) in a@b) VarSet.empty in
+    let eq_neq_ts_vset = ev_args_list (get_args_all ts) eq_neq_vset in
+    let rec add_ev_of_form_to_vset form vset =
+      let vset_with_disjs =
+	fold_left
+	  (fun evset (f1,f2) ->
+	    add_ev_of_form_to_vset f2 (add_ev_of_form_to_vset f1 evset))
+	  vset
+	  form.disjuncts in
+      RMSet.fold_to_list form.plain
+	(fun (_,r) evset ->
+	  let args = get_pargs_norecs false ts [] r in
+	  ev_args args evset)
+	vset_with_disjs in
+    let left_vset = add_ev_of_form_to_vset asm eq_neq_ts_vset in
+    let obl_vset = add_ev_of_form_to_vset obl VarSet.empty in
+    let evars = VarSet.diff obl_vset left_vset in
+    let evars_ids = List.map (fun v -> id_munge (Vars.string_var v))
+      (VarSet.elements evars) in
+    let obl_sexp = exists_sexp evars_ids obl_sexp in
+    let query = "(not (=> " ^ asm_sexp ^ obl_sexp ^ "))" in
 
-    let ts_types = smt_union_list (map (args_smttype typed_varnames) (get_args_all ts)) in
-
-    let ts_eqneq_types = smt_union_list
-      (map (fun (a,b) -> SMTTypeSet.union (args_smttype typed_varnames a) (args_smttype typed_varnames b)) (eqs @ neqs)) in
-
-    (* Construct sexps and types for assumption and obligation *)
-    let asm_sexp, asm_types = string_sexp_form typed_varnames ts asm in
-    let obl_sexp, obl_types = string_sexp_form typed_varnames ts obl in
-
-    let types = smt_union_list [form_types; ts_types; asm_types; obl_types] in
-
-    (* declare variables and predicates *)
-    send_types types;
-(*     SMTTypeSet.iter (fun x -> ignore (smt_command (string_sexp_decl x)))
-types; *)
-
-    (* Construct and run the query *)
-    let asm_sexp = "(and true " ^ asm_eq_sexp ^ " " ^ asm_neq_sexp ^ " " ^ asm_sexp ^ ") " in
-    let obl_sexp =
-      decl_evars
-        (SMTTypeSet.diff obl_types (SMTTypeSet.union ts_eqneq_types asm_types))
-        obl_sexp in
-    let query = "(not (=> " ^ asm_sexp ^ obl_sexp ^ "))"
-    in smt_assert query;
-
+    smt_push(); (* Push a frame to allow reuse of prover *)
+    send_all_types ();
+    smt_assert query;
     (* check whether the forumula is unsatisfiable *)
     let r = smt_check_unsat() in
     smt_pop(); r
   with
+  | Invalid_argument "type mismatch" ->
+    printf "@[@{<b>SMT ERROR@}: type mismatch@.";
+    print_flush();
+    false
   | SMT_error r ->
     smt_reset();
     printf "@[@{<b>SMT ERROR@}: %s@." r;
@@ -522,51 +579,37 @@ let frame_sequent_smt (seq : sequent) : bool =
     finish_him seq.ts seq.assumption seq.obligation)))
 
 
-
 (* Update the congruence closure using the SMT solver *)
 let ask_the_audience
     (ts : term_structure)
     (form : formula)
     : term_structure =
-  if (not !Config.smt_run) then raise Backtrack.No_match
-  else try
+  if (not !Config.smt_run) then raise Backtrack.No_match;
+  try
     if log log_smt then
       begin
         printf "@[Calling SMT to update congruence closure@.";
         printf "@[Current formula:@\n %a@." Clogic.pp_ts_formula (Clogic.mk_ts_form ts form)
       end;
-
-    smt_push();
-
-    (* look for type declarations in the formula *)
-    let (typed_varnames, form_types) = typed_vars_of_form ts form in
-
+    flush_typing_context ();
     (* Construct equalities and ineqalities from ts *)
     let eqs = filter (fun (a,b) -> a <> b) (get_eqs_norecs ts) in
     let neqs = filter (fun (a,b) -> a <> b) (get_neqs_norecs ts) in
-    let ts_eq_sexp = String.concat " " (map string_sexp_eq eqs) in
-    let ts_neq_sexp = String.concat " " (map string_sexp_neq neqs) in
-
-    let ts_types = smt_union_list (map (args_smttype typed_varnames) (get_args_all ts)) in
-
-    (* Construct sexps and types for assumption and obligation *)
-    let form_sexp, form_types = string_sexp_form typed_varnames ts form in
-
-    let types = smt_union_list [form_types; ts_types; form_types] in
-
-    (* declare predicates *)
-    send_types types;
-(*     SMTTypeSet.iter (fun x -> ignore(smt_command (string_sexp_decl x)))
-types; *)
-
+    let ts_eq_sexp = String.concat " " (map sexp_of_eq eqs) in
+    let ts_neq_sexp = String.concat " " (map sexp_of_neq neqs) in
+    (* get types from ts *)
+    let _ = map sexp_of_args (get_args_all ts) in
+    let form_sexp = sexp_of_form ts form in
     (* Assert the assumption *)
-    let assm_query = "(and true " ^ ts_eq_sexp ^" "^ ts_neq_sexp ^" "^ form_sexp ^ ")"
-    in smt_assert assm_query;
+    let assm_query = "(and true " ^ ts_eq_sexp ^" "^ ts_neq_sexp ^" "^ form_sexp ^ ")" in
 
+    smt_push(); (* Push a frame to allow reuse of prover *)
+    (* declare predicates *)
+    send_all_types ();
+    smt_assert assm_query;
     (* check for a contradiction *)
     if log log_smt then printf "@[[Checking for contradiction in assumption]@.";
     if smt_check_unsat() then (smt_reset(); raise Assm_Contradiction);
-
     (* check whether there are any new equalities to find; otherwise raise Backtrack.No_match *)
     (*
     if log log_smt then printf "[Checking for new equalities]@\n";
@@ -582,19 +625,23 @@ types; *)
     (* Update the term structure using the new equalities *)
     let reps = get_args_rep ts in
     let req_equiv = map (map fst)
-                        (equiv_partition (fun x y -> smt_test_eq (snd x) (snd y)) reps)
-    in
+      (equiv_partition (fun x y -> smt_test_eq (snd x) (snd y)) reps) in
     if for_all (fun ls -> List.length ls = 1) req_equiv then
       (smt_reset(); raise Backtrack.No_match);
     smt_pop();
     fold_left make_list_equal ts req_equiv
-  with
-  | SMT_error r ->
-    smt_reset();
-    printf "@[@{<b>SMT ERROR@}: %s@." r;
-    print_flush();
-    raise Backtrack.No_match
-  | SMT_fatal_error ->
-    smt_fatal_recover();
-    raise Backtrack.No_match
+    with
+    | Invalid_argument "type mismatch" ->
+      smt_reset();
+      printf "@[@{<b>SMT ERROR@}: type mismatch@.";
+      print_flush();
+      raise Backtrack.No_match
+    | SMT_error r ->
+      smt_reset();
+      printf "@[@{<b>SMT ERROR@}: %s@." r;
+      print_flush();
+      raise Backtrack.No_match
+    | SMT_fatal_error ->
+      smt_fatal_recover();
+      raise Backtrack.No_match
 
