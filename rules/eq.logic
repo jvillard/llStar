@@ -3,47 +3,47 @@
  *************************************/
 
 rewrite eq_eq_pred:
- builtin_eq(?x,?y) = numeric_const("1")
+ builtin_eq(?x,?y) = bv_const("1", "1")
 if ?x = ?y
 
 rewrite eq_neq_pred:
- builtin_eq(?x,?y) = numeric_const("0")
+ builtin_eq(?x,?y) = bv_const("1", "0")
 if ?x != ?y
 
 rewrite neq_eq_pred:
- builtin_neq(?x,?y) = numeric_const("0")
+ builtin_neq(?x,?y) = bv_const("1", "0")
 if ?x = ?y
 
 rewrite neq_neq_pred:
- builtin_neq(?x,?y) = numeric_const("1")
+ builtin_neq(?x,?y) = bv_const("1", "1")
 if ?x != ?y
 
 rule eq0_pred:
- | builtin_eq(?x,?y) = numeric_const("0") |-
+ | builtin_eq(?x,?y) = bv_const("1", "0") |-
 without ?x != ?y
 if | ?x != ?y |-
 
 rule eqn0_pred:
- | builtin_eq(?x,?y) != numeric_const("0") |-
+ | builtin_eq(?x,?y) != bv_const("1", "0") |-
 without ?x = ?y
 if | ?x = ?y |-
 
 rule eq1_pred:
- | builtin_eq(?x,?y) = numeric_const("1") |-
+ | builtin_eq(?x,?y) = bv_const("1", "1") |-
 without ?x = ?y
 if | ?x = ?y |-
 
 rule neq0_pred:
- | builtin_neq(?x,?y) = numeric_const("0") |-
+ | builtin_neq(?x,?y) = bv_const("1", "0") |-
 without ?x = ?y
 if | ?x = ?y |-
 
 rule neqn0_pred:
- | builtin_neq(?x,?y) != numeric_const("0") |-
+ | builtin_neq(?x,?y) != bv_const("1", "0") |-
 without ?x != ?y
 if | ?x != ?y |-
 
 rule neq1_pred:
- | builtin_neq(?x,?y) = numeric_const("1") |-
+ | builtin_neq(?x,?y) = bv_const("1", "1") |-
 without ?x != ?y
 if | ?x != ?y |-
