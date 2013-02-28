@@ -274,6 +274,8 @@ let rec sexp_of_args = function
       else (
 	(* if it's not an int that SMT-LIB will recognise, we need to
 	   declare it as such (let's pretend strings are ints...) *)
+	(* maintain uniqueness of bindings *)
+	Hashtbl.remove typing_context ("string_const_"^s);
 	Hashtbl.add typing_context ("string_const_"^s) SType_int;
 	"string_const_"^s
       ) in
@@ -341,12 +343,15 @@ let sexp_of_pred = function
     let expr = Printf.sprintf "(%s %s)" (List.assoc bip intbinrels) args_exp in
     unify_list (SType_int::args_types);
     (expr, SType_bool)
+  | ("@False", Arg_op ("tuple",[])) ->
+    ("false", SType_bool)
   | (s, Arg_op ("tuple",al)) ->
     let name = id_munge("pred_"^s) in
     let (args_exp, args_types) = sexp_of_args_list al in
     let op_type = lookup_type name in
     unify op_type (SType_fun (args_types, SType_bool));
-    (Printf.sprintf "(%s %s)" name args_exp,
+    ((if al = [] then name
+      else Printf.sprintf "(%s %s)" name args_exp),
      SType_bool)
   | _ -> failwith "TODO"
 
