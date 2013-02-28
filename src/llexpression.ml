@@ -20,6 +20,8 @@ let numargs_of_int64 i = numargs (Int64.to_string i)
 let bvargs sz i = Arg_op("bv_const",[Arg_string sz; Arg_string i])
 let bvargs_of_int sz i = bvargs (string_of_int sz) (string_of_int i)
 let bvargs_of_int64 sz i = bvargs (string_of_int sz) (Int64.to_string i)
+let bvargs64_of_int sz i = bvargs (Int64.to_string sz) (string_of_int i)
+let bvargs64_of_int64 sz i = bvargs (Int64.to_string sz) (Int64.to_string i)
 
 (* a few functions for creating predicates. Adds a layer of
    type-safety and avoids catastrophic typos *)
@@ -29,7 +31,7 @@ let mkArray ptr start_idx end_idx size array_t v =
 
 let args_sizeof target t =
   let size64 = Llvm_target.store_size target t in
-  numargs_of_int64 size64
+  bvargs_of_int64 64 size64
 
 let rec args_of_type t = match (classify_type t) with
   | Void -> Arg_op("void_type",[])
@@ -159,7 +161,7 @@ and args_of_value v = match classify_value v with
   | ConstantExpr -> args_of_const_expr v
   | ConstantFP -> Arg_var (Vars.freshe ())
   | ConstantInt -> args_of_int_const v
-  | ConstantPointerNull -> bvargs_of_int (pointer_size !lltarget) 0
+  | ConstantPointerNull -> bvargs64_of_int (size_in_bits !lltarget (type_of v)) 0
   | ConstantStruct -> args_of_composite_value "struct" v
   | ConstantVector -> args_of_composite_value "vector" v
   | Function -> Arg_op("function", [args_of_value (operand v 0)])

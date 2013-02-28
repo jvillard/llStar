@@ -1,6 +1,6 @@
 malloc:
   {}
-  {($ret_v1 != numeric_const("0") * malloced($ret_v1,@parameter0:) * pointer($ret_v1,@parameter0:,_v)) || $ret_v1 = numeric_const("0")}
+  {($ret_v1 != NULL() * malloced($ret_v1,@parameter0:) * pointer($ret_v1,@parameter0:,_v)) || $ret_v1 = NULL()}
 
 __safe_malloc:
   {}

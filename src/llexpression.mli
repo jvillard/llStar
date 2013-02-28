@@ -5,6 +5,8 @@ val numargs_of_int64 : int64 -> Psyntax.args
 val bvargs : string -> string -> Psyntax.args
 val bvargs_of_int : int -> int -> Psyntax.args
 val bvargs_of_int64 : int -> int64 -> Psyntax.args
+val bvargs64_of_int : int64 -> int -> Psyntax.args
+val bvargs64_of_int64 : int64 -> int64 -> Psyntax.args
 val mkPointer : Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.form
 val mkArray : Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.form
 val args_sizeof : Llvm_target.TargetData.t -> Llvm.lltype -> Psyntax.args

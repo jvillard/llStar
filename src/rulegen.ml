@@ -303,12 +303,24 @@ let logic_of_module m =
 	(sllnode_logic_of_type,struct_filter)::[]
       else [] in
   let add_logic_pair (l1,m1) (l2,m2) = (add_logic l1 l2, add_logic m1 m2) in
+  let nullptr_rw =
+    { function_name = "NULL";
+      arguments=[];
+      result=bvargs64_of_int (Llvm_target.size_in_bits !lltarget
+				(pointer_type (i8_type !llcontext))) 0;
+      guard={without_form=[];rewrite_where=[];if_form=[]};
+      rewrite_name="nullptr";
+      saturate=true} in
+  (* always include the above rewrite of NULL() *)
+  let starting_logic =
+    ({empty_logic with rw_rules = [nullptr_rw]; },
+     {empty_logic with rw_rules = [nullptr_rw]; }) in
   (** applies all rulegen functions that are compatible with [t] *)
   let logic_of_type t =
     List.fold_left
       (fun log (rulegen_fun, filter) ->
 	if filter t then add_logic_pair log (rulegen_fun t)
-	else log) (empty_logic,empty_logic) rule_generators in
+	else log) (empty_logic, empty_logic) rule_generators in
   let all_types = collect_types_in_module m in
   let logics = List.map logic_of_type all_types in
-  List.fold_left add_logic_pair (empty_logic,empty_logic) logics
+  List.fold_left add_logic_pair starting_logic logics
