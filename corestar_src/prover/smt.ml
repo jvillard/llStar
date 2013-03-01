@@ -155,7 +155,7 @@ type smt_type =
 | SType_bv of string (** bitvector of known size *)
 | SType_bool (** boolean sort *)
 | SType_int (** mathematical integer sort *)
-| SType_fun of smt_type list * smt_type (** function type *)
+| SType_fun of (smt_type list * smt_type) list (** function type *)
 (* I don't think SMT-LIB does higher-order but hopefully it won't show up... *)
 
 exception Type_mismatch of smt_type * smt_type
@@ -166,8 +166,10 @@ let rec pp_smt_type f = function
 | SType_bv sz -> fprintf f "(_ BitVec %s)" sz
 | SType_bool -> fprintf f "Bool"
 | SType_int -> fprintf f "Int"
-| SType_fun (stl, rt) ->
-  fprintf f "(%a) -> %a" (list_format "" pp_smt_type) stl pp_smt_type rt
+| SType_fun l ->
+  let pp_single_funt f (stl, rt) =
+    fprintf f "(%a) -> %a" (list_format "" pp_smt_type) stl pp_smt_type rt in
+  (list_format " U" pp_single_funt) f l
 
 
 let rec refines ta tb =
@@ -178,10 +180,24 @@ let rec refines ta tb =
   | (SType_bv _, SType_elastic_bv _) -> true
   | (SType_elastic_bv _, SType_bv _) -> false
   | (SType_int, SType_int) | (SType_bool, SType_bool) -> true
-  | (SType_fun (tla,ra), SType_fun (tlb, rb)) when length tla = length tlb ->
-    List.fold_left (fun b (tta,ttb) -> b && refines ttb tta) (refines ra rb) (combine tla tlb)
+  | (SType_fun la, SType_fun lb) ->
+    List.for_all (fun (targsb, trb) ->
+      List.exists (fun (targsa, tra) ->
+	length targsa = length targsb && refines tra trb &&
+	  (List.for_all2 refines targsb targsa))
+	la)
+      lb
   | (SType_var _, _) -> false
   | _ -> false
+
+let compatible ta tb =
+  refines ta tb or refines tb ta
+
+let rec compatible_list tla tlb =
+  match (tla, tlb) with
+  | ([], []) -> true
+  | (ta::tla, tb::tlb) -> compatible ta tb && (compatible_list tla tlb)
+  | _ -> raise (Invalid_argument "mismatching list lengths in compatible_list")
 
 (*** naive implementation of a union-find structure *)
 let uf = Hashtbl.create 256
@@ -208,9 +224,19 @@ let unify ta tb =
       uf_union ta tb
     | (SType_bv s1, SType_bv s2) when s1 = s2 -> ()
     | (SType_int, SType_int) | (SType_bool, SType_bool) -> ()
-    | (SType_fun (tla,ra), SType_fun (tlb, rb)) when length tla = length tlb ->
-      (try iter aux ((ra,rb)::(combine tla tlb))
-       with Type_mismatch _ -> raise (Type_mismatch (ta, tb)))
+    | (SType_fun tla, SType_fun tlb) ->
+      let unify_tfun (la, ra) (lb, rb) =
+	try
+	  if compatible_list (ra::la) (rb::lb) then
+	    (iter aux ((ra,rb)::(combine la lb)); true)
+	  else false
+	with Invalid_argument _ -> false in
+      (* if there is a type in tla that's compatible with a type in
+	 tlb, fine (and recursive unification on the arguments/result
+	 will have then been performer by unify_tfun). Otherwise,
+	 overload the function type with a new type. *)
+      if List.exists (fun ft -> List.exists (unify_tfun ft) tlb) tla then ()
+      else uf_union ta (SType_fun (tla@tlb))
     | _ ->
       raise (Type_mismatch (ta, tb)) in
   aux (ta, tb)
@@ -314,7 +340,7 @@ let rec sexp_of_args = function
     let op_type = lookup_type op_name in
     if name <> "tuple" then
       if args = [] then unify result_type op_type
-      else unify (SType_fun (args_types, result_type)) op_type;
+      else unify op_type (SType_fun [(args_types, result_type)]);
     (expr, result_type)
   | Arg_record fldlist ->
     (* TODO: implement records *)
@@ -353,7 +379,7 @@ let sexp_of_pred = function
     let name = id_munge("pred_"^s) in
     let (args_exp, args_types) = sexp_of_args_list al in
     let op_type = lookup_type name in
-    unify op_type (SType_fun (args_types, SType_bool));
+    unify op_type (SType_fun [(args_types, SType_bool)]);
     ((if al = [] then name
       else Printf.sprintf "(%s %s)" name args_exp),
      SType_bool)
@@ -404,7 +430,7 @@ let sexp_of_sort s =
     (* let's decide that this identifier is of type Int *)
     unify SType_int (SType_var i);
     "Int"
-  | SType_fun (argtl, resl) -> raise (Invalid_argument "Unexpected function type")
+  | SType_fun _ -> raise (Invalid_argument "Unexpected function type")
 
 let rec sexp_of_sort_list = function
   | [] -> ""
@@ -412,9 +438,14 @@ let rec sexp_of_sort_list = function
 
 let decl_sexp_of_typed_id id idt =
   match (uf_find idt) with
-  | SType_fun (argtl, resl) ->
-    Printf.sprintf "(declare-fun %s (%s) %s)"
-      id (sexp_of_sort_list argtl) (sexp_of_sort resl)
+  | SType_fun l ->
+    let add_one_tfun_decl (sexp, decls) (argtl, resl) =
+      let decl =
+	Printf.sprintf "(declare-fun %s (%s) %s)"
+	  id (sexp_of_sort_list argtl) (sexp_of_sort resl) in
+      if mem decl decls then (sexp, decls)
+      else (sexp^decl, decl::decls) in
+    fst (List.fold_left add_one_tfun_decl ("", []) l)
   | _ ->
     Printf.sprintf "(declare-fun %s () %s)" id (sexp_of_sort idt)
 
