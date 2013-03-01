@@ -134,18 +134,14 @@ let fold_unfold_logic_of_type t =
       (struct_element_types t) in
   
   let collate_field_values =
-    let rec aux = function
-      | [] -> assert false (* TODO: handle empty structs (sigh) *)
-      | v::[] -> v
-      | v1::v2::tl -> Arg_op ("collate", [v1; aux (v2::tl)]) in
-    aux (Array.to_list field_values) in
+    Arg_op ("struct_"^(string_of_struct t), Array.to_list field_values) in
+
+  let select_field base_val i =
+    let selector_name = Printf.sprintf "%s-fld%d" (string_of_struct t) i in
+    Arg_op (selector_name, [base_val]) in
 
   let field_ranged_values base_val =
-    let range i =
-      let b = offset_of_field t i in
-      let e = offset_of_field_end t i in
-      Arg_op ("rg", [b; e; base_val]) in
-    Array.mapi (fun i _ -> range i) (struct_element_types t) in
+    Array.mapi (fun i _ -> select_field base_val i) (struct_element_types t) in
 
   let x_var = Arg_var (Vars.AnyVar (0, "x")) in
   let v_var = Arg_var (Vars.AnyVar (0, "v")) in
@@ -155,9 +151,7 @@ let fold_unfold_logic_of_type t =
     mkPointer root (args_sizeof !lltarget t) value in
 
   let mk_field_rule i subelt_type =
-    let b = offset_of_field t i in
-    let e = offset_of_field_end t i in
-    let field_value = Arg_op ("rg", [b; e; v_var]) in
+    let field_value = select_field v_var i in
     let target_pointer = mk_field_pointer t i x_var w_var in
     mk_simple_seq_rule ((string_of_struct t)^"_field_"^(string_of_int i))
       (mk_unfolded_struct t x_var (field_ranged_values v_var),
@@ -296,7 +290,9 @@ let logic_of_module m =
   (** pairs of rule generation functions and a filter that checks they
       are applied only to certain types *)
   let rule_generators =
-    (sizeof_logic_of_type,int_struct_filter)
+    ((fun t -> Smtexpression.declare_struct_type t; (empty_logic, empty_logic)),
+     struct_filter)
+    ::(sizeof_logic_of_type,int_struct_filter)
     ::(eltptr_logic_of_type,struct_filter)
     ::(fold_unfold_logic_of_type,struct_filter)
     ::if !Lstar_config.auto_gen_list_logic then

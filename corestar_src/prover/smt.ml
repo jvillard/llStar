@@ -58,6 +58,11 @@ let send_custom_commands =
       with End_of_file -> close_in cc
     )
 
+let smt_declare_datatype dtid decl =
+  if log log_smt then printf "@[Sending out %s declaration: %s@." dtid decl;
+  output_string !smtin decl; (* TODO: handle errors *)
+  predeclared := StringSet.add dtid !predeclared
+
 let smt_init () : unit =
   smtpath :=
     if (!Config.solver_path <> "")

@@ -31,4 +31,4 @@ setifield:
 
 yay_yay_int:
   {pointer(@parameter0:,sizeof(named_type("struct.ij")),_v)}
-  {pointer(@parameter0:,sizeof(named_type("struct.ij")),collate(bv_const("32", "0"),bv_const("32", "0")))}
+  {pointer(@parameter0:,sizeof(named_type("struct.ij")),struct_struct.ij(bv_const("32", "0"),bv_const("32", "0")))}
