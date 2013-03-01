@@ -1,7 +1,7 @@
 LLVM_AS=llvm-as-3.1
 
 LSTAR_OPTIONS=-a ../../rules/lseg.abs -lists -abduct -abduct_file ../../rules/abduct.logic
-SRC=smaug.ll
+SRC=smaug.ll list.c
 BITCODE=$(SRC:=.bc)
 
 %.ll.bc: %.ll
@@ -20,6 +20,4 @@ test: $(BITCODE)
 clean:
 	rm -rf _lstar $(BITCODE)
 
-.PHONY: test
-
-# ../../bin/lstar -s /dev/null -a ../../rules/lseg.abs -lists -abduct -abduct_file ../../rules/abduct.logic smaug.bc
+.PHONY: test clean
