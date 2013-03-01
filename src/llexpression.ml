@@ -182,6 +182,10 @@ let ppred_of_gep x t ptr lidx =
   let rec jump_chain_of_lidx = function
     | [] -> Arg_op ("jump_end", [])
     | idx::tl ->
+      (* convert constant integers to 64 bits *)
+      let idx = match int64_of_const idx with
+	| None -> idx
+	| Some i -> const_of_int64 (integer_type !llcontext 64) i false in
       let args_idx = args_of_value idx in
       Arg_op ("jump", [args_idx; jump_chain_of_lidx tl]) in
   let jump_chain = jump_chain_of_lidx lidx in

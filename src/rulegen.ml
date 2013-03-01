@@ -26,14 +26,14 @@ let gen_seq_rules_of_equiv name (equiv_left, equiv_right) =
 (** the physical offset inside the struct, as a logical expression *)
 let offset_of_field struct_t i =
   let offset = Llvm_target.offset_of_element !lltarget struct_t i in
-  numargs_of_int64 offset
+  bvargs_of_int64 64 offset
 
 let offset_of_field_end struct_t i =
   let offset = Llvm_target.offset_of_element !lltarget struct_t i in
   let field_type = Array.get (struct_element_types struct_t) i in
   let field_size = Llvm_target.store_size !lltarget field_type in
   let field_end = Int64.add offset field_size in
-  numargs_of_int64 field_end
+  bvargs_of_int64 64 field_end
 
 (* a few definitions to make the rule definitions more readable *)
 let args_sizeof_field struct_t i =
@@ -50,15 +50,15 @@ let mk_padding_of_field struct_t i root =
   let pad_size = Int64.sub next_offset (Int64.add offset elt_size) in
   if pad_size = Int64.zero then None
   else
-    let offset = Arg_string (Int64.to_string (Int64.add offset elt_size)) in
-    let pad_addr = Arg_op("builtin_plus", [root; offset]) in
+    let offset = bvargs_of_int64 64 (Int64.add offset elt_size) in
+    let pad_addr = Arg_op("builtin_bvadd", [root; offset]) in
     Some (mkSPred ("padding", [pad_addr; Arg_string(Int64.to_string pad_size)]))
 
 let mk_field_pointer struct_t i root value =
   if i = 0 then
     mkPointer root (args_sizeof_field struct_t i) value
   else
-    let offset = Arg_op ("builtin_plus", [root; offset_of_field struct_t i]) in
+    let offset = Arg_op ("builtin_bvadd", [root; offset_of_field struct_t i]) in
     mkPointer offset (args_sizeof_field struct_t i) value
 
 let mk_padded_field_pointer struct_t i root value =
@@ -101,17 +101,17 @@ let eltptr_logic_of_type t = match struct_name t with
     (** the physical offset inside the struct, as a logical expression *)
     let offset_of_field i =
       let offset = Llvm_target.offset_of_element !lltarget t i in
-      bvargs_of_int64 32 offset in
+      bvargs_of_int64 64 offset in
     let x_var = Arg_var (Vars.AnyVar (0, "x")) in
     let root_var = Arg_var (Vars.AnyVar (0, "r")) in
     let jump_var = Arg_var (Vars.AnyVar (0, "j")) in
     let subelt_eltptr_rules i subelt_type =
-      let jump = Arg_op ("jump", [bvargs_of_int 32 i; jump_var]) in
+      let jump = Arg_op ("jump", [bvargs_of_int 64 i; jump_var]) in
       let equiv_left =
 	mkPPred ("eltptr", [x_var; args_struct_t; root_var; jump]) in
       let new_root =
 	if i = 0 then root_var
-	else Arg_op ("builtin_plus", [root_var; offset_of_field i]) in
+	else Arg_op ("builtin_bvadd", [root_var; offset_of_field i]) in
       let equiv_right =
 	mkPPred ("eltptr", [x_var; args_of_type subelt_type;
 			    new_root; jump_var]) in
