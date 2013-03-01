@@ -158,6 +158,8 @@ type smt_type =
 | SType_fun of smt_type list * smt_type (** function type *)
 (* I don't think SMT-LIB does higher-order but hopefully it won't show up... *)
 
+exception Type_mismatch of smt_type * smt_type
+
 let rec pp_smt_type f = function
 | SType_var i -> fprintf f "tvar%d" i
 | SType_elastic_bv i -> fprintf f "(_ BitVec bvar%d)" i
@@ -207,11 +209,10 @@ let unify ta tb =
     | (SType_bv s1, SType_bv s2) when s1 = s2 -> ()
     | (SType_int, SType_int) | (SType_bool, SType_bool) -> ()
     | (SType_fun (tla,ra), SType_fun (tlb, rb)) when length tla = length tlb ->
-      iter aux ((ra,rb)::(combine tla tlb))
+      (try iter aux ((ra,rb)::(combine tla tlb))
+       with Type_mismatch _ -> raise (Type_mismatch (ta, tb)))
     | _ ->
-      if log log_smt then
-	fprintf logf "type mismatch: %a # %a@." pp_smt_type ta pp_smt_type tb;
-      raise (Invalid_argument "type mismatch") in
+      raise (Type_mismatch (ta, tb)) in
   aux (ta, tb)
 
 let rec unify_list = function
@@ -550,8 +551,9 @@ let finish_him
     let r = smt_check_unsat() in
     smt_pop(); r
   with
-  | Invalid_argument "type mismatch" ->
-    printf "@[@{<b>SMT ERROR@}: type mismatch@.";
+  | Type_mismatch (ta, tb) ->
+    printf "@[@{<b>SMT ERROR@}: type mismatch: %a # %a@."
+      pp_smt_type ta pp_smt_type tb;
     print_flush();
     false
   | SMT_error r ->
@@ -639,9 +641,10 @@ let ask_the_audience
     smt_pop();
     fold_left make_list_equal ts req_equiv
     with
-    | Invalid_argument "type mismatch" ->
+    | Type_mismatch (ta, tb) ->
+      printf "@[@{<b>SMT ERROR@}: type mismatch: %a # %a@."
+	pp_smt_type ta pp_smt_type tb;
       smt_reset();
-      printf "@[@{<b>SMT ERROR@}: type mismatch@.";
       print_flush();
       raise Backtrack.No_match
     | SMT_error r ->
