@@ -1,3 +1,8 @@
+/* test if implications hold with this empty function */
+skip:
+   {builtin_neq(x,numeric_const("0")) = y * y = bv_const("1", "1")}
+   {x != numeric_const("0")}
+
 main:
    {}
    {$ret_v1 = builtin_bvmul(bv_const("32","32"),bv_const("32", "52"))}

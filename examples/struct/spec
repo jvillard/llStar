@@ -1,15 +1,12 @@
 import "../../specs/stdlib.spec";
 
-/* test if implications hold with this empty function */
-skip:
-   {builtin_neq(x,numeric_const("0")) = y * y = bv_const("1", "1")}
-   {x != numeric_const("0")}
+norbert:
+  {@parameter0: = val(numeric_const("8"),_x)
+   * @parameter1: = val(numeric_const("8"),_y)}
+  {pointer($ret_v1,sizeof(named_type("node")),struct_node(@parameter0:,@parameter1:)) * malloced($ret_v1,sizeof(named_type("node")))
+   || $ret_v1 = NULL()}
 
-main:
-   {}
-   {$ret_v1 = builtin_bvmul(bv_const("32", "32"),bv_const("32", "52"))}
-
-f:
+chew_slowly:
    {}
    {$ret_v1 = @parameter0:}
 
@@ -32,3 +29,8 @@ setifield:
 yay_yay_int:
   {pointer(@parameter0:,sizeof(named_type("struct.ij")),_v)}
   {pointer(@parameter0:,sizeof(named_type("struct.ij")),struct_struct.ij(bv_const("32", "0"),bv_const("32", "0")))}
+
+main:
+   {}
+   {$ret_v1 = builtin_bvmul(bv_const("32", "32"),bv_const("32", "52"))}
+
