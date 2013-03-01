@@ -7,7 +7,7 @@
 
 /*************** Abs1 Rule *******************/
 abstraction ls_ls:
- lseg(?l,?x,_x) * lseg(?l,_x,nil()) ~~> lseg(?l,?x,nil()) 
+ lseg(?l,?x,_x) * lseg(?l,_x,NULL()) ~~> lseg(?l,?x,NULL()) 
 where 
   _x notincontext;
   _x notin ?x
@@ -15,7 +15,7 @@ where
 
 
 abstraction ls_pto:
- lseg(?l,?x,_x) * node(?l,_x,nil()) ~~>  lseg_ne(?l,?x,nil()) 
+ lseg(?l,?x,_x) * node(?l,_x,NULL()) ~~>  lseg_ne(?l,?x,NULL()) 
 where 
   _x notincontext;
   _x notin ?x
@@ -23,7 +23,7 @@ where
 
 
 abstraction pto_ls:
- node(?l,?x,_x) * lseg(?l,_x,nil()) ~~> lseg_ne(?l,?x,nil()) 
+ node(?l,?x,_x) * lseg(?l,_x,NULL()) ~~> lseg_ne(?l,?x,NULL()) 
 where 
   _x notincontext;
   _x notin ?x
@@ -31,38 +31,38 @@ where
 
 
 abstraction pto_pto:
- node(?l,?x,_x) * node(?l,_x,nil()) ~~> lseg_ne(?l,?x,nil())
+ node(?l,?x,_x) * node(?l,_x,NULL()) ~~> lseg_ne(?l,?x,NULL())
 where 
   _x notincontext;
   _x notin ?x
 
 
 abstraction lsne_ls:
- lseg_ne(?l,?x,_x) * lseg(?l,_x,nil()) ~~> lseg_ne(?l,?x,nil()) 
+ lseg_ne(?l,?x,_x) * lseg(?l,_x,NULL()) ~~> lseg_ne(?l,?x,NULL()) 
 where 
   _x notincontext;
   _x notin ?x
 
 abstraction ls_lsne:
- lseg(?l,?x,_x) * lseg_ne(?l,_x,nil()) ~~> lseg_ne(?l,?x,nil()) 
+ lseg(?l,?x,_x) * lseg_ne(?l,_x,NULL()) ~~> lseg_ne(?l,?x,NULL()) 
 where 
   _x notincontext;
   _x notin ?x
 
 abstraction lsne_lsne:
- lseg_ne(?l,?x,_x) * lseg_ne(?l,_x,nil()) ~~> lseg_ne(?l,?x,nil()) 
+ lseg_ne(?l,?x,_x) * lseg_ne(?l,_x,NULL()) ~~> lseg_ne(?l,?x,NULL()) 
 where 
   _x notincontext;
   _x notin ?x
 
 abstraction lsne_pto:
- lseg_ne(?l,?x,_x) * node(?l,_x,nil()) ~~>  lseg_ne(?l,?x,nil()) 
+ lseg_ne(?l,?x,_x) * node(?l,_x,NULL()) ~~>  lseg_ne(?l,?x,NULL()) 
 where 
   _x notincontext;
   _x notin ?x
 
 abstraction pto_lsne:
- node(?l,?x,_x) * lseg_ne(?l,_x,nil()) ~~> lseg_ne(?l,?x,nil()) 
+ node(?l,?x,_x) * lseg_ne(?l,_x,NULL()) ~~> lseg_ne(?l,?x,NULL()) 
 where 
   _x notincontext;
   _x notin ?x
@@ -162,11 +162,11 @@ abstraction node_lsne:
  *  Empty rules
  ***********************************
 rule node_nil2:
-node(?l,nil(),?x) | |- 
+node(?l,NULL(),?x) | |- 
 if
 
 rule node_not_nil:
-node(?l,?x,?y) | ?x!=nil() |-
+node(?l,?x,?y) | ?x!=NULL() |-
 if
 | |-
 

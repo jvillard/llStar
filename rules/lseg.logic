@@ -12,21 +12,21 @@ import "pointer.logic";
 
 
 rule node_not_nil:
-  node(?s,numeric_const("0"),?y) | |-
+  node(?s,NULL(),?y) | |-
 if
 
 rule lseg_ne_not_nil:
-  lseg_ne(?s,numeric_const("0"),?y) | |-
+  lseg_ne(?s,NULL(),?y) | |-
 if
 
 rule lseg_not_nil:
-  lseg(?s,numeric_const("0"),?y) | |-
+  lseg(?s,NULL(),?y) | |-
 if
-  | ?y=numeric_const("0") |-
+  | ?y=NULL() |-
 
 
 rule node_not_nil:
-  node(?s,?x,?y) | |- ?x!=numeric_const("0")
+  node(?s,?x,?y) | |- ?x!=NULL()
 if
   | |-
 
@@ -78,7 +78,7 @@ if
 rule lseg_nil_match :
   | lseg_ne(?s,?x,?y) |- lseg_ne(?s,?x,?z)
 if
-  lseg_ne(?s,?x,?y) | |- lseg(?s,?y,?z) * ?z = numeric_const("0")
+  lseg_ne(?s,?x,?y) | |- lseg(?s,?y,?z) * ?z = NULL()
 
 
 

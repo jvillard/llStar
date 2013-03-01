@@ -3,12 +3,12 @@
  *************************************/
 
 equiv pointer_getelementptr0:
-  !eltptr(?x,pointer_type(?gept),?p,jump(numeric_const("0"),?j))
+  !eltptr(?x,pointer_type(?gept),?p,jump(NULL(),?j))
   <=> !eltptr(?x,?gept,?p,?j)
 
 equiv pointer_getelementptr_void:
   !eltptr(?x,pointer_type(integer_type("8")),?p,jump(?n,?j))
-  <=> !eltptr(?x,pointer_type(integer_type("8")),builtin_plus(?p,?n),?j)
+  <=> !eltptr(?x,pointer_type(integer_type("8")),builtin_bvadd(?p,?n),?j)
 
 equiv jump_end:
   !eltptr(?x,?t,?y,jump_end()) <=> ?x = ?y
@@ -49,12 +49,12 @@ if
   for null then we have a contradiction.
  */
 rule pointer_nil_contradiction:
-  pointer(numeric_const("0"),?t,?v) | |- 
+  pointer(NULL(),?t,?v) | |- 
 if
 
 /* same for malloc */
 rule malloced_nil_contradiction: 
-  malloced(numeric_const("0"),?s) | |- 
+  malloced(NULL(),?s) | |- 
 if
 
 
@@ -68,11 +68,11 @@ if
   a contradiction.
  */
 rule pointer_nil_failed :
-  | |- pointer(numeric_const("0"),?t,?v) 
+  | |- pointer(NULL(),?t,?v) 
 if
-  | |- pointer(numeric_const("0"),?t,?v) * False
+  | |- pointer(NULL(),?t,?v) * False
 
 rule pointer_not_null :
-  pointer(?x,?t,?v) | |- ?x!=numeric_const("0")
+  pointer(?x,?t,?v) | |- ?x!=NULL()
 if
   pointer(?x,?t,?v) | |-
