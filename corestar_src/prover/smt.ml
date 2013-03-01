@@ -227,7 +227,7 @@ let fresh_type_index () =
 (** typing context *)
 let typing_context = Hashtbl.create 256
 let lookup_type id =
-  try Hashtbl.find typing_context id
+  try uf_find (Hashtbl.find typing_context id)
   with Not_found ->
     let t = SType_var (fresh_type_index ()) in    
     Hashtbl.add typing_context id t;
@@ -312,7 +312,8 @@ let rec sexp_of_args = function
     let result_type = SType_var (fresh_type_index ()) in
     let op_type = lookup_type op_name in
     if name <> "tuple" then
-      unify (SType_fun (args_types, result_type)) op_type;
+      if args = [] then unify result_type op_type
+      else unify (SType_fun (args_types, result_type)) op_type;
     (expr, result_type)
   | Arg_record fldlist ->
     (* TODO: implement records *)
