@@ -8,3 +8,5 @@ bin/*
 corestar_src.subdirs
 corestar_src
 _lstar/
+*.c.bc
+*.ll.bc
