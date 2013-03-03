@@ -13,6 +13,7 @@
 
 open Format
 open List
+open Corestar_std
 open Debug
 
 type smt_response =
@@ -21,6 +22,8 @@ type smt_response =
   | Sat
   | Unsat
   | Unknown
+
+let predeclared = ref StringSet.empty
 
 (* This function should be used below to munge all symbols (usually known as
   identifiers). See Section 3.1 of SMT-LIB standard for allowed symbols. *)
@@ -156,23 +159,47 @@ let lookup_type id =
     let t = SType_var (fresh_type_index ()) in    
     Hashtbl.add typing_context id t;
     t
-let flush_typing_context () = Hashtbl.clear typing_context
+
+let default_types = ref []
+
+let reset_typing_context () =
+  Hashtbl.clear typing_context;
+  List.iter (fun (id,typ) -> Hashtbl.add typing_context id typ) !default_types
+
+let add_default_type id typ =
+  default_types := (id,typ)::!default_types
+
+
+let bin_ops = ref []
+
+let add_native_binop args_binop smt_binop bintype =
+  predeclared := StringSet.add smt_binop !predeclared;
+  add_default_type smt_binop bintype;
+  bin_ops := (args_binop, smt_binop)::!bin_ops
 
 (** bitvector operations *)
-let bvops =
-  List.map (fun s -> ("builtin_"^s,s))
+let add_native_bitvector_ops () =
+  (* bit-vector operations in SMT-LIB are polymorphic in the size of
+     the bit-vectors. The type of a bit-vector operation is that both
+     arguments and the result are bit-vectors of the same size *)
+  let bvop_t () =
+    let t = SType_elastic_bv (fresh_type_index ()) in
+    SType_fun [([t; t], t)] in
+  List.iter (fun s -> add_native_binop ("builtin_"^s) s (bvop_t ()))
     ["bvadd"; "bvsub"; "bvneg"; "bvmul";
      "bvurem"; "bvsrem"; "bvsmod";
      "bvshl"; "bvlshr"; "bvashr";
      "bvor"; "bvand"; "bvnot"; "bvnand"; "bvnor"; "bvxnor"]
 
 (** mathematical integer operations *)
-let intops =
-  [("builtin_plus", "+");
-   ("builtin_minus", "-");
-   ("builtin_mult", "*");
-   ("builtin_div", "/");
-  ]
+let add_native_int_ops () =
+  List.iter (fun (args_str, smt_str) -> add_native_binop args_str smt_str
+    (SType_fun [([SType_int; SType_int], SType_int)]))
+    [("builtin_plus", "+");
+     ("builtin_minus", "-");
+     ("builtin_mult", "*");
+     ("builtin_div", "/");
+    ]
 
 let intbinrels =
   [("GT", ">");

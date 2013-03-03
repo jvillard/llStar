@@ -40,8 +40,6 @@ let smt_memo = Hashtbl.create 31;;
 
 let smt_onstack = ref [[]];;
 
-let predeclared = ref StringSet.empty
-
 let send_custom_commands =
   let decl_re = Str.regexp "[ \t]*([ \t]*declare-fun[ \t]+\\([^ \t()]+\\)" in
   fun () ->
@@ -83,7 +81,10 @@ let smt_init () : unit =
         Config.smt_run := true;
         if log log_smt then printf "@[SMT running.@]";
         output_string i "(set-option :print-success false)\n";
-        send_custom_commands (); flush i
+        send_custom_commands ();
+	add_native_bitvector_ops ();
+	add_native_int_ops ();
+	flush i
       end
     with
     | Unix_error(err,f,a) ->
@@ -152,26 +153,17 @@ let rec sexp_of_args = function
 	"string_const_"^s
       ) in
     (expr, SType_int)
-  | Arg_op (intop, [a1;a2]) when List.mem_assoc intop intops ->
+  | Arg_op (binop, [a1;a2]) when List.mem_assoc binop !bin_ops ->
     (* SMT-LIB knows about these operations, so we don't add their
        types to the typing context *)
     let (e1, t1) = sexp_of_args a1 in
     let (e2, t2) = sexp_of_args a2 in
-    let expr = Printf.sprintf "(%s %s %s)" (List.assoc intop intops) e1 e2 in
-    unify_list (SType_int::t1::t2::[]);
-    (expr, SType_int)
-  | Arg_op (bvop, [a1;a2]) when List.mem_assoc bvop bvops ->
-    (* SMT-LIB knows about these operations, so we don't add their
-       types to the typing context *)
-    let (e1, t1) = sexp_of_args a1 in
-    let (e2, t2) = sexp_of_args a2 in
-    let expr = Printf.sprintf "(%s %s %s)" (List.assoc bvop bvops) e1 e2 in
-    (* all the arguments must be bit-vectors but we cannot know their
-       size from the opcode [bvop] alone. If there is no way to tell
-       we will need to pick a bitwidth in the end. *)
-    let t = SType_elastic_bv (fresh_type_index ()) in
-    unify_list (t::t1::t2::[]);
-    (expr, t)
+    let smt_binop = List.assoc binop !bin_ops in
+    let expr = Printf.sprintf "(%s %s %s)" smt_binop e1 e2 in
+    let smt_binop_t = lookup_type smt_binop in
+    let result_t = SType_var (fresh_type_index ()) in
+    unify smt_binop_t (SType_fun [([t1; t2], result_t)]);
+    (expr, result_t)
   | Arg_op ("numeric_const", [Arg_string(a)]) -> (a, SType_int)
   | Arg_op ("bv_const", [Arg_string(sz); Arg_string(n)]) ->
     (Printf.sprintf "(_ bv%s %s)" n sz, SType_bv sz)
@@ -387,7 +379,7 @@ let finish_him
     (obl : formula)
     : bool =
   try
-    flush_typing_context ();
+    reset_typing_context ();
     let eqs = filter (fun (a,b) -> a <> b) (get_eqs_norecs ts) in
     let neqs = filter (fun (a,b) -> a <> b) (get_neqs_norecs ts) in
     let asm_eq_sexp = String.concat " " (map sexp_of_eq eqs) in
@@ -477,7 +469,7 @@ let ask_the_audience
         printf "@[Calling SMT to update congruence closure@.";
         printf "@[Current formula:@\n %a@." Clogic.pp_ts_formula (Clogic.mk_ts_form ts form)
       end;
-    flush_typing_context ();
+    reset_typing_context ();
     (* Construct equalities and ineqalities from ts *)
     let eqs = filter (fun (a,b) -> a <> b) (get_eqs_norecs ts) in
     let neqs = filter (fun (a,b) -> a <> b) (get_neqs_norecs ts) in
