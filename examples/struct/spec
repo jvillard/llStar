@@ -3,7 +3,7 @@ import "../../specs/stdlib.spec";
 norbert:
   {@parameter0: = val(numeric_const("8"),_x)
    * @parameter1: = val(numeric_const("8"),_y)}
-  {pointer($ret_v1,sizeof(named_type("node")),struct_node(@parameter0:,@parameter1:)) * malloced($ret_v1,sizeof(named_type("node")))
+  {pointer($ret_v1,sizeof(named_type("node")),mk_node(@parameter0:,@parameter1:)) * malloced($ret_v1,sizeof(named_type("node")))
    || $ret_v1 = NULL()}
 
 chew_slowly:
@@ -24,11 +24,11 @@ yay_int: {pointer(@parameter0:,sizeof(pointer_type(named_type("struct.ij"))),_v)
 
 setifield:
   {pointer(@parameter0:,sizeof(named_type("struct.oneint")),_v)}
-  {pointer(@parameter0:,sizeof(named_type("struct.oneint")),bv_const("32", "0"))}
+  {pointer(@parameter0:,sizeof(named_type("struct.oneint")),mk_struct.oneint(bv_const("32", "0")))}
 
 yay_yay_int:
   {pointer(@parameter0:,sizeof(named_type("struct.ij")),_v)}
-  {pointer(@parameter0:,sizeof(named_type("struct.ij")),struct_struct.ij(bv_const("32", "0"),bv_const("32", "0")))}
+  {pointer(@parameter0:,sizeof(named_type("struct.ij")),mk_struct.ij(bv_const("32", "0"),bv_const("32", "0")))}
 
 main:
    {}

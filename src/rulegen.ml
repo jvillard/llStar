@@ -134,7 +134,7 @@ let fold_unfold_logic_of_type t =
       (struct_element_types t) in
   
   let collate_field_values =
-    Arg_op ("struct_"^(string_of_struct t), Array.to_list field_values) in
+    Arg_op ("mk_"^(string_of_struct t), Array.to_list field_values) in
 
   let select_field base_val i =
     let selector_name = Printf.sprintf "%s-fld%d" (string_of_struct t) i in

@@ -61,7 +61,7 @@ let rec smttype_of_lltype t = match (classify_type t) with
 let declare_struct_type t =
   let name = string_of_struct t in
   let struct_t = SType_type name in
-  let struct_constr = "mk-"^name in
+  let struct_constr = "mk_"^name in
   let elts = struct_element_types t in
   let field_constr i = Printf.sprintf "%s-fld%d" name i in
   let elt_sexps = Array.mapi (fun i t ->
@@ -74,5 +74,5 @@ let declare_struct_type t =
     (Array.mapi (fun i t ->
       let field_t = smttype_of_lltype t in
       add_native_op (field_constr i) (field_constr i) (SType_fun [([struct_t],field_t)]);
-      SType_fun [([struct_t], smttype_of_lltype t)]) elts) in
+      smttype_of_lltype t) elts) in
   add_native_op struct_constr struct_constr (SType_fun [(elts_t, struct_t)])
