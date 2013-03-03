@@ -391,6 +391,7 @@ let finish_him
   | Type_mismatch (ta, tb) ->
     printf "@[@{<b>SMT ERROR@}: type mismatch: %a # %a@."
       pp_smt_type ta pp_smt_type tb;
+    if log log_smt then dump_typing_context ();
     print_flush();
     false
   | SMT_error r ->

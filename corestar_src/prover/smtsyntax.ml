@@ -171,6 +171,9 @@ let reset_typing_context () =
   Hashtbl.clear typing_context;
   List.iter (fun (id,typ) -> Hashtbl.add typing_context id typ) !default_types
 
+let dump_typing_context () =
+  Hashtbl.iter (fun id t -> fprintf logf "%s: %a@ " id pp_smt_type t) typing_context
+
 let add_default_type id typ =
   default_types := (id,typ)::!default_types
 
