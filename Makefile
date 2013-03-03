@@ -24,7 +24,7 @@ build: native
 bin:
 	mkdir bin
 
-native byte: $(CORESTAR_SUBDIRS) bin
+native byte d.byte p.native: $(CORESTAR_SUBDIRS) bin
 	$(OCAMLBUILD) $(addsuffix .$@,$(MAINS))
 	for f in $(MAINS); do ln -sf ../`readlink $$f.$@` bin/$$f; rm $$f.$@; done
 

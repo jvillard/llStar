@@ -153,22 +153,13 @@ let rec sexp_of_args = function
 	"string_const_"^s
       ) in
     (expr, SType_int)
-  | Arg_op (binop, [a1;a2]) when List.mem_assoc binop !bin_ops ->
-    (* SMT-LIB knows about these operations, so we don't add their
-       types to the typing context *)
-    let (e1, t1) = sexp_of_args a1 in
-    let (e2, t2) = sexp_of_args a2 in
-    let smt_binop = List.assoc binop !bin_ops in
-    let expr = Printf.sprintf "(%s %s %s)" smt_binop e1 e2 in
-    let smt_binop_t = lookup_type smt_binop in
-    let result_t = SType_var (fresh_type_index ()) in
-    unify smt_binop_t (SType_fun [([t1; t2], result_t)]);
-    (expr, result_t)
   | Arg_op ("numeric_const", [Arg_string(a)]) -> (a, SType_int)
   | Arg_op ("bv_const", [Arg_string(sz); Arg_string(n)]) ->
     (Printf.sprintf "(_ bv%s %s)" n sz, SType_bv sz)
   | Arg_op (name, args) | Arg_cons (name, args) ->
-    let op_name = id_munge ("op_"^name) in
+    let op_name =
+      try List.assoc name !native_ops
+      with Not_found -> id_munge ("op_"^name) in
     let (args_exp, args_types) = sexp_of_args_list args in
     let expr =
       if args = [] then op_name
@@ -250,28 +241,6 @@ let rec sexp_of_form ts form =
   let plain_sexp = String.concat " " plain_list in
   let form_sexp = "(and true "^eq_sexp^" "^neq_sexp^" "^disj_sexp^" "^plain_sexp^")" in
   form_sexp
-
-let sexp_of_sort s =
-  (* lookup "final" type of id, ie the representative of idt *)
-  match uf_find s with
-  | SType_bool -> "Bool"
-  | SType_int -> "Int"
-  | SType_bv sz ->
-    Printf.sprintf "(_ BitVec %s)" sz
-  | SType_elastic_bv i ->
-    (* if we don't know the size of the bit-vector at this point, we
-       have to pick one. 12 is as good a size as any I guess... *)
-    unify (SType_bv "12") (SType_elastic_bv i);
-    "(_ BitVec 12)"
-  | SType_var i ->
-    (* let's decide that this identifier is of type Int *)
-    unify SType_int (SType_var i);
-    "Int"
-  | SType_fun _ -> raise (Invalid_argument "Unexpected function type")
-
-let rec sexp_of_sort_list = function
-  | [] -> ""
-  | t::tl -> " " ^ (sexp_of_sort t) ^ (sexp_of_sort_list tl)
 
 let decl_sexp_of_typed_id id idt =
   match (uf_find idt) with

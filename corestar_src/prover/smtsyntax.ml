@@ -55,6 +55,7 @@ type smt_type =
 | SType_bv of string (** bitvector of known size *)
 | SType_bool (** boolean sort *)
 | SType_int (** mathematical integer sort *)
+| SType_type of string (** user-defined type *)
 | SType_fun of (smt_type list * smt_type) list (** function type *)
 (* I don't think SMT-LIB does higher-order but hopefully it won't show up... *)
 
@@ -66,6 +67,7 @@ let rec pp_smt_type f = function
 | SType_bv sz -> fprintf f "(_ BitVec %s)" sz
 | SType_bool -> fprintf f "Bool"
 | SType_int -> fprintf f "Int"
+| SType_type s -> fprintf f "%s" s
 | SType_fun l ->
   let pp_single_funt f (stl, rt) =
     fprintf f "(%a) -> %a" (list_format "" pp_smt_type) stl pp_smt_type rt in
@@ -80,6 +82,7 @@ let rec refines ta tb =
   | (SType_bv _, SType_elastic_bv _) -> true
   | (SType_elastic_bv _, SType_bv _) -> false
   | (SType_int, SType_int) | (SType_bool, SType_bool) -> true
+  | (SType_type s1, SType_type s2) when s1 = s2 -> true
   | (SType_fun la, SType_fun lb) ->
     List.for_all (fun (targsb, trb) ->
       List.exists (fun (targsa, tra) ->
@@ -123,6 +126,7 @@ let unify ta tb =
     | (SType_elastic_bv _, SType_bv _) | (SType_bv _, SType_elastic_bv _) ->
       uf_union ta tb
     | (SType_bv s1, SType_bv s2) when s1 = s2 -> ()
+    | (SType_type s1, SType_type s2) when s1 = s2 -> ()
     | (SType_int, SType_int) | (SType_bool, SType_bool) -> ()
     | (SType_fun tla, SType_fun tlb) ->
       let unify_tfun (la, ra) (lb, rb) =
@@ -160,6 +164,7 @@ let lookup_type id =
     Hashtbl.add typing_context id t;
     t
 
+(* should this be a hashtbl? *)
 let default_types = ref []
 
 let reset_typing_context () =
@@ -169,13 +174,12 @@ let reset_typing_context () =
 let add_default_type id typ =
   default_types := (id,typ)::!default_types
 
+let native_ops = ref []
 
-let bin_ops = ref []
-
-let add_native_binop args_binop smt_binop bintype =
-  predeclared := StringSet.add smt_binop !predeclared;
-  add_default_type smt_binop bintype;
-  bin_ops := (args_binop, smt_binop)::!bin_ops
+let add_native_op args_op smt_op optype =
+  predeclared := StringSet.add smt_op !predeclared;
+  add_default_type smt_op optype;
+  native_ops := (args_op, smt_op)::!native_ops
 
 (** bitvector operations *)
 let add_native_bitvector_ops () =
@@ -185,7 +189,7 @@ let add_native_bitvector_ops () =
   let bvop_t () =
     let t = SType_elastic_bv (fresh_type_index ()) in
     SType_fun [([t; t], t)] in
-  List.iter (fun s -> add_native_binop ("builtin_"^s) s (bvop_t ()))
+  List.iter (fun s -> add_native_op ("builtin_"^s) s (bvop_t ()))
     ["bvadd"; "bvsub"; "bvneg"; "bvmul";
      "bvurem"; "bvsrem"; "bvsmod";
      "bvshl"; "bvlshr"; "bvashr";
@@ -193,7 +197,7 @@ let add_native_bitvector_ops () =
 
 (** mathematical integer operations *)
 let add_native_int_ops () =
-  List.iter (fun (args_str, smt_str) -> add_native_binop args_str smt_str
+  List.iter (fun (args_str, smt_str) -> add_native_op args_str smt_str
     (SType_fun [([SType_int; SType_int], SType_int)]))
     [("builtin_plus", "+");
      ("builtin_minus", "-");
@@ -207,3 +211,26 @@ let intbinrels =
    ("LT", "<");
    ("LE", "<=");
   ]
+
+let sexp_of_sort s =
+  (* lookup "final" type of id, ie the representative of idt *)
+  match uf_find s with
+  | SType_bool -> "Bool"
+  | SType_int -> "Int"
+  | SType_type s -> s
+  | SType_bv sz ->
+    Printf.sprintf "(_ BitVec %s)" sz
+  | SType_elastic_bv i ->
+    (* if we don't know the size of the bit-vector at this point, we
+       have to pick one. 12 is as good a size as any I guess... *)
+    unify (SType_bv "12") (SType_elastic_bv i);
+    "(_ BitVec 12)"
+  | SType_var i ->
+    (* let's decide that this identifier is of type Int *)
+    unify SType_int (SType_var i);
+    "Int"
+  | SType_fun _ -> raise (Invalid_argument "Unexpected function type")
+
+let rec sexp_of_sort_list = function
+  | [] -> ""
+  | t::tl -> " " ^ (sexp_of_sort t) ^ (sexp_of_sort_list tl)
