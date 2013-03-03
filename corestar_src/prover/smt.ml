@@ -322,9 +322,9 @@ let smt_reset () : unit =
   assert (!smt_onstack = [[]])
 
 
-(** Check whether two args are equal under the current assumptions *)
-let smt_test_eq (a1 : Psyntax.args) (a2 : Psyntax.args) : bool =
-  let s = sexp_of_neq (a1,a2) in
+(** Check whether two sexps are equal under the current assumptions *)
+let smt_test_sexp_eq s1 s2 =
+  let s = Printf.sprintf "(distinct %s %s)" s1 s2 in
   smt_push();
   smt_assert s;
   let r = smt_check_unsat() in
@@ -470,9 +470,13 @@ let ask_the_audience
     smt_pop();
     *)
     (* Update the term structure using the new equalities *)
-    let reps = get_args_rep ts in
+    let reps = map (fun (t,a) -> (t, sexp_of_args a)) (get_args_rep ts) in
     let req_equiv = map (map fst)
-      (equiv_partition (fun x y -> smt_test_eq (snd x) (snd y)) reps) in
+      (equiv_partition (fun x y ->
+	let (sx, tx) = snd x in
+	let (sy, ty) = snd y in
+	(* do not call the SMT solver if x and y are of different types *)
+	tx = ty && smt_test_sexp_eq sx sy) reps) in
     if for_all (fun ls -> List.length ls = 1) req_equiv then
       (smt_reset(); raise Backtrack.No_match);
     smt_pop();
