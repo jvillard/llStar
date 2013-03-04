@@ -148,9 +148,10 @@ let rec sexp_of_args = function
 	(* if it's not an int that SMT-LIB will recognise, we need to
 	   declare it as such (let's pretend strings are ints...) *)
 	(* maintain uniqueness of bindings *)
-	Hashtbl.remove typing_context ("string_const_"^s);
-	Hashtbl.add typing_context ("string_const_"^s) SType_int;
-	"string_const_"^s
+	let scons = id_munge ("string_const_"^s) in
+	Hashtbl.remove typing_context scons;
+	Hashtbl.add typing_context scons SType_int;
+	scons
       ) in
     (expr, SType_int)
   | Arg_op ("numeric_const", [Arg_string(a)]) -> (a, SType_int)

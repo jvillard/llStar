@@ -10,6 +10,7 @@ open Psyntax
 (* LStar modules *)
 open Llexpression
 open Llutils
+open Smtexpression
 
 
 (*** helper functions to define predicates for structs *)
@@ -134,10 +135,10 @@ let fold_unfold_logic_of_type t =
       (struct_element_types t) in
   
   let collate_field_values =
-    Arg_op ("mk_"^(string_of_struct t), Array.to_list field_values) in
+    Arg_op (smtname_of_struct t, Array.to_list field_values) in
 
   let select_field base_val i =
-    let selector_name = Printf.sprintf "%s-fld%d" (string_of_struct t) i in
+    let selector_name = smtfield_of_struct t i in
     Arg_op (selector_name, [base_val]) in
 
   let field_ranged_values base_val =
@@ -290,7 +291,7 @@ let logic_of_module m =
   (** pairs of rule generation functions and a filter that checks they
       are applied only to certain types *)
   let rule_generators =
-    ((fun t -> Smtexpression.declare_struct_type t; (empty_logic, empty_logic)),
+    ((fun t -> declare_struct_type t; (empty_logic, empty_logic)),
      struct_filter)
     ::(sizeof_logic_of_type,int_struct_filter)
     ::(eltptr_logic_of_type,struct_filter)

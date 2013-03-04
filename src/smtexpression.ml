@@ -57,22 +57,31 @@ let rec smttype_of_lltype t = match (classify_type t) with
   | Metadata -> SType_int (* probably never get there? assert false? *)
   
 
+let smtname_of_struct t =
+  id_munge (string_of_struct t)
+
+let smtconstr_of_struct t =
+  id_munge ("mk_"^(string_of_struct t))
+
+let smtfield_of_struct t i =
+  id_munge (Printf.sprintf "%s-fld%d" (string_of_struct t) i)
+
 (** builds SMT-LIB declarations for the record datatype associated to a struct *)
 let declare_struct_type t =
-  let name = string_of_struct t in
-  let struct_t = SType_type name in
-  let struct_constr = "mk_"^name in
+  let struct_name = smtname_of_struct t in
+  let struct_t = SType_type struct_name in
+  let struct_constr = smtconstr_of_struct t in
   let elts = struct_element_types t in
-  let field_constr i = Printf.sprintf "%s-fld%d" name i in
+  let field_constr i = smtfield_of_struct t i in
   let elt_sexps = Array.mapi (fun i t ->
     Printf.sprintf "(%s %s)" (field_constr i) (sexp_of_lltype t)) elts in
   let fields = Array.fold_left (fun s st -> s^" "^st) "" elt_sexps in
   let decl = Printf.sprintf "(declare-datatypes () ((%s (%s %s))))"
-      name struct_constr fields in
-  smt_declare_datatype name decl;
+      struct_name struct_constr fields in
+  smt_declare_datatype struct_name decl;
   let elts_t = Array.to_list
     (Array.mapi (fun i t ->
       let field_t = smttype_of_lltype t in
       add_native_op (field_constr i) (field_constr i) (SType_fun [([struct_t],field_t)]);
       smttype_of_lltype t) elts) in
-  add_native_op struct_constr struct_constr (SType_fun [(elts_t, struct_t)])
+  add_native_op ("mk_"^(string_of_struct t)) struct_constr (SType_fun [(elts_t, struct_t)])

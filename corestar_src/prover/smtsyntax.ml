@@ -182,6 +182,7 @@ let native_ops = ref []
 let add_native_op args_op smt_op optype =
   predeclared := StringSet.add smt_op !predeclared;
   add_default_type smt_op optype;
+  Hashtbl.add typing_context smt_op optype;
   native_ops := (args_op, smt_op)::!native_ops
 
 (** bitvector operations *)
