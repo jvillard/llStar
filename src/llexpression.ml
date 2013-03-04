@@ -69,12 +69,6 @@ let rec args_of_type t = match (classify_type t) with
 and args_of_type_array ta =
   Array.to_list (Array.map args_of_type ta)
 
-let mk_type_ppred argv argt =
-  mkPPred ("type", [argv; argt])
-
-let mk_lltype_ppred argv llt =
-  mk_type_ppred argv (args_of_type llt)
-
 let args_of_int_const v = match int64_of_const v with
   | Some i ->
     let sz = integer_bitwidth (type_of v) in

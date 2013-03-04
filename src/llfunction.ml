@@ -64,7 +64,7 @@ let cfg_node_of_instr specs fun_env instr =
       if num_operands instr != 0 then
 	let ret_val = operand instr 0 in
 	let p0 = Arg_var(Vars.concretep_str ("@parameter"^(string_of_int 0)^":")) in
-	mkStar (mk_lltype_ppred ret_arg (type_of ret_val)) (mkEQ(ret_arg, p0)), [args_of_value ret_val]
+	mkEQ(ret_arg, p0), [args_of_value ret_val]
       else mkEmpty, [] in
     let spec = Spec.mk_spec fun_env.fun_alloca_pred post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core  ([], spec, params)); mk_node Core.End]
@@ -114,7 +114,6 @@ let cfg_node_of_instr specs fun_env instr =
     let v2 = args_of_value (operand instr 1) in
     let pre = mkEmpty in
     let post = mkEQ (ret_arg, Arg_op("builtin_plus", [v1; v2])) in
-    let post = mkStar (mk_lltype_ppred (Arg_var id) (type_of instr)) post in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([id],spec,[]))]
   | Opcode.Sub
@@ -124,7 +123,6 @@ let cfg_node_of_instr specs fun_env instr =
     let v2 = args_of_value (operand instr 1) in
     let pre = mkEmpty in
     let post = mkEQ (ret_arg, Arg_op("builtin_minus", [v1; v2])) in
-    let post = mkStar (mk_lltype_ppred (Arg_var id) (type_of instr)) post in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([id],spec,[]))]
   | Opcode.Mul
@@ -134,7 +132,6 @@ let cfg_node_of_instr specs fun_env instr =
     let v2 = args_of_value (operand instr 1) in
     let pre = mkEmpty in
     let post = mkEQ (ret_arg, Arg_op("builtin_mult", [v1; v2])) in
-    let post = mkStar (mk_lltype_ppred (Arg_var id) (type_of instr)) post in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([id],spec,[]))]
   | Opcode.UDiv
@@ -145,7 +142,6 @@ let cfg_node_of_instr specs fun_env instr =
     let v2 = args_of_value (operand instr 1) in
     let pre = mkEmpty in
     let post = mkEQ (ret_arg, Arg_op("builtin_div", [v1; v2])) in
-    let post = mkStar (mk_lltype_ppred (Arg_var id) (type_of instr)) post in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([id],spec,[]))]
   | Opcode.URem
@@ -169,8 +165,7 @@ let cfg_node_of_instr specs fun_env instr =
       (mkPointer (Arg_var id) sz e) in
     fun_env.fun_alloca_pred <- mkStar fun_env.fun_alloca_pred heap_id;
     let x = ret_arg in
-    let heap = mkStar (mkSPred ("alloca", [x; sz])) (mkPointer x sz e) in
-    let post = pconjunction (mk_lltype_ppred x ptr_t) heap in
+    let post = mkStar (mkSPred ("alloca", [x; sz])) (mkPointer x sz e) in
     let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([id], spec, []))]
   | Opcode.Load ->
@@ -181,9 +176,8 @@ let cfg_node_of_instr specs fun_env instr =
     let value_t = type_of instr in
     let e = Arg_var (Vars.freshe ()) in
     let pointer = mkPointer ptr (args_sizeof !lltarget value_t) e in
-    let ret_type = mk_lltype_ppred ret_arg value_t in
     let pre = pointer in
-    let post = pconjunction ret_type (pconjunction (mkEQ(e, ret_arg)) pointer) in
+    let post = pconjunction (mkEQ(e, ret_arg)) pointer in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([id], spec, []))]
   | Opcode.Store ->
