@@ -149,10 +149,9 @@ let rec sexp_of_args = function
       else (
 	(* if it's not an int that SMT-LIB will recognise, we need to
 	   declare it as such (let's pretend strings are ints...) *)
-	(* maintain uniqueness of bindings *)
 	let scons = id_munge ("string_const_"^s) in
-	Hashtbl.remove typing_context scons;
-	Hashtbl.add typing_context scons SType_int;
+	(* maintain uniqueness of bindings *)
+	Hashtbl.replace typing_context scons SType_int;
 	scons
       ) in
     (expr, SType_int)
