@@ -1,7 +1,7 @@
 /* test if implications hold with this empty function */
 skip:
-   {builtin_neq(x,numeric_const("0")) = y * y = bv_const("1", "1")}
-   {x != numeric_const("0")}
+   {!GT(x, y)}
+   {!GT(builtin_plus(x,numeric_const("12")), y)}
 
 main:
    {}

@@ -82,8 +82,10 @@ let smt_init () : unit =
         if log log_smt then printf "@[SMT running.@]";
         output_string i "(set-option :print-success false)\n";
         send_custom_commands ();
+	add_native_false ();
 	add_native_bitvector_ops ();
 	add_native_int_ops ();
+	add_native_int_rels ();
 	flush i
       end
     with
@@ -197,21 +199,20 @@ let sexp_of_neq (a1, a2) =
   else Printf.sprintf "(distinct %s %s)" e1 e2
 
 let sexp_of_pred = function
-  | (bip, (Arg_op ("tuple",[a1;a2]))) when List.mem_assoc bip intbinrels ->
-    let (args_exp, args_types) = sexp_of_args_list [a1;a2] in
-    let expr = Printf.sprintf "(%s %s)" (List.assoc bip intbinrels) args_exp in
-    unify_list (SType_int::args_types);
-    (expr, SType_bool)
-  | ("@False", Arg_op ("tuple",[])) ->
-    ("false", SType_bool)
-  | (s, Arg_op ("tuple",al)) ->
-    let name = id_munge("pred_"^s) in
-    let (args_exp, args_types) = sexp_of_args_list al in
-    let op_type = lookup_type name in
-    unify op_type (SType_fun [(args_types, SType_bool)]);
-    ((if al = [] then name
-      else Printf.sprintf "(%s %s)" name args_exp),
-     SType_bool)
+  | (name, (Arg_op ("tuple",args))) ->
+    let (pred_name, args) =
+      try (List.assoc name !native_ops) args
+      with Not_found -> (id_munge ("pred_"^name), args) in
+    let (args_exp, args_types) = sexp_of_args_list args in
+    let expr =
+      if args = [] then pred_name
+      else Printf.sprintf "(%s %s)" pred_name args_exp in
+    let result_type = SType_bool in
+    let pred_type = lookup_type pred_name in
+    if name <> "tuple" then
+      if args = [] then unify result_type pred_type
+      else unify pred_type (SType_fun [(args_types, result_type)]);
+    (expr, result_type)
   | _ -> failwith "TODO"
 
 let rec sexp_of_form ts form =

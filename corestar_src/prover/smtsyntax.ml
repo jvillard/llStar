@@ -225,12 +225,21 @@ let add_native_int_ops () =
      ("builtin_div", "/");
     ]
 
-let intbinrels =
-  [("GT", ">");
-   ("GE", ">=");
-   ("LT", "<");
-   ("LE", "<=");
-  ]
+let add_native_int_rels () =
+  List.iter (fun (args_str, smt_str) ->
+    let mk_op args = (smt_str, args) in
+    add_native_op args_str (Str.regexp_string smt_str) mk_op
+    (SType_fun [([SType_int; SType_int], SType_bool)]))
+    [("GT", ">");
+     ("GE", ">=");
+     ("LT", "<");
+     ("LE", "<=");
+    ]
+
+let add_native_false () =
+  add_native_op "@False" (Str.regexp_string "false")
+    (function [] -> ("false", []) | a -> ("op_@False", a))
+    (SType_bool)
 
 let sexp_of_sort s =
   (* lookup "final" type of id, ie the representative of idt *)
