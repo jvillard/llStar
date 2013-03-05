@@ -89,6 +89,7 @@ let rec refines ta tb =
   | (SType_bv _, SType_elastic_bv _) -> true
   | (SType_elastic_bv _, SType_bv _) -> false
   | (SType_int, SType_int) | (SType_bool, SType_bool) -> true
+  | (SType_bv i, SType_bv j) when i = j -> true
   | (SType_type s1, SType_type s2) when s1 = s2 -> true
   | (SType_fun la, SType_fun lb) ->
     List.for_all (fun (targsb, trb) ->
@@ -123,34 +124,33 @@ let uf_union i j =
       else Hashtbl.add uf ri rj
 
 (** unification of types *)
-let unify ta tb =
+let rec unify ta tb =
   let ta = uf_find ta in
   let tb = uf_find tb in
-  let rec aux (ta, tb) =
-    match (ta, tb) with
-    | (SType_var _, _) | (_, SType_var _)
-    | (SType_elastic_bv _, SType_elastic_bv _)
-    | (SType_elastic_bv _, SType_bv _) | (SType_bv _, SType_elastic_bv _) ->
-      uf_union ta tb
-    | (SType_bv s1, SType_bv s2) when s1 = s2 -> ()
-    | (SType_type s1, SType_type s2) when s1 = s2 -> ()
-    | (SType_int, SType_int) | (SType_bool, SType_bool) -> ()
-    | (SType_fun tla, SType_fun tlb) ->
-      let unify_tfun (la, ra) (lb, rb) =
-	try
-	  if compatible_list (ra::la) (rb::lb) then
-	    (iter aux ((ra,rb)::(combine la lb)); true)
-	  else false
-	with Invalid_argument _ -> false in
+  match (ta, tb) with
+  | (SType_var _, _) | (_, SType_var _)
+  | (SType_elastic_bv _, SType_elastic_bv _)
+  | (SType_elastic_bv _, SType_bv _) | (SType_bv _, SType_elastic_bv _) ->
+    uf_union ta tb
+  | (SType_bv s1, SType_bv s2) when s1 = s2 -> ()
+  | (SType_type s1, SType_type s2) when s1 = s2 -> ()
+  | (SType_int, SType_int) | (SType_bool, SType_bool) -> ()
+  | (SType_fun tla, SType_fun tlb) ->
+    let unify_tfun (la, ra) (lb, rb) =
+      try
+	if compatible_list (ra::la) (rb::lb) then
+	  (iter2 unify (ra::la) (rb::lb); true)
+	else false
+      with Invalid_argument _ -> false in
       (* if there is a type in tla that's compatible with a type in
 	 tlb, fine (and recursive unification on the arguments/result
-	 will have then been performer by unify_tfun). Otherwise,
+	 will have then been performed by unify_tfun). Otherwise,
 	 overload the function type with a new type. *)
-      if List.exists (fun ft -> List.exists (unify_tfun ft) tlb) tla then ()
-      else uf_union ta (SType_fun (tla@tlb))
-    | _ ->
-      raise (Type_mismatch (ta, tb)) in
-  aux (ta, tb)
+    if List.exists (fun ft -> List.exists (unify_tfun ft) tlb) tla then
+      uf_union ta tb
+    else uf_union ta (SType_fun (tla@tlb))
+  | _ ->
+    raise (Type_mismatch (ta, tb))
 
 let rec unify_list = function
   | a::b::tl -> unify a b; unify_list (b::tl)
@@ -221,10 +221,12 @@ let add_default_type id typ =
 
 let native_ops : (string * (Psyntax.args list -> (string * Psyntax.args list))) list ref = ref []
 
-let add_native_op args_op smt_op_regexp mk_smt_op optype =
+let add_native_op args_op smt_op_string smt_op_regexp mk_smt_op optype =
   predeclared := RegexpSet.add smt_op_regexp !predeclared;
-  (*add_default_type smt_op_string optype;
-    Hashtbl.add typing_context smt_op_string optype;*)
+  if smt_op_string <> "" then (
+    add_default_type smt_op_string optype;
+    Hashtbl.add typing_context smt_op_string optype
+  );
   native_ops := (args_op, mk_smt_op)::!native_ops
 
 (** bitvector operations *)
@@ -237,13 +239,17 @@ let add_native_bitvector_ops () =
     SType_fun [([t; t], t)] in
   List.iter (fun s ->
     let mk_bvop args = (s, args) in
-    add_native_op ("builtin_"^s) (Str.regexp_string s) mk_bvop (bvop_t ()))
+    add_native_op ("builtin_"^s) s (Str.regexp_string s) mk_bvop (bvop_t ()))
     ["bvadd"; "bvsub"; "bvneg"; "bvmul";
      "bvurem"; "bvsrem"; "bvsmod";
      "bvshl"; "bvlshr"; "bvashr";
      "bvor"; "bvand"; "bvnot"; "bvnand"; "bvnor"; "bvxnor"];
-  add_native_op "builtin_bvconcat" (Str.regexp_string "concat") (fun args -> "concat", args) (bvop_t ());
-  add_native_op "builtin_bvextract" (Str.regexp "(_ extract [0-9]+ [0-9]+)")
+  add_native_op "builtin_bvconcat" "concat" (Str.regexp_string "concat")
+    (fun args -> "concat", args)
+    (SType_fun [([SType_elastic_bv (fresh_type_index ());
+		  SType_elastic_bv (fresh_type_index ())],
+		 SType_elastic_bv (fresh_type_index ()))]);
+  add_native_op "builtin_bvextract" "" (Str.regexp "(_ extract [0-9]+ [0-9]+)")
     (function
   Arg_op("numeric_const",[Arg_string i])::Arg_op("numeric_const",[Arg_string j])::args
     | Arg_string i::Arg_string j::args -> Printf.sprintf "(_ extract %s %s)" i j, args
@@ -255,7 +261,7 @@ let add_native_bitvector_ops () =
 let add_native_int_ops () =
   List.iter (fun (args_str, smt_str) ->
     let mk_op args = (smt_str, args) in
-    add_native_op args_str (Str.regexp_string smt_str) mk_op
+    add_native_op args_str smt_str (Str.regexp_string smt_str) mk_op
     (SType_fun [([SType_int; SType_int], SType_int)]))
     [("builtin_plus", "+");
      ("builtin_minus", "-");
@@ -266,7 +272,7 @@ let add_native_int_ops () =
 let add_native_int_rels () =
   List.iter (fun (args_str, smt_str) ->
     let mk_op args = (smt_str, args) in
-    add_native_op args_str (Str.regexp_string smt_str) mk_op
+    add_native_op args_str smt_str (Str.regexp_string smt_str) mk_op
     (SType_fun [([SType_int; SType_int], SType_bool)]))
     [("GT", ">");
      ("GE", ">=");
@@ -275,7 +281,7 @@ let add_native_int_rels () =
     ]
 
 let add_native_false () =
-  add_native_op "@False" (Str.regexp_string "false")
+  add_native_op "@False" "false" (Str.regexp_string "false")
     (function [] -> ("false", []) | a -> ("op_@False", a))
     (SType_bool)
 
@@ -289,9 +295,9 @@ let sexp_of_sort s =
     Printf.sprintf "(_ BitVec %s)" sz
   | SType_elastic_bv i ->
     (* if we don't know the size of the bit-vector at this point, we
-       have to pick one. 12 is as good a size as any I guess... *)
-    unify (SType_bv "12") (SType_elastic_bv i);
-    "(_ BitVec 12)"
+       have to pick one. 64 is as good a size as any I guess... *)
+    unify (SType_bv "64") (SType_elastic_bv i);
+    "(_ BitVec 64)"
   | SType_var i ->
     (* let's decide that this identifier is of type Int *)
     unify SType_int (SType_var i);
