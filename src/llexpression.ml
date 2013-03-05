@@ -14,23 +14,27 @@ open Llutils
 let ret_arg = Arg_var(Spec.ret_v1)
 
 (* shorthands for integer expressions *)
-let numargs i = Arg_op("numeric_const",[Arg_string i])
-let numargs_of_int i = numargs (string_of_int i)
-let numargs_of_int64 i = numargs (Int64.to_string i)
-let bvargs sz i = Arg_op("bv_const",[Arg_string sz; Arg_string i])
-let bvargs_of_int sz i = bvargs (string_of_int sz) (string_of_int i)
-let bvargs_of_int64 sz i = bvargs (string_of_int sz) (Int64.to_string i)
-let bvargs64_of_int sz i = bvargs (Int64.to_string sz) (string_of_int i)
-let bvargs64_of_int64 sz i = bvargs (Int64.to_string sz) (Int64.to_string i)
+let numargs i = Arg_op("numeric_const",[i])
+let numargs_of_str i = numargs (Arg_string i)
+let numargs_of_int i = numargs_of_str (string_of_int i)
+let numargs_of_int64 i = numargs_of_str (Int64.to_string i)
+let bvargs sz i = Arg_op("bv_const",[sz; i])
+let bvargs_of_str sz i = bvargs (Arg_string sz) (Arg_string i)
+let bvargs_of_int sz i = bvargs_of_str (string_of_int sz) (string_of_int i)
+let bvargs_of_int64 sz i = bvargs_of_str (string_of_int sz) (Int64.to_string i)
+let bvargs64_of_int sz i = bvargs_of_str (Int64.to_string sz) (string_of_int i)
+let bvargs64_of_int64 sz i = bvargs_of_str (Int64.to_string sz) (Int64.to_string i)
 
 (* a few functions for creating predicates. Adds a layer of
    type-safety and avoids catastrophic typos *)
+let mkUndef sz = bvargs sz (Arg_var (Vars.freshe ()))
+let mkUndef64 sz = mkUndef (Arg_string (Int64.to_string sz))
 let mkPointer ptr ptr_t v = mkSPred ("pointer", [ptr; ptr_t; v])
 let mkArray ptr start_idx end_idx size array_t v =
   mkSPred ("array", [ptr; start_idx; end_idx; size; array_t; v])
 
-let args_sizeof target t =
-  let size64 = Llvm_target.store_size target t in
+let args_sizeof t =
+  let size64 = Llvm_target.store_size !lltarget t in
   bvargs_of_int64 64 size64
 
 let rec args_of_type t = match (classify_type t) with

@@ -13,7 +13,6 @@ equiv pointer_getelementptr_void:
 equiv jump_end:
   !eltptr(?x,?t,?y,jump_end()) <=> ?x = ?y
 
-
 /*************************************
  * Simple subtraction rules 
  *************************************/
@@ -24,13 +23,6 @@ without
  ?w != ?v
 if
  pointer(?x,?sz,?v) | |- ?w = ?v
-
-/* corestar already knows that it can match identical predicates!
-rule padding_same_root_same_size:
- | padding(?x,?sz) |- padding(?x,?sz)
-if
- padding(?x,?sz) | |- 
-*/
 
 rule remove_malloced:
  | malloced(?mb,?n) |- malloced(?mb,?m)

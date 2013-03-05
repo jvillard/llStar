@@ -28,6 +28,10 @@ void yay_yay_int(struct ij *s) {
   s->j = 0;
 }
 
+void yay_yay_int2(struct ij *s) {
+  setifield((struct oneint *)s);
+}
+
 int main() {
   int x = 1664,*y;
   struct ij s;

@@ -159,7 +159,7 @@ let cfg_node_of_instr specs fun_env instr =
     let id = Vars.concretep_str (value_id instr) in
     let ptr_t = type_of instr in
     let value_t = element_type ptr_t in
-    let sz = args_sizeof !lltarget value_t in
+    let sz = args_sizeof value_t in
     let e = Arg_var (Vars.freshe ()) in
     let heap_id = mkStar (mkSPred ("alloca", [Arg_var id; sz]))
       (mkPointer (Arg_var id) sz e) in
@@ -174,10 +174,11 @@ let cfg_node_of_instr specs fun_env instr =
     let ptr_v = operand instr 0 in
     let ptr = args_of_value ptr_v in
     let value_t = type_of instr in
-    let e = Arg_var (Vars.freshe ()) in
-    let pointer = mkPointer ptr (args_sizeof !lltarget value_t) e in
+    let sz = args_sizeof value_t in
+    let value_e = Arg_var (Vars.freshe ()) in
+    let pointer = mkPointer ptr sz value_e in
     let pre = pointer in
-    let post = pconjunction (mkEQ(e, ret_arg)) pointer in
+    let post = pconjunction (mkEQ(value_e, ret_arg)) pointer in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([id], spec, []))]
   | Opcode.Store ->
@@ -189,8 +190,8 @@ let cfg_node_of_instr specs fun_env instr =
     let e = Arg_var (Vars.freshe ()) in
     let v = args_of_value value in
     let value_t = type_of value in
-    let pointer_pre = mkPointer ptr (args_sizeof !lltarget value_t) e in
-    let pointer_post = mkPointer ptr (args_sizeof !lltarget value_t) v in
+    let pointer_pre = mkPointer ptr (args_sizeof value_t) e in
+    let pointer_post = mkPointer ptr (args_sizeof value_t) v in
     let pre = pointer_pre in
     let post = pointer_post in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in

@@ -24,42 +24,49 @@ let gen_seq_rules_of_equiv name (equiv_left, equiv_right) =
   mk_simple_seq_rule (name^"_left") (equiv_right, mkEmpty) (equiv_left, mkEmpty)::
   mk_simple_seq_rule (name^"_right") (mkEmpty, equiv_right) (mkEmpty, equiv_left)::[]
 
-(** the physical offset inside the struct, as a logical expression *)
-let offset_of_field struct_t i =
-  let offset = Llvm_target.offset_of_element !lltarget struct_t i in
-  bvargs_of_int64 64 offset
+(** the physical offset inside the struct *)
+let offset64_of_field struct_t i =
+  Llvm_target.offset_of_element !lltarget struct_t i
 
-let offset_of_field_end struct_t i =
-  let offset = Llvm_target.offset_of_element !lltarget struct_t i in
-  let field_type = Array.get (struct_element_types struct_t) i in
-  let field_size = Llvm_target.store_size !lltarget field_type in
-  let field_end = Int64.add offset field_size in
-  bvargs_of_int64 64 field_end
+let args_offset_of_field struct_t i =
+  bvargs_of_int64 64 (offset64_of_field struct_t i)
 
 (* a few definitions to make the rule definitions more readable *)
-let args_sizeof_field struct_t i =
-  args_sizeof !lltarget (Array.get (struct_element_types struct_t) i)
+let sizeof64_field struct_t i =
+  Llvm_target.store_size !lltarget (Array.get (struct_element_types struct_t) i)
 
-let mk_padding_of_field struct_t i root =
-  let offset = Llvm_target.offset_of_element !lltarget struct_t i in
+let args_sizeof_field struct_t i =
+  args_sizeof (Array.get (struct_element_types struct_t) i)
+
+let offset64_of_field_end struct_t i =
+  let offset = offset64_of_field struct_t i in
+  let field_size = sizeof64_field struct_t i in
+  Int64.add offset field_size
+
+let padsize64_of_field struct_t i =
+  let offset = offset64_of_field struct_t i in
   let next_offset =
     if i = Array.length (struct_element_types struct_t) - 1 then
       Llvm_target.store_size !lltarget struct_t
-    else Llvm_target.offset_of_element !lltarget struct_t (i+1) in
-  let elt_size = Llvm_target.store_size !lltarget
-    (Array.get (struct_element_types struct_t) i) in
-  let pad_size = Int64.sub next_offset (Int64.add offset elt_size) in
+    else offset64_of_field struct_t (i+1) in
+  let elt_size = sizeof64_field struct_t i in
+  Int64.sub next_offset (Int64.add offset elt_size)
+
+let mk_padding_of_field struct_t i root =
+  let pad_size = padsize64_of_field struct_t i in
   if pad_size = Int64.zero then None
   else
-    let offset = bvargs_of_int64 64 (Int64.add offset elt_size) in
-    let pad_addr = Arg_op("builtin_bvadd", [root; offset]) in
-    Some (mkSPred ("padding", [pad_addr; Arg_string(Int64.to_string pad_size)]))
+    let elt_offset = offset64_of_field struct_t i in
+    let elt_size = sizeof64_field struct_t i in
+    let pad_offset = bvargs_of_int64 64 (Int64.add elt_offset elt_size) in
+    let pad_addr = Arg_op("builtin_bvadd", [root; pad_offset]) in
+    Some (mkPointer pad_addr (bvargs_of_int64 64 pad_size) (mkUndef64 pad_size))
 
 let mk_field_pointer struct_t i root value =
   if i = 0 then
     mkPointer root (args_sizeof_field struct_t i) value
   else
-    let offset = Arg_op ("builtin_bvadd", [root; offset_of_field struct_t i]) in
+    let offset = Arg_op ("builtin_bvadd", [root; args_offset_of_field struct_t i]) in
     mkPointer offset (args_sizeof_field struct_t i) value
 
 let mk_padded_field_pointer struct_t i root value =
@@ -75,13 +82,26 @@ let mk_unfolded_struct struct_t root fields_values =
   let pointers = Array.mapi mk_field (struct_element_types struct_t) in
   Array.fold_left (fun f p -> mkStar f p) mkEmpty pointers
 
+let mk_struct_val_of_fields struct_t fields_values =
+  let mk_field i subelt_t =
+    let v = Array.get fields_values i in
+    let padsz = padsize64_of_field struct_t i in
+    if padsz = Int64.zero then v
+    else Arg_op ("builtin_bvconcat", [v; mkUndef64 padsz]) in
+  let fvalpad = Array.mapi mk_field (struct_element_types struct_t) in
+  let rec concat_bv_list = function
+    | [] -> bvargs_of_int 0 0
+    | [bv] -> bv
+    | bv::tl -> (* non-empty tail *)
+      Arg_op ("builtin_bvconcat", [bv; concat_bv_list tl]) in
+  concat_bv_list (Array.to_list fvalpad)
 
 (*** Scalar rules *)
 
 (** assumes that [t] is an int or struct type *)
 let sizeof_logic_of_type t =
   let args_t = args_of_type t in
-  let args_size = args_sizeof !lltarget t in
+  let args_size = args_sizeof t in
   let rewrite_rule =
     { function_name = "sizeof";
       arguments=[args_t];
@@ -99,10 +119,6 @@ let eltptr_logic_of_type t = match struct_name t with
     (empty_logic, empty_logic)
   | Some name ->
     let args_struct_t = args_of_type t in
-    (** the physical offset inside the struct, as a logical expression *)
-    let offset_of_field i =
-      let offset = Llvm_target.offset_of_element !lltarget t i in
-      bvargs_of_int64 64 offset in
     let x_var = Arg_var (Vars.AnyVar (0, "x")) in
     let root_var = Arg_var (Vars.AnyVar (0, "r")) in
     let jump_var = Arg_var (Vars.AnyVar (0, "j")) in
@@ -112,7 +128,7 @@ let eltptr_logic_of_type t = match struct_name t with
 	mkPPred ("eltptr", [x_var; args_struct_t; root_var; jump]) in
       let new_root =
 	if i = 0 then root_var
-	else Arg_op ("builtin_bvadd", [root_var; offset_of_field i]) in
+	else Arg_op ("builtin_bvadd", [root_var; args_offset_of_field t i]) in
       let equiv_right =
 	mkPPred ("eltptr", [x_var; args_of_type subelt_type;
 			    new_root; jump_var]) in
@@ -135,11 +151,12 @@ let fold_unfold_logic_of_type t =
       (struct_element_types t) in
   
   let collate_field_values =
-    Arg_op (smtname_of_struct t, Array.to_list field_values) in
+    mk_struct_val_of_fields t field_values in
 
   let select_field base_val i =
-    let selector_name = smtfield_of_struct t i in
-    Arg_op (selector_name, [base_val]) in
+    let field_begin = numargs_of_int64 (offset64_of_field t i) in
+    let field_end = numargs_of_int64 (offset64_of_field_end t i) in
+    Arg_op ("builtin_bvextract", [field_begin; field_end; base_val]) in
 
   let field_ranged_values base_val =
     Array.mapi (fun i _ -> select_field base_val i) (struct_element_types t) in
@@ -149,7 +166,7 @@ let fold_unfold_logic_of_type t =
   let w_var = Arg_var (Vars.AnyVar (0, "w")) in
 
   let mk_struct_pointer root value =
-    mkPointer root (args_sizeof !lltarget t) value in
+    mkPointer root (args_sizeof t) value in
 
   let mk_field_rule i subelt_type =
     let field_value = select_field v_var i in
@@ -180,7 +197,7 @@ let node_logic_of_struct t name rec_field =
     Array.map (fun _ -> Arg_var (Vars.freshe ())) (struct_element_types t) in
 
   let mk_rec_field root value = mk_field_pointer t rec_field root value in
-  let mk_node ptr value = mkSPred ("node", [name;ptr; value]) in
+  let mk_node ptr value = mkSPred ("node", [name; ptr; value]) in
 
   let i_var = Arg_var (Vars.AnyVar (0, "i")) in
   let n_var = Arg_var (Vars.AnyVar (0, "n")) in
