@@ -10,7 +10,6 @@ open Psyntax
 (* LStar modules *)
 open Llexpression
 open Llutils
-open Smtexpression
 
 
 (*** helper functions to define predicates for structs *)
@@ -311,9 +310,7 @@ let logic_of_module m =
   (** pairs of rule generation functions and a filter that checks they
       are applied only to certain types *)
   let rule_generators =
-    ((fun t -> declare_struct_type t; (empty_logic, empty_logic)),
-     struct_filter)
-    ::(sizeof_logic_of_type,int_struct_filter)
+    (sizeof_logic_of_type,int_struct_filter)
     ::(eltptr_logic_of_type,struct_filter)
     ::(fold_unfold_logic_of_type,struct_filter)
     ::if !Lstar_config.auto_gen_list_logic then
