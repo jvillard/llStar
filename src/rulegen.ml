@@ -112,33 +112,29 @@ let sizeof_logic_of_type t =
   (logic, logic)
 
 (** assumes that [t] is a struct type *)
-let eltptr_logic_of_type t = match struct_name t with
-  | None ->
-    (* TODO: handle unnamed structs *)
-    (empty_logic, empty_logic)
-  | Some name ->
-    let args_struct_t = args_of_type t in
-    let x_var = Arg_var (Vars.AnyVar (0, "x")) in
-    let root_var = Arg_var (Vars.AnyVar (0, "r")) in
-    let jump_var = Arg_var (Vars.AnyVar (0, "j")) in
-    let subelt_eltptr_rules i subelt_type =
-      let jump = Arg_op ("jump", [bvargs_of_int 64 i; jump_var]) in
-      let equiv_left =
-	mkPPred ("eltptr", [x_var; args_struct_t; root_var; jump]) in
-      let new_root =
-	if i = 0 then root_var
-	else Arg_op ("builtin_bvadd", [root_var; args_offset_of_field t i]) in
-      let equiv_right =
-	mkPPred ("eltptr", [x_var; args_of_type subelt_type;
-			    new_root; jump_var]) in
-      gen_seq_rules_of_equiv ("eltptr_"^(string_of_struct t))
-	(equiv_left, equiv_right) in
-    let eltptr_rules =
-      List.flatten 
-	(Array.to_list
-	   (Array.mapi subelt_eltptr_rules (struct_element_types t))) in
-    let logic = { empty_logic with seq_rules = eltptr_rules; } in
-    (logic, logic)
+let eltptr_logic_of_type t =
+  let args_struct_t = args_of_type t in
+  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
+  let root_var = Arg_var (Vars.AnyVar (0, "r")) in
+  let jump_var = Arg_var (Vars.AnyVar (0, "j")) in
+  let subelt_eltptr_rules i subelt_type =
+    let jump = Arg_op ("jump", [bvargs_of_int 64 i; jump_var]) in
+    let equiv_left =
+      mkPPred ("eltptr", [x_var; args_struct_t; root_var; jump]) in
+    let new_root =
+      if i = 0 then root_var
+      else Arg_op ("builtin_bvadd", [root_var; args_offset_of_field t i]) in
+    let equiv_right =
+      mkPPred ("eltptr", [x_var; args_of_type subelt_type;
+			  new_root; jump_var]) in
+    gen_seq_rules_of_equiv ("eltptr_"^(string_of_struct t))
+      (equiv_left, equiv_right) in
+  let eltptr_rules =
+    List.flatten 
+      (Array.to_list
+	 (Array.mapi subelt_eltptr_rules (struct_element_types t))) in
+  let logic = { empty_logic with seq_rules = eltptr_rules; } in
+  (logic, logic)
 
 
 (*** struct rules *)
