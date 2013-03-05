@@ -158,9 +158,9 @@ let rec sexp_of_args = function
   | Arg_op ("bv_const", [Arg_string(sz); Arg_string(n)]) ->
     (Printf.sprintf "(_ bv%s %s)" n sz, SType_bv sz)
   | Arg_op (name, args) | Arg_cons (name, args) ->
-    let op_name =
-      try List.assoc name !native_ops
-      with Not_found -> id_munge ("op_"^name) in
+    let (op_name, args) =
+      try (List.assoc name !native_ops) args
+      with Not_found -> (id_munge ("op_"^name), args) in
     let (args_exp, args_types) = sexp_of_args_list args in
     let expr =
       if args = [] then op_name

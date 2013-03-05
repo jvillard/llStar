@@ -82,6 +82,6 @@ let declare_struct_type t =
   let elts_t = Array.to_list
     (Array.mapi (fun i t ->
       let field_t = smttype_of_lltype t in
-      add_native_op (field_constr i) (field_constr i) (SType_fun [([struct_t],field_t)]);
+      add_native_op (field_constr i) (field_constr i) (fun a -> field_constr i, a) (SType_fun [([struct_t],field_t)]);
       smttype_of_lltype t) elts) in
-  add_native_op ("mk_"^(string_of_struct t)) struct_constr (SType_fun [(elts_t, struct_t)])
+  add_native_op ("mk_"^(string_of_struct t)) struct_constr (fun a -> struct_constr, a) (SType_fun [(elts_t, struct_t)])

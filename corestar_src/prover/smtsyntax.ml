@@ -177,13 +177,13 @@ let dump_typing_context () =
 let add_default_type id typ =
   default_types := (id,typ)::!default_types
 
-let native_ops = ref []
+let native_ops : (string * (Psyntax.args list -> (string * Psyntax.args list))) list ref = ref []
 
-let add_native_op args_op smt_op optype =
-  predeclared := StringSet.add smt_op !predeclared;
-  add_default_type smt_op optype;
-  Hashtbl.add typing_context smt_op optype;
-  native_ops := (args_op, smt_op)::!native_ops
+let add_native_op args_op smt_op_string mk_smt_op optype =
+  predeclared := StringSet.add smt_op_string !predeclared;
+  add_default_type smt_op_string optype;
+  Hashtbl.add typing_context smt_op_string optype;
+  native_ops := (args_op, mk_smt_op)::!native_ops
 
 (** bitvector operations *)
 let add_native_bitvector_ops () =
@@ -193,7 +193,9 @@ let add_native_bitvector_ops () =
   let bvop_t () =
     let t = SType_elastic_bv (fresh_type_index ()) in
     SType_fun [([t; t], t)] in
-  List.iter (fun s -> add_native_op ("builtin_"^s) s (bvop_t ()))
+  List.iter (fun s ->
+    let mk_bvop args = (s, args) in
+    add_native_op ("builtin_"^s) s mk_bvop (bvop_t ()))
     ["bvadd"; "bvsub"; "bvneg"; "bvmul";
      "bvurem"; "bvsrem"; "bvsmod";
      "bvshl"; "bvlshr"; "bvashr";
@@ -201,7 +203,9 @@ let add_native_bitvector_ops () =
 
 (** mathematical integer operations *)
 let add_native_int_ops () =
-  List.iter (fun (args_str, smt_str) -> add_native_op args_str smt_str
+  List.iter (fun (args_str, smt_str) ->
+    let mk_op args = (smt_str, args) in
+    add_native_op args_str smt_str mk_op
     (SType_fun [([SType_int; SType_int], SType_int)]))
     [("builtin_plus", "+");
      ("builtin_minus", "-");
