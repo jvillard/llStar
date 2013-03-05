@@ -31,7 +31,7 @@ yay_yay_int:
   {pointer(@parameter0:,sizeof(named_type("struct.ij")),builtin_bvconcat(bv_const("32", "0"),bv_const("32", "0")))}
 
 yay_yay_int2:
-  {pointer(@parameter0:,sizeof(named_type("struct.ij")),builtin_bvconcat(_v,bv_const("32", "0")))}
+  {pointer(@parameter0:,sizeof(named_type("struct.ij")),builtin_bvconcat(bv_const("32", "0"),_v))}
   {pointer(@parameter0:,sizeof(named_type("struct.ij")),builtin_bvconcat(bv_const("32", "0"),bv_const("32", "0")))}
 
 main:

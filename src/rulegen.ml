@@ -87,13 +87,13 @@ let mk_struct_val_of_fields struct_t fields_values =
     let v = Array.get fields_values i in
     let padsz = padsize64_of_field struct_t i in
     if padsz = Int64.zero then v
-    else Arg_op ("builtin_bvconcat", [v; mkUndef64 padsz]) in
+    else Arg_op ("builtin_bvconcat", [mkUndef64 padsz; v]) in
   let fvalpad = Array.mapi mk_field (struct_element_types struct_t) in
   let rec concat_bv_list = function
     | [] -> bvargs_of_int 0 0
     | [bv] -> bv
     | bv::tl -> (* non-empty tail *)
-      Arg_op ("builtin_bvconcat", [bv; concat_bv_list tl]) in
+      Arg_op ("builtin_bvconcat", [concat_bv_list tl; bv]) in
   concat_bv_list (Array.to_list fvalpad)
 
 (*** Scalar rules *)
@@ -154,9 +154,12 @@ let fold_unfold_logic_of_type t =
     mk_struct_val_of_fields t field_values in
 
   let select_field base_val i =
-    let field_begin = numargs_of_int64 (offset64_of_field t i) in
-    let field_end = numargs_of_int64 (offset64_of_field_end t i) in
-    Arg_op ("builtin_bvextract", [field_begin; field_end; base_val]) in
+    let field_begin =
+      numargs_of_int64 (Int64.mul (Int64.of_int 8) (offset64_of_field t i)) in
+    let field_end =
+      numargs_of_int64
+	(Int64.sub (Int64.mul (Int64.of_int 8) (offset64_of_field_end t i)) Int64.one)in
+    Arg_op ("builtin_bvextract", [field_end; field_begin; base_val]) in
 
   let field_ranged_values base_val =
     Array.mapi (fun i _ -> select_field base_val i) (struct_element_types t) in

@@ -162,14 +162,49 @@ let fresh_type_index () =
   __typeindex := !__typeindex +1;
   !__typeindex -1
 
+let rec complete_concat_funt = function
+  | ([ti; tj], tk)::tl ->
+    let (ui, uj, uk) =
+      match (uf_find ti, uf_find tj, uf_find tk) with
+      | (SType_bv i, SType_bv j, _) ->
+	let k = string_of_int ((int_of_string i) + (int_of_string j)) in
+	(SType_bv i, SType_bv j, SType_bv k)
+      | (SType_bv i, _, SType_bv k) ->
+	let j = string_of_int ((int_of_string k) - (int_of_string i)) in
+	(SType_bv i, SType_bv j, SType_bv k)
+      | (_ , SType_bv j, SType_bv k) ->
+	let i = string_of_int ((int_of_string k) - (int_of_string j)) in
+	(SType_bv i, SType_bv j, SType_bv k)
+      | a -> a in
+    ([ui; uj], uk)::(complete_concat_funt tl)
+  | a::tl -> a::(complete_concat_funt tl)
+  | [] -> []
+
 (** typing context *)
 let typing_context : (string, smt_type) Hashtbl.t = Hashtbl.create 256
 let lookup_type id =
-  try uf_find (Hashtbl.find typing_context id)
-  with Not_found ->
-    let t = SType_var (fresh_type_index ()) in    
-    Hashtbl.add typing_context id t;
-    t
+  (* horrible special cases... *)
+  let extract_regexp = Str.regexp "(_ extract \\([0-9]+\\) \\([0-9]+\\))" in
+  if Str.string_match extract_regexp id 0 then
+    let i = int_of_string (Str.matched_group 1 id) in
+    let j = int_of_string (Str.matched_group 2 id) in
+    SType_fun [([SType_elastic_bv (fresh_type_index ())],
+		SType_bv (string_of_int (i-j+1)))]
+  else
+    try
+      let t = uf_find (Hashtbl.find typing_context id) in
+      (* another horrible hack *)
+      if id = "concat" then
+	match t with
+	| SType_fun l ->
+	  let new_t = SType_fun (complete_concat_funt l) in
+	  unify t new_t; new_t
+	| _ -> t
+      else t
+    with Not_found ->
+      let t = SType_var (fresh_type_index ()) in    
+      Hashtbl.add typing_context id t;
+      t
 
 (* should this be a hashtbl? *)
 let default_types = ref []
@@ -179,7 +214,7 @@ let reset_typing_context () =
   List.iter (fun (id,typ) -> Hashtbl.add typing_context id typ) !default_types
 
 let dump_typing_context () =
-  Hashtbl.iter (fun id t -> fprintf logf "%s: %a@ " id pp_smt_type t) typing_context
+  Hashtbl.iter (fun id t -> fprintf logf "%s: %a@ " id pp_smt_type (uf_find t)) typing_context
 
 let add_default_type id typ =
   default_types := (id,typ)::!default_types
@@ -209,9 +244,12 @@ let add_native_bitvector_ops () =
      "bvor"; "bvand"; "bvnot"; "bvnand"; "bvnor"; "bvxnor"];
   add_native_op "builtin_bvconcat" (Str.regexp_string "concat") (fun args -> "concat", args) (bvop_t ());
   add_native_op "builtin_bvextract" (Str.regexp "(_ extract [0-9]+ [0-9]+)")
-    (function Arg_op("numeric_const",[Arg_string i])::Arg_op("numeric_const",[Arg_string j])::args -> Printf.sprintf "(_ extract %s %s)" i j, args
+    (function
+  Arg_op("numeric_const",[Arg_string i])::Arg_op("numeric_const",[Arg_string j])::args
+    | Arg_string i::Arg_string j::args -> Printf.sprintf "(_ extract %s %s)" i j, args
     | a -> "op_builtin_bvextract", a)
-    (bvop_t ())
+    (SType_fun [([SType_elastic_bv (fresh_type_index ())],
+		 SType_elastic_bv (fresh_type_index ()))])
 
 (** mathematical integer operations *)
 let add_native_int_ops () =

@@ -199,6 +199,11 @@ let sexp_of_neq (a1, a2) =
   else Printf.sprintf "(distinct %s %s)" e1 e2
 
 let sexp_of_pred = function
+  | ("type", (Arg_op ("tuple",[a1; a2]))) ->
+    let (_, t1) = sexp_of_args a1 in
+    let (_, t2) = sexp_of_args a2 in
+    unify t1 t2;
+    ("true", SType_bool)
   | (name, (Arg_op ("tuple",args))) ->
     let (pred_name, args) =
       try (List.assoc name !native_ops) args
@@ -399,6 +404,7 @@ let finish_him
   | SMT_error r ->
     smt_reset();
     printf "@[@{<b>SMT ERROR@}: %s@." r;
+    if log log_smt then dump_typing_context ();
     print_flush();
     false
   | SMT_fatal_error ->
