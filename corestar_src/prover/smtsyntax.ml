@@ -162,23 +162,50 @@ let fresh_type_index () =
   __typeindex := !__typeindex +1;
   !__typeindex -1
 
-let rec complete_concat_funt = function
-  | ([ti; tj], tk)::tl ->
-    let (ui, uj, uk) =
-      match (uf_find ti, uf_find tj, uf_find tk) with
-      | (SType_bv i, SType_bv j, _) ->
-	let k = string_of_int ((int_of_string i) + (int_of_string j)) in
-	(SType_bv i, SType_bv j, SType_bv k)
-      | (SType_bv i, _, SType_bv k) ->
-	let j = string_of_int ((int_of_string k) - (int_of_string i)) in
-	(SType_bv i, SType_bv j, SType_bv k)
-      | (_ , SType_bv j, SType_bv k) ->
-	let i = string_of_int ((int_of_string k) - (int_of_string j)) in
-	(SType_bv i, SType_bv j, SType_bv k)
-      | a -> a in
-    ([ui; uj], uk)::(complete_concat_funt tl)
-  | a::tl -> a::(complete_concat_funt tl)
-  | [] -> []
+let complete_concat_type t =
+  let rec aux = function
+    | ([ti; tj], tk)::tl ->
+      let (ui, uj, uk) =
+	match (uf_find ti, uf_find tj, uf_find tk) with
+	| (SType_bv i, SType_bv j, _) ->
+	  let k = string_of_int ((int_of_string i) + (int_of_string j)) in
+	  (SType_bv i, SType_bv j, SType_bv k)
+	| (SType_bv i, _, SType_bv k) ->
+	  let j = string_of_int ((int_of_string k) - (int_of_string i)) in
+	  (SType_bv i, SType_bv j, SType_bv k)
+	| (_ , SType_bv j, SType_bv k) ->
+	  let i = string_of_int ((int_of_string k) - (int_of_string j)) in
+	  (SType_bv i, SType_bv j, SType_bv k)
+	| a -> a in
+      ([ui; uj], uk)::(aux tl)
+    | a::tl -> a::(aux tl)
+    | [] -> [] in
+  match t with
+  | SType_fun l -> unify t (SType_fun (aux l))
+  | _ -> ()
+
+(** pick the most precise representative of [s] *)
+let rec final_type s =
+  let t = uf_find s in
+  match t with
+  | SType_fun l ->
+    SType_fun (List.map (fun (ll,r) -> (List.map final_type ll, final_type r)) l)
+  | _ -> t
+
+let rec mk_final_type s =
+  match final_type s with
+  | SType_bool
+  | SType_int 
+  | SType_type _
+  | SType_bv _ -> ()
+  | SType_elastic_bv i ->
+    (* if we don't know the size of the bit-vector at this point, we
+       have to pick one. 64 is as good a size as any I guess... *)
+    unify (SType_bv "64") (SType_elastic_bv i)
+  | SType_var i ->
+    (* let's decide that this identifier is of type Int *)
+    unify SType_int (SType_var i)
+  | SType_fun l -> List.iter (fun (ll,r) -> List.iter mk_final_type (r::ll)) l
 
 (** typing context *)
 let typing_context : (string, smt_type) Hashtbl.t = Hashtbl.create 256
@@ -192,19 +219,23 @@ let lookup_type id =
 		SType_bv (string_of_int (i-j+1)))]
   else
     try
-      let t = uf_find (Hashtbl.find typing_context id) in
+      let t = final_type (Hashtbl.find typing_context id) in
       (* another horrible hack *)
       if id = "concat" then
-	match t with
-	| SType_fun l ->
-	  let new_t = SType_fun (complete_concat_funt l) in
-	  unify t new_t; new_t
-	| _ -> t
+	(complete_concat_type t; final_type t)
       else t
     with Not_found ->
       let t = SType_var (fresh_type_index ()) in    
       Hashtbl.add typing_context id t;
       t
+
+let complete_all_types () =
+  Hashtbl.iter
+    (fun id t -> if id = "concat" then complete_concat_type (final_type t))
+    typing_context;
+  Hashtbl.iter
+    (fun id t -> mk_final_type t)
+    typing_context
 
 (* should this be a hashtbl? *)
 let default_types = ref []
@@ -214,7 +245,7 @@ let reset_typing_context () =
   List.iter (fun (id,typ) -> Hashtbl.add typing_context id typ) !default_types
 
 let dump_typing_context () =
-  Hashtbl.iter (fun id t -> fprintf logf "%s: %a@ " id pp_smt_type (uf_find t)) typing_context
+  Hashtbl.iter (fun id t -> fprintf logf "%s: %a@ " id pp_smt_type (final_type t)) typing_context
 
 let add_default_type id typ =
   default_types := (id,typ)::!default_types
@@ -287,21 +318,17 @@ let add_native_false () =
 
 let sexp_of_sort s =
   (* lookup "final" type of id, ie the representative of idt *)
-  match uf_find s with
+  match final_type s with
   | SType_bool -> "Bool"
   | SType_int -> "Int"
   | SType_type s -> s
   | SType_bv sz ->
     Printf.sprintf "(_ BitVec %s)" sz
-  | SType_elastic_bv i ->
-    (* if we don't know the size of the bit-vector at this point, we
-       have to pick one. 64 is as good a size as any I guess... *)
-    unify (SType_bv "64") (SType_elastic_bv i);
-    "(_ BitVec 64)"
+  | SType_elastic_bv i
   | SType_var i ->
-    (* let's decide that this identifier is of type Int *)
-    unify SType_int (SType_var i);
-    "Int"
+    (* shouldn't get here! make sure that complete_all_types has run
+       before calling this function! *)
+    assert false
   | SType_fun _ -> raise (Invalid_argument "Unexpected function type")
 
 let rec sexp_of_sort_list = function

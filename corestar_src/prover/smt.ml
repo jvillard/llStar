@@ -158,6 +158,12 @@ let rec sexp_of_args = function
   | Arg_op ("numeric_const", [Arg_string(a)]) -> (a, SType_int)
   | Arg_op ("bv_const", [Arg_string(sz); Arg_string(n)]) ->
     (Printf.sprintf "(_ bv%s %s)" n sz, SType_bv sz)
+  | Arg_op ("bv_const", [Arg_string(sz); Arg_var(v)]) ->
+    let vname = id_munge (Vars.string_var v) in
+    let tv = lookup_type vname in
+    let bv = SType_bv sz in
+    unify tv bv;
+    (vname, bv)
   | Arg_op (name, args) | Arg_cons (name, args) ->
     let (op_name, args) =
       try (List.assoc name !native_ops) args
@@ -171,7 +177,7 @@ let rec sexp_of_args = function
     if name <> "tuple" then
       if args = [] then unify result_type op_type
       else unify op_type (SType_fun [(args_types, result_type)]);
-    (expr, result_type)
+    (expr, final_type result_type)
   | Arg_record fldlist ->
     (* TODO: implement records *)
     ("", SType_var (fresh_type_index ()))
@@ -191,7 +197,7 @@ let sexp_of_eq (a1, a2) =
 let sexp_of_neq (a1, a2) =
   let (e1, t1) = sexp_of_args a1 in
   let (e2, t2) = sexp_of_args a2 in
-  let t1, t2 = uf_find t1, uf_find t2 in
+  let t1, t2 = final_type t1, final_type t2 in
   if not (refines t1 t2) && not (refines t2 t1) then
     (* incompatible types! *)
     "true"
@@ -249,7 +255,7 @@ let rec sexp_of_form ts form =
   form_sexp
 
 let decl_sexp_of_typed_id id idt =
-  match (uf_find idt) with
+  match (final_type idt) with
   | SType_fun l ->
     let add_one_tfun_decl (sexp, decls) (argtl, resl) =
       let decl =
@@ -281,6 +287,7 @@ let smt_command
   with End_of_file | Sys_error _ -> raise SMT_fatal_error
 
 let send_all_types () =
+  complete_all_types ();
   let f id idt =
     if not (is_predeclared id) then
       smt_command (decl_sexp_of_typed_id id idt) in
@@ -483,25 +490,26 @@ let ask_the_audience
       (equiv_partition (fun x y ->
 	let (sx, tx) = snd x in
 	let (sy, ty) = snd y in
-	(* do not call the SMT solver if x and y are of different types *)
-	tx = ty && smt_test_sexp_eq sx sy) reps) in
+	(* no need to bother the SMT solver if x and y are of
+	   incompatible types *)
+	compatible tx ty && smt_test_sexp_eq sx sy) reps) in
     if for_all (fun ls -> List.length ls = 1) req_equiv then
       (smt_reset(); raise Backtrack.No_match);
     smt_pop();
     fold_left make_list_equal ts req_equiv
-    with
-    | Type_mismatch (ta, tb) ->
-      printf "@[@{<b>SMT ERROR@}: type mismatch: %a # %a@."
-	pp_smt_type ta pp_smt_type tb;
-      smt_reset();
-      print_flush();
-      raise Backtrack.No_match
-    | SMT_error r ->
-      smt_reset();
-      printf "@[@{<b>SMT ERROR@}: %s@." r;
-      print_flush();
-      raise Backtrack.No_match
-    | SMT_fatal_error ->
-      smt_fatal_recover();
-      raise Backtrack.No_match
+  with
+  | Type_mismatch (ta, tb) ->
+    printf "@[@{<b>SMT ERROR@}: type mismatch: %a # %a@."
+      pp_smt_type ta pp_smt_type tb;
+    smt_reset();
+    print_flush();
+    raise Backtrack.No_match
+  | SMT_error r ->
+    smt_reset();
+    printf "@[@{<b>SMT ERROR@}: %s@." r;
+    print_flush();
+    raise Backtrack.No_match
+  | SMT_fatal_error ->
+    smt_fatal_recover();
+    raise Backtrack.No_match
 

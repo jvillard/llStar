@@ -84,7 +84,7 @@ let mk_unfolded_struct struct_t root fields_values =
 let mk_struct_val_of_fields struct_t fields_values =
   let mk_field i subelt_t =
     let v = Array.get fields_values i in
-    let padsz = padsize64_of_field struct_t i in
+    let padsz = Int64.mul (Int64.of_int 8) (padsize64_of_field struct_t i) in
     if padsz = Int64.zero then v
     else Arg_op ("builtin_bvconcat", [mkUndef64 padsz; v]) in
   let fvalpad = Array.mapi mk_field (struct_element_types struct_t) in
