@@ -49,7 +49,7 @@ let send_custom_commands =
 	let cmd = input_line cc in
 	if log log_smt then printf "@[%s@." cmd;
 	if Str.string_match decl_re cmd 0 then
-	  predeclared := StringSet.add (Str.matched_group 1 cmd) !predeclared;
+	  predeclared := RegexpSet.add (Str.regexp_string (Str.matched_group 1 cmd)) !predeclared;
 	output_string !smtin cmd;
 	output_char !smtin '\n'
       end done
@@ -59,7 +59,7 @@ let send_custom_commands =
 let smt_declare_datatype dtid decl =
   if log log_smt then printf "@[Sending out %s declaration: %s@." dtid decl;
   output_string !smtin decl; (* TODO: handle errors *)
-  predeclared := StringSet.add dtid !predeclared
+  predeclared := RegexpSet.add (Str.regexp_string dtid) !predeclared
 
 let smt_init () : unit =
   smtpath :=
@@ -277,7 +277,7 @@ let smt_command
 
 let send_all_types () =
   let f id idt =
-    if not (StringSet.mem id !predeclared) then
+    if not (is_predeclared id) then
       smt_command (decl_sexp_of_typed_id id idt) in
   Hashtbl.iter f typing_context
 

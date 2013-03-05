@@ -15,6 +15,7 @@ open Format
 open List
 open Corestar_std
 open Debug
+open Psyntax
 
 type smt_response =
   | Unsupported
@@ -23,7 +24,13 @@ type smt_response =
   | Unsat
   | Unknown
 
-let predeclared = ref StringSet.empty
+module Regexp = struct type t = Str.regexp let compare = compare end
+module RegexpSet = Set.Make (Regexp)
+
+let predeclared = ref RegexpSet.empty
+
+let is_predeclared id =
+  RegexpSet.exists (fun r -> Str.string_match r id 0) !predeclared
 
 (* This function should be used below to munge all symbols (usually known as
   identifiers). See Section 3.1 of SMT-LIB standard for allowed symbols. *)
@@ -179,10 +186,10 @@ let add_default_type id typ =
 
 let native_ops : (string * (Psyntax.args list -> (string * Psyntax.args list))) list ref = ref []
 
-let add_native_op args_op smt_op_string mk_smt_op optype =
-  predeclared := StringSet.add smt_op_string !predeclared;
-  add_default_type smt_op_string optype;
-  Hashtbl.add typing_context smt_op_string optype;
+let add_native_op args_op smt_op_regexp mk_smt_op optype =
+  predeclared := RegexpSet.add smt_op_regexp !predeclared;
+  (*add_default_type smt_op_string optype;
+    Hashtbl.add typing_context smt_op_string optype;*)
   native_ops := (args_op, mk_smt_op)::!native_ops
 
 (** bitvector operations *)
@@ -195,17 +202,22 @@ let add_native_bitvector_ops () =
     SType_fun [([t; t], t)] in
   List.iter (fun s ->
     let mk_bvop args = (s, args) in
-    add_native_op ("builtin_"^s) s mk_bvop (bvop_t ()))
+    add_native_op ("builtin_"^s) (Str.regexp_string s) mk_bvop (bvop_t ()))
     ["bvadd"; "bvsub"; "bvneg"; "bvmul";
      "bvurem"; "bvsrem"; "bvsmod";
      "bvshl"; "bvlshr"; "bvashr";
-     "bvor"; "bvand"; "bvnot"; "bvnand"; "bvnor"; "bvxnor"]
+     "bvor"; "bvand"; "bvnot"; "bvnand"; "bvnor"; "bvxnor"];
+  add_native_op "builtin_bvconcat" (Str.regexp_string "concat") (fun args -> "concat", args) (bvop_t ());
+  add_native_op "builtin_bvextract" (Str.regexp "(_ extract [0-9]+ [0-9]+)")
+    (function Arg_op("numeric_const",[Arg_string i])::Arg_op("numeric_const",[Arg_string j])::args -> Printf.sprintf "(_ extract %s %s)" i j, args
+    | a -> "op_builtin_bvextract", a)
+    (bvop_t ())
 
 (** mathematical integer operations *)
 let add_native_int_ops () =
   List.iter (fun (args_str, smt_str) ->
     let mk_op args = (smt_str, args) in
-    add_native_op args_str smt_str mk_op
+    add_native_op args_str (Str.regexp_string smt_str) mk_op
     (SType_fun [([SType_int; SType_int], SType_int)]))
     [("builtin_plus", "+");
      ("builtin_minus", "-");
