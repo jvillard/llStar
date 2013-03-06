@@ -174,9 +174,13 @@ let rec sexp_of_args = function
       else Printf.sprintf "(%s %s)" op_name args_exp in
     let result_type = SType_var (fresh_type_index ()) in
     let op_type = lookup_type op_name in
-    if name <> "tuple" then
+    if name <> "tuple" && name <> "builtin_bvextract" then
       if args = [] then unify result_type op_type
       else unify op_type (SType_fun [(args_types, result_type)]);
+    if name = "builtin_bvextract" then (
+      match op_type with
+      | SType_fun [(_, actual_bv)] -> unify result_type actual_bv
+      | _ -> ());
     (expr, final_type result_type)
   | Arg_record fldlist ->
     (* TODO: implement records *)

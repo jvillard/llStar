@@ -91,13 +91,6 @@ let rec refines ta tb =
   | (SType_int, SType_int) | (SType_bool, SType_bool) -> true
   | (SType_bv i, SType_bv j) when i = j -> true
   | (SType_type s1, SType_type s2) when s1 = s2 -> true
-  | (SType_fun la, SType_fun lb) ->
-    List.for_all (fun (targsb, trb) ->
-      List.exists (fun (targsa, tra) ->
-	length targsa = length targsb && refines tra trb &&
-	  (List.for_all2 refines targsb targsa))
-	la)
-      lb
   | (SType_var _, _) -> false
   | _ -> false
 
@@ -123,34 +116,43 @@ let uf_union i j =
       if refines ri rj then Hashtbl.add uf rj ri
       else Hashtbl.add uf ri rj
 
+(** pick the most precise representative of [s] *)
+let rec final_type s =
+  let t = uf_find s in
+  match t with
+  | SType_fun l ->
+    SType_fun (List.map (fun (ll,r) -> (List.map final_type ll, final_type r)) l)
+  | _ -> t
+
+let rec normalise_funt l =
+  let comp (l1, r1) (l2, r2) =
+    let c = compare l1 l2 in
+    if c = 0 then compare r1 r2 else c in
+  let rec aux = function
+    | [] -> []
+    | [a] -> [a]
+    | (la,ra)::(lb,rb)::tl ->
+      if la = lb then (unify ra rb; aux ((lb,final_type rb)::tl))
+      else (la,ra)::aux ((lb,rb)::tl) in
+  aux (List.sort comp l)
+
 (** unification of types *)
-let rec unify ta tb =
+and unify ta tb =
   let ta = uf_find ta in
   let tb = uf_find tb in
-  match (ta, tb) with
-  | (SType_var _, _) | (_, SType_var _)
-  | (SType_elastic_bv _, SType_elastic_bv _)
-  | (SType_elastic_bv _, SType_bv _) | (SType_bv _, SType_elastic_bv _) ->
-    uf_union ta tb
-  | (SType_bv s1, SType_bv s2) when s1 = s2 -> ()
-  | (SType_type s1, SType_type s2) when s1 = s2 -> ()
-  | (SType_int, SType_int) | (SType_bool, SType_bool) -> ()
-  | (SType_fun tla, SType_fun tlb) ->
-    let unify_tfun (la, ra) (lb, rb) =
-      try
-	if compatible_list (ra::la) (rb::lb) then
-	  (iter2 unify (ra::la) (rb::lb); true)
-	else false
-      with Invalid_argument _ -> false in
-      (* if there is a type in tla that's compatible with a type in
-	 tlb, fine (and recursive unification on the arguments/result
-	 will have then been performed by unify_tfun). Otherwise,
-	 overload the function type with a new type. *)
-    if List.exists (fun ft -> List.exists (unify_tfun ft) tlb) tla then
+  if ta <> tb then
+    match (ta, tb) with
+    | (SType_var _, _) | (_, SType_var _)
+    | (SType_elastic_bv _, SType_elastic_bv _)
+    | (SType_elastic_bv _, SType_bv _) | (SType_bv _, SType_elastic_bv _) ->
       uf_union ta tb
-    else uf_union ta (SType_fun (tla@tlb))
-  | _ ->
-    raise (Type_mismatch (ta, tb))
+    | (SType_bv s1, SType_bv s2) when s1 = s2 -> ()
+    | (SType_type s1, SType_type s2) when s1 = s2 -> ()
+    | (SType_int, SType_int) | (SType_bool, SType_bool) -> ()
+    | (SType_fun tla, SType_fun tlb) ->
+      uf_union ta (SType_fun (normalise_funt (tla@tlb)));
+      uf_union tb (SType_fun (normalise_funt (tla@tlb)))
+    | _ -> raise (Type_mismatch (ta, tb))
 
 let rec unify_list = function
   | a::b::tl -> unify a b; unify_list (b::tl)
@@ -163,34 +165,34 @@ let fresh_type_index () =
   !__typeindex -1
 
 let complete_concat_type t =
+  Format.fprintf logf "prout: %a@." pp_smt_type t;
   let rec aux = function
     | ([ti; tj], tk)::tl ->
       let (ui, uj, uk) =
 	match (uf_find ti, uf_find tj, uf_find tk) with
 	| (SType_bv i, SType_bv j, _) ->
 	  let k = string_of_int ((int_of_string i) + (int_of_string j)) in
+	  unify tk (SType_bv k);
 	  (SType_bv i, SType_bv j, SType_bv k)
 	| (SType_bv i, _, SType_bv k) ->
 	  let j = string_of_int ((int_of_string k) - (int_of_string i)) in
+	  unify tj (SType_bv j);
 	  (SType_bv i, SType_bv j, SType_bv k)
 	| (_ , SType_bv j, SType_bv k) ->
 	  let i = string_of_int ((int_of_string k) - (int_of_string j)) in
+	  unify ti (SType_bv i);
 	  (SType_bv i, SType_bv j, SType_bv k)
 	| a -> a in
       ([ui; uj], uk)::(aux tl)
     | a::tl -> a::(aux tl)
     | [] -> [] in
+  let rec fixpoint l =
+    let newl = aux l in
+    if l <> newl then fixpoint newl
+    else newl in
   match t with
-  | SType_fun l -> unify t (SType_fun (aux l))
+  | SType_fun l -> unify t (SType_fun (fixpoint l));   Format.fprintf logf "pouet: %a@." pp_smt_type (final_type t);
   | _ -> ()
-
-(** pick the most precise representative of [s] *)
-let rec final_type s =
-  let t = uf_find s in
-  match t with
-  | SType_fun l ->
-    SType_fun (List.map (fun (ll,r) -> (List.map final_type ll, final_type r)) l)
-  | _ -> t
 
 let rec mk_final_type s =
   match final_type s with
@@ -203,9 +205,10 @@ let rec mk_final_type s =
        have to pick one. 64 is as good a size as any I guess... *)
     unify (SType_bv "64") (SType_elastic_bv i)
   | SType_var i ->
-    (* let's decide that this identifier is of type Int *)
-    unify SType_int (SType_var i)
-  | SType_fun l -> List.iter (fun (ll,r) -> List.iter mk_final_type (r::ll)) l
+    (* same as above *)
+    unify (SType_bv "64") (SType_var i)
+  | SType_fun l ->
+    List.iter (fun (ll,r) -> List.iter mk_final_type (r::ll)) l
 
 (** typing context *)
 let typing_context : (string, smt_type) Hashtbl.t = Hashtbl.create 256
@@ -218,12 +221,7 @@ let lookup_type id =
     SType_fun [([SType_elastic_bv (fresh_type_index ())],
 		SType_bv (string_of_int (i-j+1)))]
   else
-    try
-      let t = final_type (Hashtbl.find typing_context id) in
-      (* another horrible hack *)
-      if id = "concat" then
-	(complete_concat_type t; final_type t)
-      else t
+    try final_type (Hashtbl.find typing_context id)
     with Not_found ->
       let t = SType_var (fresh_type_index ()) in    
       Hashtbl.add typing_context id t;
