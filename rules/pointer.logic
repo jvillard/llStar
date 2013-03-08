@@ -8,7 +8,7 @@ equiv pointer_getelementptr0:
 
 equiv pointer_getelementptr_void:
   !eltptr(?x,pointer_type(integer_type("8")),?p,jump(?n,?j))
-  <=> !eltptr(?x,pointer_type(integer_type("8")),builtin_bvadd(?p,?n),?j)
+  <=> !eltptr(?x,pointer_type(integer_type("8")),bvadd.64(?p,?n),?j)
 
 equiv jump_end:
   !eltptr(?x,?t,?y,jump_end()) <=> ?x = ?y

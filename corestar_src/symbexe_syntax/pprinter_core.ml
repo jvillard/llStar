@@ -24,9 +24,9 @@ let rec args2str  arg =
   match arg with 
   | Arg_var v -> Vars.string_var v
   | Arg_string s -> s 
-  | Arg_op ("builtin_plus",[a1;a2]) ->  "("^(args2str a1)^"+"^(args2str a2)^")"
-  | Arg_op ("builtin_minus",[a1;a2]) ->  "("^(args2str a1)^"-"^(args2str a2)^")"
-  | Arg_op ("builtin_mult",[a1;a2]) ->  "("^(args2str a1)^"*"^(args2str a2)^")"  
+  | Arg_op ("builtin_add",[a1;a2]) ->  "("^(args2str a1)^"+"^(args2str a2)^")"
+  | Arg_op ("builtin_sub",[a1;a2]) ->  "("^(args2str a1)^"-"^(args2str a2)^")"
+  | Arg_op ("builtin_mul",[a1;a2]) ->  "("^(args2str a1)^"*"^(args2str a2)^")"  
   | Arg_op (name,args) ->  name^"("^( args_list2str args)^")" 
   | Arg_cons (name,args) -> name^"("^( args_list2str args)^")" 
   | Arg_record fldlist -> "[{"^(args_fldlist2str fldlist)^"}]"

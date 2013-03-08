@@ -2,7 +2,7 @@ import "../../specs/stdlib.spec";
 
 norbert:
   {!type(a,bv_const("32", "0")) * !type(b,bv_const("64", "1"))}
-  {pointer($ret_v1,sizeof(named_type("node")),bv_concat(@parameter0:,@parameter1:)) * malloced($ret_v1,sizeof(named_type("node")))
+  {pointer($ret_v1,sizeof(named_type("node")),concat.64.64(@parameter1:,concat.32.32(_pad,@parameter0:))) * malloced($ret_v1,sizeof(named_type("node")))
    || $ret_v1 = NULL()}
 
 chew_slowly:
@@ -27,13 +27,13 @@ setifield:
 
 yay_yay_int:
   {pointer(@parameter0:,sizeof(named_type("struct.ij")),_v)}
-  {pointer(@parameter0:,sizeof(named_type("struct.ij")),builtin_bvconcat(bv_const("32", "0"),bv_const("32", "0")))}
+  {pointer(@parameter0:,sizeof(named_type("struct.ij")),concat.32.32(bv_const("32", "0"),bv_const("32", "0")))}
 
 yay_yay_int2:
-  {pointer(@parameter0:,sizeof(named_type("struct.ij")),builtin_bvconcat(bv_const("32", "0"),_v))}
+  {pointer(@parameter0:,sizeof(named_type("struct.ij")),concat.32.32(bv_const("32", "0"),_v))}
   {pointer(@parameter0:,sizeof(named_type("struct.ij")),bv_const("64", "0"))}
 
 main:
    {}
-   {$ret_v1 = builtin_bvmul(bv_const("32", "32"),bv_const("32", "52"))}
+   {$ret_v1 = bvmul.32(bv_const("32", "32"),bv_const("32", "52"))}
 

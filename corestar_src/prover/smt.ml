@@ -155,9 +155,20 @@ let rec sexp_of_args = function
 	scons
       ) in
     (expr, SType_int)
+  | Arg_op ("NULL", []) -> ("(_ bv0 64)", SType_bv "64")
   | Arg_op ("numeric_const", [Arg_string(a)]) -> (a, SType_int)
   | Arg_op ("bv_const", [Arg_string(sz); Arg_string(n)]) ->
     (Printf.sprintf "(_ bv%s %s)" n sz, SType_bv sz)
+  | Arg_op ("builtin_eq", [a1; a2]) ->
+    let (e1, t1) = sexp_of_args a1 in
+    let (e2, t2) = sexp_of_args a2 in
+    unify t1 t2;
+    (Printf.sprintf "(ite (= %s %s) (_ bv1 1) (_ bv0 1))" e1 e2, SType_bv "1")
+  | Arg_op ("builtin_neq", [a1; a2]) ->
+    let (e1, t1) = sexp_of_args a1 in
+    let (e2, t2) = sexp_of_args a2 in
+    unify t1 t2;
+    (Printf.sprintf "(ite (= %s %s) (_ bv0 1) (_ bv1 1))" e1 e2, SType_bv "1")
   | Arg_op ("bv_const", [Arg_string(sz); Arg_var(v)]) ->
     let vname = id_munge (Vars.string_var v) in
     let tv = lookup_type vname in
@@ -165,23 +176,16 @@ let rec sexp_of_args = function
     unify tv bv;
     (vname, bv)
   | Arg_op (name, args) | Arg_cons (name, args) ->
-    let (op_name, args) =
-      try (List.assoc name !native_ops) args
-      with Not_found -> (id_munge ("op_"^name), args) in
+    let (op_name, op_type, args) = !smtname_and_type_of_op name args in
     let (args_exp, args_types) = sexp_of_args_list args in
     let expr =
       if args = [] then op_name
       else Printf.sprintf "(%s %s)" op_name args_exp in
     let result_type = SType_var (fresh_type_index ()) in
-    let op_type = lookup_type op_name in
-    if name <> "tuple" && name <> "builtin_bvextract" then
+    if name <> "tuple" then
       if args = [] then unify result_type op_type
-      else unify op_type (SType_fun [(args_types, result_type)]);
-    if name = "builtin_bvextract" then (
-      match op_type with
-      | SType_fun [(_, actual_bv)] -> unify result_type actual_bv
-      | _ -> ());
-    (expr, final_type result_type)
+      else unify op_type (SType_fun (args_types, result_type));
+    (expr, result_type)
   | Arg_record fldlist ->
     (* TODO: implement records *)
     ("", SType_var (fresh_type_index ()))
@@ -214,18 +218,15 @@ let sexp_of_pred = function
     unify t1 t2;
     ("true", SType_bool)
   | (name, (Arg_op ("tuple",args))) ->
-    let (pred_name, args) =
-      try (List.assoc name !native_ops) args
-      with Not_found -> (id_munge ("pred_"^name), args) in
+    let (pred_name, pred_type, args) = !smtname_and_type_of_op name args in
     let (args_exp, args_types) = sexp_of_args_list args in
     let expr =
       if args = [] then pred_name
       else Printf.sprintf "(%s %s)" pred_name args_exp in
     let result_type = SType_bool in
-    let pred_type = lookup_type pred_name in
     if name <> "tuple" then
       if args = [] then unify result_type pred_type
-      else unify pred_type (SType_fun [(args_types, result_type)]);
+      else unify pred_type (SType_fun (args_types, result_type));
     (expr, result_type)
   | _ -> failwith "TODO"
 
@@ -260,14 +261,9 @@ let rec sexp_of_form ts form =
 
 let decl_sexp_of_typed_id id idt =
   match (final_type idt) with
-  | SType_fun l ->
-    let add_one_tfun_decl (sexp, decls) (argtl, resl) =
-      let decl =
-	Printf.sprintf "(declare-fun %s (%s) %s)"
-	  id (sexp_of_sort_list argtl) (sexp_of_sort resl) in
-      if mem decl decls then (sexp, decls)
-      else (sexp^decl, decl::decls) in
-    fst (List.fold_left add_one_tfun_decl ("", []) l)
+  | SType_fun (argtl, resl) ->
+    Printf.sprintf "(declare-fun %s (%s) %s)"
+      id (sexp_of_sort_list argtl) (sexp_of_sort resl)
   | _ ->
     Printf.sprintf "(declare-fun %s () %s)" id (sexp_of_sort idt)
 
@@ -308,16 +304,18 @@ let smt_check_sat () : bool =
       if log log_smt then printf "@[[Found memoised SMT call!]@.";
       x
     with Not_found ->
-      smt_command "(check-sat)";
-      let x = match smt_listen () with
-        | Sat -> true
-        | Unsat -> false
-        | Unknown -> if log log_smt then printf
-          "@[[Warning: smt returned 'unknown' rather than 'sat']@."; true
-        | _ -> failwith "TODO" in
-      if log log_smt then printf "@[  %b@." x;
-      Hashtbl.add smt_memo !smt_onstack x;
-      x
+      try
+	smt_command "(check-sat)";
+	let x = match smt_listen () with
+          | Sat -> true
+          | Unsat -> false
+          | Unknown -> if log log_smt then printf
+              "@[[Warning: smt returned 'unknown' rather than 'sat']@."; true
+          | _ -> failwith "TODO" in
+	if log log_smt then printf "@[  %b@." x;
+	Hashtbl.add smt_memo !smt_onstack x;
+	x
+      with End_of_file -> raise SMT_fatal_error
 
 let smt_check_unsat () : bool =
   not (smt_check_sat ())
@@ -348,7 +346,6 @@ let smt_test_sexp_eq s1 s2 =
   smt_pop(); r
 
 let exists_sexp idl sexp =
-  (* lookup "final" type of id, ie the representative of idt *)
   let exists_decls =
     fold_left
       (fun s id ->
@@ -356,7 +353,7 @@ let exists_sexp idl sexp =
       ""
       idl in
   if idl = [] then sexp
-  else Printf.sprintf "(exists %s %s)" exists_decls sexp
+  else Printf.sprintf "(exists (%s) %s)" exists_decls sexp
 
 (** try to establish that the pure parts of a sequent are valid using the SMT solver *)
 let finish_him
@@ -375,31 +372,39 @@ let finish_him
     let obl_sexp = sexp_of_form ts obl in
     (* Construct the query *)
     let asm_sexp = "(and true "^asm_eq_sexp^" "^asm_neq_sexp^" "^asm_sexp^") " in
-    let eq_neq_vset =
-      ev_args_list (let (a,b) = split (eqs@neqs) in a@b) VarSet.empty in
-    let eq_neq_ts_vset = ev_args_list (get_args_all ts) eq_neq_vset in
     let rec add_ev_of_form_to_vset form vset =
-      let vset_with_disjs =
+      let vset_eqneqs =
+	fold_left
+	  (fun evset (a1,a2) ->
+	    let (x, y) =
+	      (get_pargs_norecs false ts [] a1, get_pargs_norecs false ts [] a2) in
+	    ev_args y (ev_args x evset)
+	  )
+	  vset
+	  (form.eqs@form.neqs) in
+      let vset_disjs =
 	fold_left
 	  (fun evset (f1,f2) ->
 	    add_ev_of_form_to_vset f2 (add_ev_of_form_to_vset f1 evset))
-	  vset
+	  vset_eqneqs
 	  form.disjuncts in
       RMSet.fold_to_list form.plain
 	(fun (_,r) evset ->
 	  let args = get_pargs_norecs false ts [] r in
 	  ev_args args evset)
-	vset_with_disjs in
-    let left_vset = add_ev_of_form_to_vset asm eq_neq_ts_vset in
+	vset_disjs in
+    let ts_eqneq_vset =
+      ev_args_list (let (a,b) = split (eqs@neqs) in a@b) VarSet.empty in
+    let left_vset = add_ev_of_form_to_vset asm ts_eqneq_vset in
     let obl_vset = add_ev_of_form_to_vset obl VarSet.empty in
     let evars = VarSet.diff obl_vset left_vset in
     let evars_ids = List.map (fun v -> id_munge (Vars.string_var v))
       (VarSet.elements evars) in
-    let obl_sexp = exists_sexp evars_ids obl_sexp in
-    let query = "(not (=> " ^ asm_sexp ^ obl_sexp ^ "))" in
 
     smt_push(); (* Push a frame to allow reuse of prover *)
     send_all_types ();
+    let obl_sexp = exists_sexp evars_ids obl_sexp in
+    let query = "(not (=> " ^ asm_sexp ^ obl_sexp ^ "))" in
     smt_assert query;
     (* check whether the forumula is unsatisfiable *)
     let r = smt_check_unsat() in
@@ -419,6 +424,7 @@ let finish_him
     false
   | SMT_fatal_error ->
     smt_fatal_recover();
+    if log log_smt then dump_typing_context ();
     false
 
 
@@ -495,8 +501,9 @@ let ask_the_audience
 	let (sx, tx) = snd x in
 	let (sy, ty) = snd y in
 	(* no need to bother the SMT solver if x and y are of
-	   incompatible types *)
-	compatible tx ty && smt_test_sexp_eq sx sy) reps) in
+	   incompatible types. Because we have "completed" all types,
+	   compatibility is the same as equality for types *)
+	tx = ty && smt_test_sexp_eq sx sy) reps) in
     if for_all (fun ls -> List.length ls = 1) req_equiv then
       (smt_reset(); raise Backtrack.No_match);
     smt_pop();
@@ -505,6 +512,7 @@ let ask_the_audience
   | Type_mismatch (ta, tb) ->
     printf "@[@{<b>SMT ERROR@}: type mismatch: %a # %a@."
       pp_smt_type ta pp_smt_type tb;
+    if log log_smt then dump_typing_context ();
     smt_reset();
     print_flush();
     raise Backtrack.No_match
@@ -512,8 +520,10 @@ let ask_the_audience
     smt_reset();
     printf "@[@{<b>SMT ERROR@}: %s@." r;
     print_flush();
+    if log log_smt then dump_typing_context ();
     raise Backtrack.No_match
   | SMT_fatal_error ->
     smt_fatal_recover();
+    if log log_smt then dump_typing_context ();
     raise Backtrack.No_match
 

@@ -10,7 +10,7 @@
 */
 rewrite plus_zero_second:
 /*  (?x + numeric_const("0")) = ?x*/
-  builtin_plus(?x, numeric_const("0")) = ?x
+  builtin_add(?x, numeric_const("0")) = ?x
 
 /*
   Addition of neutral element.
@@ -18,4 +18,4 @@ rewrite plus_zero_second:
 */
 rewrite plus_zero_first:
 /*  (numeric_const("0") + ?x) = ?x*/
-  builtin_plus(numeric_const("0"), ?x) = ?x
+  builtin_add(numeric_const("0"), ?x) = ?x

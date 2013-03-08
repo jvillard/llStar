@@ -113,7 +113,7 @@ let cfg_node_of_instr specs fun_env instr =
     let v1 = args_of_value (operand instr 0) in
     let v2 = args_of_value (operand instr 1) in
     let pre = mkEmpty in
-    let post = mkEQ (ret_arg, Arg_op("builtin_plus", [v1; v2])) in
+    let post = mkEQ (ret_arg, Arg_op("builtin_add", [v1; v2])) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([id],spec,[]))]
   | Opcode.Sub
@@ -122,7 +122,7 @@ let cfg_node_of_instr specs fun_env instr =
     let v1 = args_of_value (operand instr 0) in
     let v2 = args_of_value (operand instr 1) in
     let pre = mkEmpty in
-    let post = mkEQ (ret_arg, Arg_op("builtin_minus", [v1; v2])) in
+    let post = mkEQ (ret_arg, Arg_op("builtin_sub", [v1; v2])) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([id],spec,[]))]
   | Opcode.Mul
@@ -131,7 +131,7 @@ let cfg_node_of_instr specs fun_env instr =
     let v1 = args_of_value (operand instr 0) in
     let v2 = args_of_value (operand instr 1) in
     let pre = mkEmpty in
-    let post = mkEQ (ret_arg, Arg_op("builtin_mult", [v1; v2])) in
+    let post = mkEQ (ret_arg, Arg_op("builtin_mul", [v1; v2])) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([id],spec,[]))]
   | Opcode.UDiv

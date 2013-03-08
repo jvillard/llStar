@@ -27,7 +27,7 @@ let bvargs64_of_int64 sz i = bvargs_of_str (Int64.to_string sz) (Int64.to_string
 
 (* a few functions for creating predicates. Adds a layer of
    type-safety and avoids catastrophic typos *)
-let mkUndef sz = bvargs sz (Arg_var (Vars.freshe ()))
+let mkUndef sz = Arg_var (Vars.freshe ())
 let mkUndef64 sz = mkUndef (Arg_string (Int64.to_string sz))
 let mkPointer ptr ptr_t v = mkSPred ("pointer", [ptr; ptr_t; v])
 let mkArray ptr start_idx end_idx size array_t v =
@@ -83,25 +83,25 @@ let rec args_of_const_expr v = match constexpr_opcode v with
   | Opcode.Add ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_bvadd", [x; y])
+    Arg_op("bvadd", [x; y])
   | Opcode.Sub ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_bvsub", [x; y])
+    Arg_op("bvsub", [x; y])
   | Opcode.Mul ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_bvmul", [x; y])
+    Arg_op("bvmul", [x; y])
   | Opcode.UDiv
   | Opcode.SDiv ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_bvdiv", [x; y])
+    Arg_op("bvdiv", [x; y])
   | Opcode.URem
   | Opcode.SRem ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_bvrem", [x; y])
+    Arg_op("bvrem", [x; y])
   | Opcode.FAdd
   | Opcode.FSub
   | Opcode.FMul
@@ -113,24 +113,24 @@ let rec args_of_const_expr v = match constexpr_opcode v with
   | Opcode.Shl ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_bvshl", [x; y])
+    Arg_op("bvshl", [x; y])
   | Opcode.LShr
   | Opcode.AShr ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_bvshr", [x; y])
+    Arg_op("bvshr", [x; y])
   | Opcode.And ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_bvand", [x; y])
+    Arg_op("bvand", [x; y])
   | Opcode.Or ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_bvor", [x; y])
+    Arg_op("bvor", [x; y])
   | Opcode.Xor ->
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("builtin_bvxor", [x; y])
+    Arg_op("bvxor", [x; y])
   (* /TODO CoreStar/z3 *)
   | Opcode.Unwind | Opcode.LandingPad | Opcode.Resume | Opcode.AtomicRMW
   | Opcode.AtomicCmpXchg | Opcode.Fence | Opcode.InsertValue

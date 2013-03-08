@@ -166,8 +166,8 @@ identifier_op:
 
 binop:
   | OP_DIV { "builtin_div" }
-  | OP_MINUS { "builtin_minus" }
-  | OP_PLUS { "builtin_plus" }
+  | OP_MINUS { "builtin_sub" }
+  | OP_PLUS { "builtin_add" }
 ;
 
 cmpop:

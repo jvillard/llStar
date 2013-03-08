@@ -1,5 +1,6 @@
 /*************************************
  * rules for builtin_{n,}eq
+ * ATTENTION: only use in case you don't want to leave that to the SMT solver
  *************************************/
 
 rewrite eq_eq_pred:

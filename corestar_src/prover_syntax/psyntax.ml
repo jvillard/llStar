@@ -177,9 +177,9 @@ let rec string_args ppf arg =
   match arg with 
   | Arg_var v -> Format.fprintf ppf "%s" (string_var v)
   | Arg_string s -> Format.fprintf ppf "\"%s\""  s 
-  | Arg_op ("builtin_plus",[a1;a2]) -> Format.fprintf ppf "(%a+%a)" string_args a1 string_args a2
-  | Arg_op ("builtin_minus",[a1;a2]) -> Format.fprintf ppf "(%a-%a)" string_args a1 string_args a2
-  | Arg_op ("builtin_mult",[a1;a2]) -> Format.fprintf ppf "(%a*%a)" string_args a1 string_args a2
+  | Arg_op ("builtin_add",[a1;a2]) -> Format.fprintf ppf "(%a+%a)" string_args a1 string_args a2
+  | Arg_op ("builtin_sub",[a1;a2]) -> Format.fprintf ppf "(%a-%a)" string_args a1 string_args a2
+  | Arg_op ("builtin_mul",[a1;a2]) -> Format.fprintf ppf "(%a*%a)" string_args a1 string_args a2
   | Arg_op ("tuple",al) -> Format.fprintf ppf "(%a)" string_args_list al
   | Arg_op (name,args) -> Format.fprintf ppf "%s(%a)" name string_args_list args 
   | Arg_cons (name,args) -> Format.fprintf ppf "%s(%a)" name string_args_list args 
@@ -397,13 +397,16 @@ let rec is_numerical_args (arg : args) : bool =
     Str.string_match rxp s 0
   in
   match arg with
+  (* TODO: add bit-vector operations *)
   | Arg_var _ -> true
   | Arg_op ("numeric_const", [Arg_string (s)])
   | Arg_string s ->
-    if is_integer_const s then true else false
-  | Arg_op ("builtin_plus", [a1; a2])
-  | Arg_op ("builtin_minus", [a1; a2])
-  | Arg_op ("builtin_mult", [a1; a2]) -> 
+    is_integer_const s
+  | Arg_op ("bv_const", [Arg_string (s1); Arg_string (s2)]) ->
+    (is_integer_const s1) && (is_integer_const s2)
+  | Arg_op ("builtin_add", [a1; a2])
+  | Arg_op ("builtin_sub", [a1; a2])
+  | Arg_op ("builtin_mul", [a1; a2]) -> 
     (is_numerical_args a1) && (is_numerical_args a2)
   | Arg_op (_,_) -> false
   | _ -> assert false

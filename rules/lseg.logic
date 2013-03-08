@@ -55,9 +55,9 @@ if
 | node(?s,?x,_fooz) * lseg(?s,_fooz,?y)  |- pointer(?x,?w,?Z)
 
 rule lseg_ne_unroll_offset_exists :
-| lseg_ne(?s,?x,?y) |- pointer(builtin_plus(?x,?offset),?w,?Z)
+| lseg_ne(?s,?x,?y) |- pointer(bvadd.64(?x,?offset),?w,?Z)
 if
-| node(?s,?x,_fooz) * lseg(?s,_fooz,?y)  |- pointer(builtin_plus(?x,?offset),?w,?Z)
+| node(?s,?x,_fooz) * lseg(?s,_fooz,?y)  |- pointer(bvadd.64(?x,?offset),?w,?Z)
 
 
 rule lseg_ne_lseg_ne_match :

@@ -63,7 +63,7 @@ type smt_type =
 | SType_bool (** boolean sort *)
 | SType_int (** mathematical integer sort *)
 | SType_type of string (** user-defined type *)
-| SType_fun of (smt_type list * smt_type) list (** function type *)
+| SType_fun of smt_type list * smt_type (** function type *)
 (* I don't think SMT-LIB does higher-order but hopefully it won't show up... *)
 
 exception Type_mismatch of smt_type * smt_type
@@ -75,11 +75,8 @@ let rec pp_smt_type f = function
 | SType_bool -> fprintf f "Bool"
 | SType_int -> fprintf f "Int"
 | SType_type s -> fprintf f "%s" s
-| SType_fun l ->
-  let pp_single_funt f (stl, rt) =
-    fprintf f "(%a) -> %a" (list_format "" pp_smt_type) stl pp_smt_type rt in
-  (list_format " U" pp_single_funt) f l
-
+| SType_fun (stl,rt) ->
+  fprintf f "(%a) -> %a" (list_format "" pp_smt_type) stl pp_smt_type rt
 
 let rec refines ta tb =
   match (ta, tb) with
@@ -91,6 +88,8 @@ let rec refines ta tb =
   | (SType_int, SType_int) | (SType_bool, SType_bool) -> true
   | (SType_bv i, SType_bv j) when i = j -> true
   | (SType_type s1, SType_type s2) when s1 = s2 -> true
+  | (SType_fun (lt1,rt1), SType_fun (lt2, rt2)) when length lt1 = length lt2 ->
+    List.for_all2 refines (rt1::lt1) (rt2::lt2)
   | (SType_var _, _) -> false
   | _ -> false
 
@@ -120,21 +119,9 @@ let uf_union i j =
 let rec final_type s =
   let t = uf_find s in
   match t with
-  | SType_fun l ->
-    SType_fun (List.map (fun (ll,r) -> (List.map final_type ll, final_type r)) l)
+  | SType_fun (ll,r) ->
+    SType_fun (List.map final_type ll, final_type r)
   | _ -> t
-
-let rec normalise_funt l =
-  let comp (l1, r1) (l2, r2) =
-    let c = compare l1 l2 in
-    if c = 0 then compare r1 r2 else c in
-  let rec aux = function
-    | [] -> []
-    | [a] -> [a]
-    | (la,ra)::(lb,rb)::tl ->
-      if la = lb then (unify ra rb; aux ((lb,final_type rb)::tl))
-      else (la,ra)::aux ((lb,rb)::tl) in
-  aux (List.sort comp l)
 
 (** unification of types *)
 and unify ta tb =
@@ -149,9 +136,8 @@ and unify ta tb =
     | (SType_bv s1, SType_bv s2) when s1 = s2 -> ()
     | (SType_type s1, SType_type s2) when s1 = s2 -> ()
     | (SType_int, SType_int) | (SType_bool, SType_bool) -> ()
-    | (SType_fun tla, SType_fun tlb) ->
-      uf_union ta (SType_fun (normalise_funt (tla@tlb)));
-      uf_union tb (SType_fun (normalise_funt (tla@tlb)))
+    | (SType_fun (l1,r1), SType_fun (l2,r2)) when length l1 = length l2 ->
+      iter2 unify (r1::l1) (r2::l2)
     | _ -> raise (Type_mismatch (ta, tb))
 
 let rec unify_list = function
@@ -163,36 +149,6 @@ let __typeindex = ref 0
 let fresh_type_index () =
   __typeindex := !__typeindex +1;
   !__typeindex -1
-
-let complete_concat_type t =
-  Format.fprintf logf "prout: %a@." pp_smt_type t;
-  let rec aux = function
-    | ([ti; tj], tk)::tl ->
-      let (ui, uj, uk) =
-	match (uf_find ti, uf_find tj, uf_find tk) with
-	| (SType_bv i, SType_bv j, _) ->
-	  let k = string_of_int ((int_of_string i) + (int_of_string j)) in
-	  unify tk (SType_bv k);
-	  (SType_bv i, SType_bv j, SType_bv k)
-	| (SType_bv i, _, SType_bv k) ->
-	  let j = string_of_int ((int_of_string k) - (int_of_string i)) in
-	  unify tj (SType_bv j);
-	  (SType_bv i, SType_bv j, SType_bv k)
-	| (_ , SType_bv j, SType_bv k) ->
-	  let i = string_of_int ((int_of_string k) - (int_of_string j)) in
-	  unify ti (SType_bv i);
-	  (SType_bv i, SType_bv j, SType_bv k)
-	| a -> a in
-      ([ui; uj], uk)::(aux tl)
-    | a::tl -> a::(aux tl)
-    | [] -> [] in
-  let rec fixpoint l =
-    let newl = aux l in
-    if l <> newl then fixpoint newl
-    else newl in
-  match t with
-  | SType_fun l -> unify t (SType_fun (fixpoint l));   Format.fprintf logf "pouet: %a@." pp_smt_type (final_type t);
-  | _ -> ()
 
 let rec mk_final_type s =
   match final_type s with
@@ -207,115 +163,32 @@ let rec mk_final_type s =
   | SType_var i ->
     (* same as above *)
     unify (SType_bv "64") (SType_var i)
-  | SType_fun l ->
-    List.iter (fun (ll,r) -> List.iter mk_final_type (r::ll)) l
+  | SType_fun (lt,rt) ->
+    List.iter mk_final_type (rt::lt)
 
 (** typing context *)
 let typing_context : (string, smt_type) Hashtbl.t = Hashtbl.create 256
 let lookup_type id =
-  (* horrible special cases... *)
-  let extract_regexp = Str.regexp "(_ extract \\([0-9]+\\) \\([0-9]+\\))" in
-  if Str.string_match extract_regexp id 0 then
-    let i = int_of_string (Str.matched_group 1 id) in
-    let j = int_of_string (Str.matched_group 2 id) in
-    SType_fun [([SType_elastic_bv (fresh_type_index ())],
-		SType_bv (string_of_int (i-j+1)))]
-  else
-    try final_type (Hashtbl.find typing_context id)
-    with Not_found ->
-      let t = SType_var (fresh_type_index ()) in    
-      Hashtbl.add typing_context id t;
-      t
+  try final_type (Hashtbl.find typing_context id)
+  with Not_found ->
+    let t = SType_var (fresh_type_index ()) in    
+    Hashtbl.add typing_context id t;
+    t
 
 let complete_all_types () =
-  Hashtbl.iter
-    (fun id t -> if id = "concat" then complete_concat_type (final_type t))
-    typing_context;
   Hashtbl.iter
     (fun id t -> mk_final_type t)
     typing_context
 
-(* should this be a hashtbl? *)
-let default_types = ref []
-
 let reset_typing_context () =
-  Hashtbl.clear typing_context;
-  List.iter (fun (id,typ) -> Hashtbl.add typing_context id typ) !default_types
+  Hashtbl.clear typing_context
 
 let dump_typing_context () =
   Hashtbl.iter (fun id t -> fprintf logf "%s: %a@ " id pp_smt_type (final_type t)) typing_context
 
-let add_default_type id typ =
-  default_types := (id,typ)::!default_types
-
-let native_ops : (string * (Psyntax.args list -> (string * Psyntax.args list))) list ref = ref []
-
-let add_native_op args_op smt_op_string smt_op_regexp mk_smt_op optype =
-  predeclared := RegexpSet.add smt_op_regexp !predeclared;
-  if smt_op_string <> "" then (
-    add_default_type smt_op_string optype;
-    Hashtbl.add typing_context smt_op_string optype
-  );
-  native_ops := (args_op, mk_smt_op)::!native_ops
-
-(** bitvector operations *)
-let add_native_bitvector_ops () =
-  (* bit-vector operations in SMT-LIB are polymorphic in the size of
-     the bit-vectors. The type of a bit-vector operation is that both
-     arguments and the result are bit-vectors of the same size *)
-  let bvop_t () =
-    let t = SType_elastic_bv (fresh_type_index ()) in
-    SType_fun [([t; t], t)] in
-  List.iter (fun s ->
-    let mk_bvop args = (s, args) in
-    add_native_op ("builtin_"^s) s (Str.regexp_string s) mk_bvop (bvop_t ()))
-    ["bvadd"; "bvsub"; "bvneg"; "bvmul";
-     "bvurem"; "bvsrem"; "bvsmod";
-     "bvshl"; "bvlshr"; "bvashr";
-     "bvor"; "bvand"; "bvnot"; "bvnand"; "bvnor"; "bvxnor"];
-  add_native_op "builtin_bvconcat" "concat" (Str.regexp_string "concat")
-    (fun args -> "concat", args)
-    (SType_fun [([SType_elastic_bv (fresh_type_index ());
-		  SType_elastic_bv (fresh_type_index ())],
-		 SType_elastic_bv (fresh_type_index ()))]);
-  add_native_op "builtin_bvextract" "" (Str.regexp "(_ extract [0-9]+ [0-9]+)")
-    (function
-  Arg_op("numeric_const",[Arg_string i])::Arg_op("numeric_const",[Arg_string j])::args
-    | Arg_string i::Arg_string j::args -> Printf.sprintf "(_ extract %s %s)" i j, args
-    | a -> "op_builtin_bvextract", a)
-    (SType_fun [([SType_elastic_bv (fresh_type_index ())],
-		 SType_elastic_bv (fresh_type_index ()))])
-
-(** mathematical integer operations *)
-let add_native_int_ops () =
-  List.iter (fun (args_str, smt_str) ->
-    let mk_op args = (smt_str, args) in
-    add_native_op args_str smt_str (Str.regexp_string smt_str) mk_op
-    (SType_fun [([SType_int; SType_int], SType_int)]))
-    [("builtin_plus", "+");
-     ("builtin_minus", "-");
-     ("builtin_mult", "*");
-     ("builtin_div", "/");
-    ]
-
-let add_native_int_rels () =
-  List.iter (fun (args_str, smt_str) ->
-    let mk_op args = (smt_str, args) in
-    add_native_op args_str smt_str (Str.regexp_string smt_str) mk_op
-    (SType_fun [([SType_int; SType_int], SType_bool)]))
-    [("GT", ">");
-     ("GE", ">=");
-     ("LT", "<");
-     ("LE", "<=");
-    ]
-
-let add_native_false () =
-  add_native_op "@False" "false" (Str.regexp_string "false")
-    (function [] -> ("false", []) | a -> ("op_@False", a))
-    (SType_bool)
+(*** final translation into SMT expressions *)
 
 let sexp_of_sort s =
-  (* lookup "final" type of id, ie the representative of idt *)
   match final_type s with
   | SType_bool -> "Bool"
   | SType_int -> "Int"
@@ -332,3 +205,100 @@ let sexp_of_sort s =
 let rec sexp_of_sort_list = function
   | [] -> ""
   | t::tl -> " " ^ (sexp_of_sort t) ^ (sexp_of_sort_list tl)
+
+
+(*** translate coreStar predicates into native SMT functions *)
+
+let smtname_and_type_of_op :
+    (string -> Psyntax.args list -> (string * smt_type * Psyntax.args list)) ref
+    = ref (fun name args -> (id_munge ("op_"^name), lookup_type ("op_"^name), args))
+
+(** bitvector operations *)
+let add_native_bitvector_ops () =
+  (* bit-vector operations in SMT-LIB are polymorphic in the size of
+     the bit-vectors. The type of a bit-vector operation is that both
+     arguments and the result are bit-vectors of the same size *)
+  let translate_bin_bvop f bop name args =
+    let r = Str.regexp (Printf.sprintf "%s.\\([0-9]+\\)" bop) in
+    if Str.string_match r name 0 then
+      let sz = Str.matched_group 1 name in
+      let t = SType_bv sz in
+      (bop, SType_fun ([t; t], t), args)
+    else f name args in
+  List.iter
+    (fun s -> smtname_and_type_of_op := translate_bin_bvop !smtname_and_type_of_op s)
+    ["bvand"; "bvor"; "bvadd"; "bvmul"; "bvudiv"; "bvurem"; "bvshl"; "bvlshr"];
+  let translate_un_bvop f bop name args =
+    let r = Str.regexp (Printf.sprintf "%s.\\([0-9]+\\)" bop) in
+    if Str.string_match r name 0 then
+      let sz = Str.matched_group 1 name in
+      let t = SType_bv sz in
+      (bop, SType_fun ([t], t), args)
+    else f name args in
+  List.iter
+    (fun s -> smtname_and_type_of_op := translate_un_bvop !smtname_and_type_of_op s)
+    ["bvnot"; "bvneg"];
+  let translate_concat f name args =
+    let r = Str.regexp "concat.\\([0-9]+\\).\\([0-9]+\\)" in
+    if Str.string_match r name 0 then
+      let sz1 = Str.matched_group 1 name in
+      let sz2 = Str.matched_group 2 name in
+      let sz3 = string_of_int (int_of_string sz1 + int_of_string sz2) in
+      ("concat", SType_fun ([SType_bv sz1; SType_bv sz2], SType_bv sz3), args)
+    else f name args in
+  smtname_and_type_of_op := translate_concat !smtname_and_type_of_op;
+  let translate_extract f name args =
+    let r = Str.regexp "extract.\\([0-9]+\\)" in
+    if Str.string_match r name 0 then
+      let szarg = Str.matched_group 1 name in
+      match args with
+	Arg_op("numeric_const",[Arg_string i])::Arg_op("numeric_const",[Arg_string j])::args
+      | Arg_string i::Arg_string j::args ->
+	(try
+	  (Printf.sprintf "(_ extract %s %s)" i j,
+	   SType_fun ([SType_bv szarg], SType_bv
+	     (string_of_int (int_of_string i - int_of_string j + 1))),
+	   args)
+	with | Failure _ -> f name args)
+      | _ -> f name args
+    else f name args in
+  smtname_and_type_of_op := translate_extract !smtname_and_type_of_op
+
+(** mathematical integer operations *)
+let add_native_int_ops () =
+  let iop_to_smtiop =
+    [("builtin_add", "+");
+     ("builtin_sub", "-");
+     ("builtin_mul", "*");
+     ("builtin_div", "/");
+    ] in
+  let translate_bin_iop f name args =
+    try
+      (List.assoc name iop_to_smtiop,
+       SType_fun ([SType_int; SType_int], SType_int), args)
+    with Not_found -> f name args in
+  smtname_and_type_of_op := translate_bin_iop !smtname_and_type_of_op
+
+let add_native_int_rels () =
+  let irel_to_smtiop =
+    [("GT", ">");
+     ("builtin_gt", ">");
+     ("GE", ">=");
+     ("builtin_ge", ">=");
+     ("LT", "<");
+     ("builtin_lt", "<");
+     ("LE", "<=");
+     ("builtin_le", "<=");
+    ] in
+  let translate_bin_rel f name args =
+    try
+      (List.assoc name irel_to_smtiop,
+       SType_fun ([SType_int; SType_int], SType_bool), args)
+    with Not_found -> f name args in
+  smtname_and_type_of_op := translate_bin_rel !smtname_and_type_of_op
+
+let add_native_false () =
+  let add_false f name args =
+    if name = "@False" then ("false", SType_bool, args)
+    else f name args in
+  smtname_and_type_of_op := add_false !smtname_and_type_of_op

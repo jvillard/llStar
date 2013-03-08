@@ -1,1 +1,11 @@
 import "../../rules/llvm.logic";
+/*
+rule alt_node_to_prove_norbert:
+   | pointer(?x, bv_const("64", "4"), ?v0) * pointer(bvadd.64(?x,
+      bv_const("64", "4")), bv_const("64", "4"), ?pad)
+      * pointer(bvadd.64(?x, bv_const("64", "8")), bv_const("64", "8"),
+      ?v1) |- pointer(?x, bv_const("64", "16"), ?v)
+  if  pointer(?x, bv_const("64", "16"), concat.64.64(?v1,
+      concat.32.32(?pad, ?v0)))
+     | |-  concat.64.64(?v1, concat.32.32(?pad, ?v0))=?v
+*/

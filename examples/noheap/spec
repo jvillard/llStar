@@ -1,11 +1,11 @@
 /* test if implications hold with this empty function */
 skip:
-   {!GT(x, y)}
-   {!GT(builtin_plus(x,numeric_const("12")), y)}
+   {}
+   {bv_const("1", "1") = builtin_eq(bv_const("32", "64"), _z)}
 
 main:
    {}
-   {$ret_v1 = builtin_bvmul(bv_const("32","32"),bv_const("32", "52"))}
+   {$ret_v1 = bvmul.32(bv_const("32","32"),bv_const("32", "52"))}
 
 /* this spec is equivalent to f: {}{$ret_v1 = @parameter0:} */
 f:

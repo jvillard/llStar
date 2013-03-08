@@ -23,16 +23,24 @@ let gen_seq_rules_of_equiv name (equiv_left, equiv_right) =
   mk_simple_seq_rule (name^"_left") (equiv_right, mkEmpty) (equiv_left, mkEmpty)::
   mk_simple_seq_rule (name^"_right") (mkEmpty, equiv_right) (mkEmpty, equiv_left)::[]
 
+let bits_of_bytes x =
+  Int64.mul (Int64.of_int 8) x
+
 (** the physical offset inside the struct *)
 let offset64_of_field struct_t i =
   Llvm_target.offset_of_element !lltarget struct_t i
 
+let bitoffset64_of_field struct_t i =
+  bits_of_bytes (offset64_of_field struct_t i)
+
 let args_offset_of_field struct_t i =
   bvargs_of_int64 64 (offset64_of_field struct_t i)
 
-(* a few definitions to make the rule definitions more readable *)
 let sizeof64_field struct_t i =
   Llvm_target.store_size !lltarget (Array.get (struct_element_types struct_t) i)
+
+let bitsizeof64_field struct_t i =
+  bits_of_bytes (sizeof64_field struct_t i)
 
 let args_sizeof_field struct_t i =
   args_sizeof (Array.get (struct_element_types struct_t) i)
@@ -41,6 +49,9 @@ let offset64_of_field_end struct_t i =
   let offset = offset64_of_field struct_t i in
   let field_size = sizeof64_field struct_t i in
   Int64.add offset field_size
+
+let bitoffset64_of_field_end struct_t i =
+  bits_of_bytes (offset64_of_field_end struct_t i)
 
 let padsize64_of_field struct_t i =
   let offset = offset64_of_field struct_t i in
@@ -51,6 +62,9 @@ let padsize64_of_field struct_t i =
   let elt_size = sizeof64_field struct_t i in
   Int64.sub next_offset (Int64.add offset elt_size)
 
+let bitpadsize64_of_field struct_t i =
+  bits_of_bytes (padsize64_of_field struct_t i)
+
 let mk_padding_of_field struct_t i root =
   let pad_size = padsize64_of_field struct_t i in
   if pad_size = Int64.zero then None
@@ -58,14 +72,14 @@ let mk_padding_of_field struct_t i root =
     let elt_offset = offset64_of_field struct_t i in
     let elt_size = sizeof64_field struct_t i in
     let pad_offset = bvargs_of_int64 64 (Int64.add elt_offset elt_size) in
-    let pad_addr = Arg_op("builtin_bvadd", [root; pad_offset]) in
+    let pad_addr = Arg_op("bvadd.64", [root; pad_offset]) in
     Some (mkPointer pad_addr (bvargs_of_int64 64 pad_size) (mkUndef64 pad_size))
 
 let mk_field_pointer struct_t i root value =
   if i = 0 then
     mkPointer root (args_sizeof_field struct_t i) value
   else
-    let offset = Arg_op ("builtin_bvadd", [root; args_offset_of_field struct_t i]) in
+    let offset = Arg_op ("bvadd.64", [root; args_offset_of_field struct_t i]) in
     mkPointer offset (args_sizeof_field struct_t i) value
 
 let mk_padded_field_pointer struct_t i root value =
@@ -84,16 +98,21 @@ let mk_unfolded_struct struct_t root fields_values =
 let mk_struct_val_of_fields struct_t fields_values =
   let mk_field i subelt_t =
     let v = Array.get fields_values i in
-    let padsz = Int64.mul (Int64.of_int 8) (padsize64_of_field struct_t i) in
-    if padsz = Int64.zero then v
-    else Arg_op ("builtin_bvconcat", [mkUndef64 padsz; v]) in
+    let fldsz = bitsizeof64_field struct_t i in
+    let padsz = bitpadsize64_of_field struct_t i in
+    if padsz = Int64.zero then (v, fldsz)
+    else 
+      (Arg_op (Printf.sprintf "concat.%Ld.%Ld" padsz fldsz, [mkUndef64 padsz; v]),
+       Int64.add padsz fldsz) in
   let fvalpad = Array.mapi mk_field (struct_element_types struct_t) in
   let rec concat_bv_list = function
-    | [] -> bvargs_of_int 0 0
-    | [bv] -> bv
-    | bv::tl -> (* non-empty tail *)
-      Arg_op ("builtin_bvconcat", [concat_bv_list tl; bv]) in
-  concat_bv_list (Array.to_list fvalpad)
+    | [] -> (bvargs_of_int 0 0, Int64.zero)
+    | [x] -> x
+    | (bv, sz)::tl -> (* non-empty tail *)
+      let (bvtl, sztl) = concat_bv_list tl in
+      (Arg_op (Printf.sprintf "concat.%Ld.%Ld" sztl sz, [bvtl; bv]),
+       Int64.add sz sztl) in
+  fst (concat_bv_list (Array.to_list fvalpad))
 
 (*** Scalar rules *)
 
@@ -123,7 +142,7 @@ let eltptr_logic_of_type t =
       mkPPred ("eltptr", [x_var; args_struct_t; root_var; jump]) in
     let new_root =
       if i = 0 then root_var
-      else Arg_op ("builtin_bvadd", [root_var; args_offset_of_field t i]) in
+      else Arg_op ("bvadd.64", [root_var; args_offset_of_field t i]) in
     let equiv_right =
       mkPPred ("eltptr", [x_var; args_of_type subelt_type;
 			  new_root; jump_var]) in
@@ -150,11 +169,12 @@ let fold_unfold_logic_of_type t =
 
   let select_field base_val i =
     let field_begin =
-      numargs_of_int64 (Int64.mul (Int64.of_int 8) (offset64_of_field t i)) in
+      numargs_of_int64 (bitoffset64_of_field t i) in
     let field_end =
       numargs_of_int64
-	(Int64.sub (Int64.mul (Int64.of_int 8) (offset64_of_field_end t i)) Int64.one)in
-    Arg_op ("builtin_bvextract", [field_end; field_begin; base_val]) in
+	(Int64.sub (bitoffset64_of_field_end t i) Int64.one)in
+    Arg_op (Printf.sprintf "extract.%Ld" (Llvm_target.size_in_bits !lltarget t),
+	    [field_end; field_begin; base_val]) in
 
   let field_ranged_values base_val =
     Array.mapi (fun i _ -> select_field base_val i) (struct_element_types t) in
