@@ -3,8 +3,9 @@ int f(int a) {
 }
 
 int main() {
-  int x;
+  int x,y;
 
   x = f(1664);
-  return x;
+  y = 52;
+  return (x/32)*32;
 }

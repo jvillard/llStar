@@ -55,6 +55,18 @@ let cfg_node_of_instr specs fun_env instr =
     let node = Cfg_core.mk_node stmt in
     Printing.add_location node.sid loc;
     node in
+  let cfg_node_of_binop op =
+    let id = Vars.concretep_str (value_id instr) in
+    let v1 = args_of_value (operand instr 0) in
+    let v2 = args_of_value (operand instr 1) in
+    let pre = mkEmpty in
+    let post = mkEQ (ret_arg, Arg_op(op, [v1; v2])) in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    [mk_node (Core.Assignment_core ([id],spec,[]))] in
+  let type_bvop op =
+    let t = type_of instr in
+    let sz = Llvm_target.size_in_bits !lltarget t in
+    Printf.sprintf "%s.%Ld" op sz in
   match instr_opcode instr with
   (* Terminator Instructions *)
   | Opcode.Ret ->
@@ -102,58 +114,32 @@ let cfg_node_of_instr specs fun_env instr =
   | Opcode.Invoke -> implement_this "Invoke block terminator"
   | Opcode.Invalid2 -> failwith "\"Invalid\" instruction"
   | Opcode.Unreachable ->
-    (* if llvm thinks it's unreachable, let's tell LStar by assuming False *)
-    let spec = Spec.mk_spec [] mkFalse Spec.ClassMap.empty in
+    (* assert False *)
+    let spec = Spec.mk_spec mkFalse [] Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([],spec,[]))]
   | Opcode.Invalid -> failwith "\"Invalid\" instruction"
   (* Standard Binary Operators *)
-  | Opcode.Add
-  | Opcode.FAdd ->
-    let id = Vars.concretep_str (value_id instr) in
-    let v1 = args_of_value (operand instr 0) in
-    let v2 = args_of_value (operand instr 1) in
-    let pre = mkEmpty in
-    let post = mkEQ (ret_arg, Arg_op("builtin_add", [v1; v2])) in
-    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([id],spec,[]))]
-  | Opcode.Sub
-  | Opcode.FSub ->
-    let id = Vars.concretep_str (value_id instr) in
-    let v1 = args_of_value (operand instr 0) in
-    let v2 = args_of_value (operand instr 1) in
-    let pre = mkEmpty in
-    let post = mkEQ (ret_arg, Arg_op("builtin_sub", [v1; v2])) in
-    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([id],spec,[]))]
-  | Opcode.Mul
-  | Opcode.FMul ->
-    let id = Vars.concretep_str (value_id instr) in
-    let v1 = args_of_value (operand instr 0) in
-    let v2 = args_of_value (operand instr 1) in
-    let pre = mkEmpty in
-    let post = mkEQ (ret_arg, Arg_op("builtin_mul", [v1; v2])) in
-    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([id],spec,[]))]
-  | Opcode.UDiv
-  | Opcode.SDiv
-  | Opcode.FDiv ->
-    let id = Vars.concretep_str (value_id instr) in
-    let v1 = args_of_value (operand instr 0) in
-    let v2 = args_of_value (operand instr 1) in
-    let pre = mkEmpty in
-    let post = mkEQ (ret_arg, Arg_op("builtin_div", [v1; v2])) in
-    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([id],spec,[]))]
-  | Opcode.URem
-  | Opcode.SRem
-  | Opcode.FRem -> implement_this "?rem instr"
+  (* we translate floating point operations into the corresponding
+     ones on mathematical integers *)
+  | Opcode.Add -> cfg_node_of_binop (type_bvop "bvadd")
+  | Opcode.FAdd -> cfg_node_of_binop "builtin_add"
+  | Opcode.Sub -> cfg_node_of_binop (type_bvop "bvsub")
+  | Opcode.FSub -> cfg_node_of_binop "builtin_sub"
+  | Opcode.Mul -> cfg_node_of_binop (type_bvop "bvmul")
+  | Opcode.FMul -> cfg_node_of_binop "builtin_mul"
+  | Opcode.UDiv -> cfg_node_of_binop (type_bvop "bvudiv")
+  | Opcode.SDiv -> cfg_node_of_binop (type_bvop "bvsdiv")
+  | Opcode.FDiv -> cfg_node_of_binop "builtin_div"
+  | Opcode.URem -> cfg_node_of_binop (type_bvop "bvurem")
+  | Opcode.SRem -> cfg_node_of_binop (type_bvop "bvsrem")
+  | Opcode.FRem -> cfg_node_of_binop "builtin_rem"
   (* Logical Operators *)
-  | Opcode.Shl
-  | Opcode.LShr
-  | Opcode.AShr
-  | Opcode.And
-  | Opcode.Or
-  | Opcode.Xor -> implement_this "bitwise op instr"
+  | Opcode.Shl -> cfg_node_of_binop (type_bvop "bvshl")
+  | Opcode.LShr -> cfg_node_of_binop (type_bvop "bvlshr")
+  | Opcode.AShr -> cfg_node_of_binop (type_bvop "bvashr")
+  | Opcode.And -> cfg_node_of_binop (type_bvop "bvand")
+  | Opcode.Or -> cfg_node_of_binop (type_bvop "bvor")
+  | Opcode.Xor -> cfg_node_of_binop (type_bvop "bvxor")
   (* Memory Operators *)
   | Opcode.Alloca ->
     let id = Vars.concretep_str (value_id instr) in
@@ -220,18 +206,19 @@ let cfg_node_of_instr specs fun_env instr =
     let post = mkEQ(ret_arg, v) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
-  | Opcode.Trunc
-  | Opcode.ZExt
-  | Opcode.SExt
+  | Opcode.Trunc (* extract.tv(ti,0,v) *)
+  | Opcode.ZExt  (* concat.tv.ti-tv(v,0) *)
+  | Opcode.SExt  (* sext.tv.ti(v) *)
   | Opcode.FPToUI
   | Opcode.FPToSI
   | Opcode.UIToFP
   | Opcode.SIToFP
   | Opcode.FPTrunc
-  | Opcode.FPExt
+  | Opcode.FPExt -> implement_this "conversion operations"
   | Opcode.PtrToInt
   | Opcode.IntToPtr ->
-    (* TODO: most of these can change the actual value *)
+    (* TODO: actually convert if bitsizes aren't the same, or require
+       that they match *)
     let id = value_id instr in
     let value = operand instr 0 in
     let v = args_of_value value in

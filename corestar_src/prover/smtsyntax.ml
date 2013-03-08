@@ -227,7 +227,11 @@ let add_native_bitvector_ops () =
     else f name args in
   List.iter
     (fun s -> smtname_and_type_of_op := translate_bin_bvop !smtname_and_type_of_op s)
-    ["bvand"; "bvor"; "bvadd"; "bvmul"; "bvudiv"; "bvurem"; "bvshl"; "bvlshr"];
+    ["bvand"; "bvor"; "bvadd"; "bvmul"; "bvudiv"; "bvurem"; "bvshl"; "bvlshr";
+     (* the operations below are not in official SMT-LIB2, but z3
+	knows about them. TODO: provide macros for them? *)
+     "bvsdiv"; "bvsrem"; "bvashr"; "bvxor";
+    ];
   let translate_un_bvop f bop name args =
     let r = Str.regexp (Printf.sprintf "%s.\\([0-9]+\\)" bop) in
     if Str.string_match r name 0 then
@@ -255,11 +259,11 @@ let add_native_bitvector_ops () =
 	Arg_op("numeric_const",[Arg_string i])::Arg_op("numeric_const",[Arg_string j])::args
       | Arg_string i::Arg_string j::args ->
 	(try
-	  (Printf.sprintf "(_ extract %s %s)" i j,
-	   SType_fun ([SType_bv szarg], SType_bv
-	     (string_of_int (int_of_string i - int_of_string j + 1))),
-	   args)
-	with | Failure _ -> f name args)
+	   (Printf.sprintf "(_ extract %s %s)" i j,
+	    SType_fun ([SType_bv szarg], SType_bv
+	      (string_of_int (int_of_string i - int_of_string j + 1))),
+	    args)
+	 with | Failure _ -> f name args)
       | _ -> f name args
     else f name args in
   smtname_and_type_of_op := translate_extract !smtname_and_type_of_op
