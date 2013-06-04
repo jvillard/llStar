@@ -18,12 +18,16 @@ let numargs i = Arg_op("numeric_const",[i])
 let numargs_of_str i = numargs (Arg_string i)
 let numargs_of_int i = numargs_of_str (string_of_int i)
 let numargs_of_int64 i = numargs_of_str (Int64.to_string i)
-let bvargs sz i = Arg_op("bv_const",[sz; i])
-let bvargs_of_str sz i = bvargs (Arg_string sz) (Arg_string i)
-let bvargs_of_int sz i = bvargs_of_str (string_of_int sz) (string_of_int i)
-let bvargs_of_int64 sz i = bvargs_of_str (string_of_int sz) (Int64.to_string i)
-let bvargs64_of_int sz i = bvargs_of_str (Int64.to_string sz) (string_of_int i)
-let bvargs64_of_int64 sz i = bvargs_of_str (Int64.to_string sz) (Int64.to_string i)
+let bvargs64_of_int64 sz i =
+  let args_sz = Arg_string (Int64.to_string sz) in
+  let args_abv = Arg_string (Int64.to_string (Int64.abs i)) in
+  let ubvargs = Arg_op("bv_const", [args_sz; args_abv]) in
+  if Int64.compare i Int64.zero < 0 then
+    Arg_op("bvneg."^(Int64.to_string sz), [ubvargs])
+  else ubvargs
+let bvargs_of_int sz i = bvargs64_of_int64 (Int64.of_int sz) (Int64.of_int i)
+let bvargs_of_int64 sz i = bvargs64_of_int64 (Int64.of_int sz) i
+let bvargs64_of_int sz i = bvargs64_of_int64 sz (Int64.of_int i)
 
 (* a few functions for creating predicates. Adds a layer of
    type-safety and avoids catastrophic typos *)

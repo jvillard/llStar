@@ -3,8 +3,6 @@ val numargs : Psyntax.args -> Psyntax.args
 val numargs_of_str : string -> Psyntax.args
 val numargs_of_int : int -> Psyntax.args
 val numargs_of_int64 : int64 -> Psyntax.args
-val bvargs : Psyntax.args -> Psyntax.args -> Psyntax.args
-val bvargs_of_str : string -> string -> Psyntax.args
 val bvargs_of_int : int -> int -> Psyntax.args
 val bvargs_of_int64 : int -> int64 -> Psyntax.args
 val bvargs64_of_int : int64 -> int -> Psyntax.args
