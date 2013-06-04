@@ -81,9 +81,6 @@ let cfg_node_of_instr specs fun_env instr =
     let spec = Spec.mk_spec fun_env.fun_alloca_pred post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core  ([], spec, params)); mk_node Core.End]
   | Opcode.Br ->
-    (* this is how you get a block's label using the ocaml bindings... *)
-    let label_of_bblock b =
-      value_id (value_of_block b) in
     if num_operands instr = 1 then
       (* Unconditional branch instr *)
       let next_label = label_of_bblock (block_of_value (operand instr 0)) in
@@ -109,7 +106,30 @@ let cfg_node_of_instr specs fun_env instr =
       let then_label = mk_br_block fun_env then_label_orig assume_then in
       let else_label = mk_br_block fun_env else_label_orig assume_else in
       [mk_node (Core.Goto_stmt_core [then_label;else_label])]
-  | Opcode.Switch -> implement_this "switch instruction"
+  | Opcode.Switch ->
+    let args_val = args_of_value (operand instr 0) in
+    let mk_case v l =
+      let label_orig = label_of_bblock (block_of_value l) in
+      let args_cond = args_of_value v in
+      let assume_case_spec = Spec.mk_spec mkEmpty
+	(mkEQ (args_val, args_cond)) Spec.ClassMap.empty in
+      let assume_case = mk_node (Core.Assignment_core ([],assume_case_spec,[])) in
+      mk_br_block fun_env label_orig assume_case in
+    let default_label =
+      let default_orig = label_of_bblock (switch_default_dest instr) in
+      let cond = ref(mkEmpty) in
+      for i = 1 to (num_operands instr)/2 -1 do
+	cond := mkStar !cond (mkNEQ (args_val, args_of_value (operand instr (i*2))))
+      done;
+      let default_spec = Spec.mk_spec mkEmpty !cond Spec.ClassMap.empty in
+      let assume = mk_node (Core.Assignment_core ([],default_spec,[])) in
+      mk_br_block fun_env default_orig assume in
+    let cases_labels = ref [] in
+    for i = 1 to (num_operands instr)/2 -1 do
+      cases_labels := mk_case (operand instr (i*2)) (operand instr (i*2 + 1))::
+	!cases_labels
+    done;
+    [mk_node (Core.Goto_stmt_core (default_label::!cases_labels))]
   | Opcode.IndirectBr -> implement_this "indirect branch"
   | Opcode.Invoke -> implement_this "Invoke block terminator"
   | Opcode.Invalid2 -> failwith "\"Invalid\" instruction"
@@ -250,15 +270,15 @@ let cfg_node_of_instr specs fun_env instr =
     [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
   | Opcode.FCmp -> implement_this "fcmp instr"
   | Opcode.PHI ->
-    (* We cannot treat phi nodes directly. Instead, we remember the
-       phi nodes of the current block to execute them all the
-       assignments that correspond to the same predecessor block at
-       once (as they should according to their semantics) in separate
-       blocks. We also record the extra indirection between
-       predecessors of the current block and this block. Once all the
-       blocks have been translated, we will update the inter-blocks
-       links to go through the phi nodes. See the
-       "update_cfg_with_new_phi_blocks" function. *)
+    (* We cannot treat phi nodes directly. Instead, we accumulate the
+       phi nodes of the current block to execute all the assignments
+       that correspond to the same predecessor block at once (as they
+       should according to their semantics) in separate blocks. We
+       also record the extra indirection between predecessors of the
+       current block and this block. Once all the blocks have been
+       translated, we will update the inter-blocks links to go through
+       the phi nodes. See the "update_cfg_with_new_phi_blocks"
+       function. *)
     let x = value_id instr in
     let rec dispatch groups = function
       | [] -> groups
@@ -308,7 +328,7 @@ let cfg_node_of_instr specs fun_env instr =
     warn "Skipping vector instruction";
     [mk_node Core.Nop_stmt_core]
   | Opcode.Fence ->
-    (* this skip is safe since we assume a sequential semantics *)
+    (* this nop is safe since we assume a sequential semantics *)
     [mk_node Core.Nop_stmt_core]
   | Opcode.AtomicCmpXchg -> implement_this "atomic cmp xchange instr"
   | Opcode.AtomicRMW -> implement_this "atomic RMW instr"

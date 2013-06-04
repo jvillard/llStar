@@ -97,6 +97,9 @@ let set_source_name m =
       Config.source_base_name := Filename.basename src_name
     | _ -> ()
 
+(** extract a block's label *)
+let label_of_bblock b = value_id (value_of_block b)
+
 
 (*** Collect all the types in a module *)
 module LlvalueSet = Set.Make (struct type t = llvalue let compare = compare end)

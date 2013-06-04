@@ -23,6 +23,8 @@ val value_id : Llvm.llvalue -> string
 val location_of_instr : Llvm.llvalue -> Printing.source_location option
 (** extract and record the original file name for module [m] *)
 val set_source_name : Llvm.llmodule -> unit
+(** extract a block's label *)
+val label_of_bblock : Llvm.llbasicblock -> string
 (** collects all the types referred to by the functions of module m *)
 val collect_types_in_module : Llvm.llmodule -> Llvm.lltype list
 (** dump things into files in the output directory *)

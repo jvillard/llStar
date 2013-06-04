@@ -1,0 +1,2 @@
+test_switch:
+  {}{@parameter0: = $ret_v1}
