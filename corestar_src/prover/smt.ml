@@ -91,13 +91,13 @@ let smt_init () : unit =
     with
     | Unix_error(err,f,a) ->
       match err with
-      | ENOENT -> printf "@[@{<b>ERROR:@} Bad path for SMT solver: %s@." a;
+      | ENOENT -> printf "@[ERROR: Bad path for SMT solver: %s@." a;
                   Config.smt_run := false
       | _ -> raise (Unix_error(err,f,a))
 
 
 let smt_fatal_recover () : unit  =
-  printf "@[<2>@{<b>SMT ERROR:@}@ ";
+  printf "@[<2>SMT ERROR:@ ";
   printf "The SMT solver <%s> stopped unexpectedly.@." !smtpath;
   if log log_smt then
     begin
@@ -411,14 +411,14 @@ let finish_him
     smt_pop(); r
   with
   | Type_mismatch (ta, tb) ->
-    printf "@[@{<b>SMT ERROR@}: type mismatch: %a # %a@."
+    printf "@[SMT ERROR: type mismatch: %a # %a@."
       pp_smt_type ta pp_smt_type tb;
     if log log_smt then dump_typing_context ();
     print_flush();
     false
   | SMT_error r ->
     smt_reset();
-    printf "@[@{<b>SMT ERROR@}: %s@." r;
+    printf "@[SMT ERROR: %s@." r;
     if log log_smt then dump_typing_context ();
     print_flush();
     false
@@ -510,7 +510,7 @@ let ask_the_audience
     fold_left make_list_equal ts req_equiv
   with
   | Type_mismatch (ta, tb) ->
-    printf "@[@{<b>SMT ERROR@}: type mismatch: %a # %a@."
+    printf "@[SMT ERROR: type mismatch: %a # %a@."
       pp_smt_type ta pp_smt_type tb;
     if log log_smt then dump_typing_context ();
     smt_reset();
@@ -518,7 +518,7 @@ let ask_the_audience
     raise Backtrack.No_match
   | SMT_error r ->
     smt_reset();
-    printf "@[@{<b>SMT ERROR@}: %s@." r;
+    printf "@[SMT ERROR: %s@." r;
     print_flush();
     if log log_smt then dump_typing_context ();
     raise Backtrack.No_match
