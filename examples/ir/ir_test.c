@@ -19,3 +19,7 @@ unsigned int trunc_and_zext(unsigned int x) {
 int trunc_and_sext(int x) {
   return (int) ((long int) x);
 }
+
+unsigned int ptr_to_int_to_ptr(unsigned char x) {
+  return (long int) (void *) x;
+}

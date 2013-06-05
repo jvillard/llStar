@@ -216,52 +216,43 @@ let cfg_node_of_instr specs fun_env instr =
     let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
   (* Cast Operators *)
-  | Opcode.BitCast ->
-    (* we just assign the old value to the new variable, since we
-       leave type checking in the hands of llvm *)
-    let id = value_id instr in
-    let value = operand instr 0 in
-    let v = args_of_value value in
-    let pre = mkEmpty in
-    let post = mkEQ(ret_arg, v) in
-    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
-  | Opcode.Trunc ->
+  | Opcode.BitCast
+  | Opcode.Trunc
+  | Opcode.ZExt
+  | Opcode.SExt
+  | Opcode.PtrToInt
+  | Opcode.IntToPtr ->
     let id = value_id instr in
     let value = operand instr 0 in
     let v = args_of_value value in
     let from_sz = Llvm_target.size_in_bits !lltarget (type_of value) in
     let to_sz = Llvm_target.size_in_bits !lltarget (type_of instr) in
     let pre = mkEmpty in
-    let post = mkEQ(Arg_op(Printf.sprintf "extract.%Ld" from_sz,
-			   [numargs_of_int64 (Int64.sub to_sz Int64.one);numargs_of_int 0;v]),
-		    ret_arg) in
-    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
-  | Opcode.ZExt ->
-    let id = value_id instr in
-    let value = operand instr 0 in
-    let v = args_of_value value in
-    let from_sz = Llvm_target.size_in_bits !lltarget (type_of value) in
-    let to_sz = Llvm_target.size_in_bits !lltarget (type_of instr) in
-    let zeroes = Int64.sub to_sz from_sz in
-    let pre = mkEmpty in
-    let post = mkEQ(Arg_op(Printf.sprintf "concat.%Ld.%Ld" zeroes from_sz,
-			   [bvargs64_of_int zeroes 0;v]),
-		    ret_arg) in
-    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
-  | Opcode.SExt ->
-    let id = value_id instr in
-    let value = operand instr 0 in
-    let v = args_of_value value in
-    let from_sz = Llvm_target.size_in_bits !lltarget (type_of value) in
-    let to_sz = Llvm_target.size_in_bits !lltarget (type_of instr) in
-    let signs = Int64.sub to_sz from_sz in
-    let pre = mkEmpty in
-    let post = mkEQ(Arg_op(Printf.sprintf "sign_extend.%Ld" from_sz,
-			   [numargs_of_int64 signs;v]),
-		    ret_arg) in
+    let opc = instr_opcode instr in
+    let res =
+      if opc = Opcode.ZExt ||
+	 ((opc = Opcode.PtrToInt || opc = Opcode.IntToPtr)
+	  && Int64.compare from_sz to_sz < 0) then
+	let zeroes = Int64.sub to_sz from_sz in
+	Arg_op(Printf.sprintf "concat.%Ld.%Ld" zeroes from_sz,
+	       [bvargs64_of_int zeroes 0;v])
+      else if opc = Opcode.BitCast ||
+	     ((opc = Opcode.PtrToInt || opc = Opcode.IntToPtr)
+	      && Int64.compare from_sz to_sz = 0) then
+	v
+      else if opc = Opcode.SExt then
+	let signs = Int64.sub to_sz from_sz in
+	Arg_op(Printf.sprintf "sign_extend.%Ld" from_sz,
+	       [numargs_of_int64 signs;v])
+      else if opc = Opcode.Trunc ||
+	     ((opc = Opcode.PtrToInt || opc = Opcode.IntToPtr)
+	      && Int64.compare from_sz to_sz > 0) then
+	Arg_op(Printf.sprintf "extract.%Ld" from_sz,
+	       [numargs_of_int64 (Int64.sub to_sz Int64.one);
+		numargs_of_int 0;v])
+      else (* all cases accounted for, unreachable *)
+	assert(false) in
+    let post = mkEQ(res, ret_arg) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
   | Opcode.FPToUI
@@ -270,17 +261,6 @@ let cfg_node_of_instr specs fun_env instr =
   | Opcode.SIToFP
   | Opcode.FPTrunc
   | Opcode.FPExt -> implement_this "conversion operations"
-  | Opcode.PtrToInt
-  | Opcode.IntToPtr ->
-    (* TODO: actually convert if bitsizes aren't the same, or require
-       that they match *)
-    let id = value_id instr in
-    let value = operand instr 0 in
-    let v = args_of_value value in
-    let pre = mkEmpty in
-    let post = mkEQ(ret_arg, v) in
-    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
   (* Other Operators *)
   | Opcode.ICmp ->
     let id = value_id instr in

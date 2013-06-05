@@ -6,3 +6,6 @@ trunc_and_zext:
 
 trunc_and_sext:
   {}{$ret_v1 = @parameter0:}
+
+ptr_to_int_to_ptr:
+  {}{$ret_v1 = concat.24.8(bv_const("24", "0"),@parameter0:)}
