@@ -226,9 +226,44 @@ let cfg_node_of_instr specs fun_env instr =
     let post = mkEQ(ret_arg, v) in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
-  | Opcode.Trunc (* extract.tv(ti,0,v) *)
-  | Opcode.ZExt  (* concat.tv.ti-tv(v,0) *)
-  | Opcode.SExt  (* sext.tv.ti(v) *)
+  | Opcode.Trunc ->
+    let id = value_id instr in
+    let value = operand instr 0 in
+    let v = args_of_value value in
+    let from_sz = Llvm_target.size_in_bits !lltarget (type_of value) in
+    let to_sz = Llvm_target.size_in_bits !lltarget (type_of instr) in
+    let pre = mkEmpty in
+    let post = mkEQ(Arg_op(Printf.sprintf "extract.%Ld" from_sz,
+			   [numargs_of_int64 (Int64.sub to_sz Int64.one);numargs_of_int 0;v]),
+		    ret_arg) in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
+  | Opcode.ZExt ->
+    let id = value_id instr in
+    let value = operand instr 0 in
+    let v = args_of_value value in
+    let from_sz = Llvm_target.size_in_bits !lltarget (type_of value) in
+    let to_sz = Llvm_target.size_in_bits !lltarget (type_of instr) in
+    let zeroes = Int64.sub to_sz from_sz in
+    let pre = mkEmpty in
+    let post = mkEQ(Arg_op(Printf.sprintf "concat.%Ld.%Ld" zeroes from_sz,
+			   [bvargs64_of_int zeroes 0;v]),
+		    ret_arg) in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
+  | Opcode.SExt ->
+    let id = value_id instr in
+    let value = operand instr 0 in
+    let v = args_of_value value in
+    let from_sz = Llvm_target.size_in_bits !lltarget (type_of value) in
+    let to_sz = Llvm_target.size_in_bits !lltarget (type_of instr) in
+    let signs = Int64.sub to_sz from_sz in
+    let pre = mkEmpty in
+    let post = mkEQ(Arg_op(Printf.sprintf "sign_extend.%Ld" from_sz,
+			   [numargs_of_int64 signs;v]),
+		    ret_arg) in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
   | Opcode.FPToUI
   | Opcode.FPToSI
   | Opcode.UIToFP

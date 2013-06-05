@@ -1,2 +1,8 @@
 test_switch:
-  {}{@parameter0: = $ret_v1}
+  {}{bv_const("32", "1") = $ret_v1}
+
+trunc_and_zext:
+  {}{$ret_v1 = @parameter0:}
+
+trunc_and_sext:
+  {}{$ret_v1 = @parameter0:}

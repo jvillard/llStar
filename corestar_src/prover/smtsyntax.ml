@@ -266,7 +266,23 @@ let add_native_bitvector_ops () =
 	 with | Failure _ -> f name args)
       | _ -> f name args
     else f name args in
-  smtname_and_type_of_op := translate_extract !smtname_and_type_of_op
+  smtname_and_type_of_op := translate_extract !smtname_and_type_of_op;
+  let translate_sign_extend f name args =
+    let r = Str.regexp "sign_extend.\\([0-9]+\\)" in
+    if Str.string_match r name 0 then
+      let szarg = Str.matched_group 1 name in
+      match args with
+	Arg_op("numeric_const",[Arg_string i])::args
+      | Arg_string i::args ->
+	(try
+	   (Printf.sprintf "(_ sign_extend %s)" i,
+	    SType_fun ([SType_bv szarg], SType_bv
+	      (string_of_int (int_of_string szarg + int_of_string i))),
+	    args)
+	 with | Failure _ -> f name args)
+      | _ -> f name args
+    else f name args in
+  smtname_and_type_of_op := translate_sign_extend !smtname_and_type_of_op
 
 (** mathematical integer operations *)
 let add_native_int_ops () =

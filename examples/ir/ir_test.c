@@ -7,7 +7,15 @@ int test_switch (int rand) {
   case 3: x = 2;
   case 2: x++; break;
   default:
-    x = rand;
+    rand = 1;
   }
-  return x;
+  return (x == rand);
+}
+
+unsigned int trunc_and_zext(unsigned int x) {
+  return (unsigned int) ((unsigned long int) x);
+}
+
+int trunc_and_sext(int x) {
+  return (int) ((long int) x);
 }
