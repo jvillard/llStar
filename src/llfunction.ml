@@ -269,14 +269,14 @@ let cfg_node_of_instr specs fun_env instr =
       | Some p -> match p with
 	  | Icmp.Eq -> "builtin_eq"
 	  | Icmp.Ne -> "builtin_neq"
-	  | Icmp.Ugt
-	  | Icmp.Sgt -> "builtin_gt"
-	  | Icmp.Uge
-	  | Icmp.Sge -> "builtin_ge"
-	  | Icmp.Ult
-	  | Icmp.Slt -> "builtin_lt"
-	  | Icmp.Ule
-	  | Icmp.Sle -> "builtin_le" in
+	  | Icmp.Ugt -> "bvugt"
+	  | Icmp.Sgt -> "bvsgt"
+	  | Icmp.Uge -> "bvuge"
+	  | Icmp.Sge -> "bvsge"
+	  | Icmp.Ult -> "bvult"
+	  | Icmp.Slt -> "bvslt"
+	  | Icmp.Ule -> "bvule"
+	  | Icmp.Sle -> "bvsle" in
     let v1 = args_of_value (operand instr 0) in
     let v2 = args_of_value (operand instr 1) in
     let pre = mkEmpty in

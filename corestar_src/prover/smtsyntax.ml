@@ -284,6 +284,12 @@ let add_native_bitvector_ops () =
     else f name args in
   smtname_and_type_of_op := translate_sign_extend !smtname_and_type_of_op
 
+
+let bvbinrels =
+  [("builtin_eq", "="); ("builtin_neq", "distinct")]@
+    List.map (fun s -> (s,s))
+    ["bvult" ; "bvule"; "bvugt"; "bvuge"; "bvslt"; "bvsle"; "bvglt"; "bvgle"]
+
 (** mathematical integer operations *)
 let add_native_int_ops () =
   let iop_to_smtiop =

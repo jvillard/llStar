@@ -159,16 +159,13 @@ let rec sexp_of_args = function
   | Arg_op ("numeric_const", [Arg_string(a)]) -> (a, SType_int)
   | Arg_op ("bv_const", [Arg_string(sz); Arg_string(n)]) ->
     (Printf.sprintf "(_ bv%s %s)" n sz, SType_bv sz)
-  | Arg_op ("builtin_eq", [a1; a2]) ->
+  | Arg_op (binrel, [a1; a2]) when List.mem_assoc binrel bvbinrels ->
     let (e1, t1) = sexp_of_args a1 in
     let (e2, t2) = sexp_of_args a2 in
     unify t1 t2;
-    (Printf.sprintf "(ite (= %s %s) (_ bv1 1) (_ bv0 1))" e1 e2, SType_bv "1")
-  | Arg_op ("builtin_neq", [a1; a2]) ->
-    let (e1, t1) = sexp_of_args a1 in
-    let (e2, t2) = sexp_of_args a2 in
-    unify t1 t2;
-    (Printf.sprintf "(ite (= %s %s) (_ bv0 1) (_ bv1 1))" e1 e2, SType_bv "1")
+    (Printf.sprintf "(ite (%s %s %s) (_ bv1 1) (_ bv0 1))"
+       (List.assoc binrel bvbinrels) e1 e2,
+     SType_bv "1")
   | Arg_op ("bv_const", [Arg_string(sz); Arg_var(v)]) ->
     let vname = id_munge (Vars.string_var v) in
     let tv = lookup_type vname in
@@ -483,18 +480,6 @@ let ask_the_audience
     if log log_smt then printf "@[[Checking for contradiction in assumption]@.";
     if smt_check_unsat() then (smt_reset(); raise Assm_Contradiction);
     (* check whether there are any new equalities to find; otherwise raise Backtrack.No_match *)
-    (*
-    if log log_smt then printf "[Checking for new equalities]@\n";
-    smt_push();
-    let reps = get_args_rep ts in
-    let rep_sexps = String.concat " " (map (fun (x,y) -> string_sexp_neq (snd x,snd y))
-                                                (list_to_pairs reps) )
-    in
-    smt_assert ( "(and true " ^ rep_sexps ^ " )" );
-    if smt_check_sat() then (smt_reset(); raise Backtrack.No_match);
-    smt_pop();
-    *)
-    (* Update the term structure using the new equalities *)
     let reps = map (fun (t,a) -> (t, sexp_of_args a)) (get_args_rep ts) in
     let req_equiv = map (map fst)
       (equiv_partition (fun x y ->
@@ -507,6 +492,7 @@ let ask_the_audience
     if for_all (fun ls -> List.length ls = 1) req_equiv then
       (smt_reset(); raise Backtrack.No_match);
     smt_pop();
+    (* Update the term structure using the new equalities *)
     fold_left make_list_equal ts req_equiv
   with
   | Type_mismatch (ta, tb) ->
