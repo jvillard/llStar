@@ -286,8 +286,10 @@ let add_native_bitvector_ops () =
 
 
 let bvbinrels =
-  [("builtin_eq", "="); ("builtin_neq", "distinct")]@
-    List.map (fun s -> (s,s))
+  let ite = Printf.sprintf "(ite (%s %s %s) (_ bv1 1) (_ bv0 1))" in
+  let iet = Printf.sprintf "(ite (%s %s %s) (_ bv0 1) (_ bv1 1))" in
+  [("builtin_eq", ite "="); ("builtin_neq", iet "=")]@
+    List.map (fun s -> (s,ite s))
     ["bvult" ; "bvule"; "bvugt"; "bvuge"; "bvslt"; "bvsle"; "bvglt"; "bvgle"]
 
 (** mathematical integer operations *)

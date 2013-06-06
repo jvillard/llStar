@@ -163,8 +163,7 @@ let rec sexp_of_args = function
     let (e1, t1) = sexp_of_args a1 in
     let (e2, t2) = sexp_of_args a2 in
     unify t1 t2;
-    (Printf.sprintf "(ite (%s %s %s) (_ bv1 1) (_ bv0 1))"
-       (List.assoc binrel bvbinrels) e1 e2,
+    ((List.assoc binrel bvbinrels) e1 e2,
      SType_bv "1")
   | Arg_op ("bv_const", [Arg_string(sz); Arg_var(v)]) ->
     let vname = id_munge (Vars.string_var v) in
