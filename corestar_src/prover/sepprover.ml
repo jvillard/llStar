@@ -27,7 +27,26 @@ open Psyntax
 
     type inner_form_af = Clogic.AF.ts_formula
 
-    let is_pure f = Clogic.plain (f.Clogic.F.form)
+    let is_pure f =
+      (* we try to be more clever than just calling Clogic.plain: if
+	 the formula, or one of its disjuncts, is found to be
+	 non-pure, we look for a contradiction using the SMT solver
+	 (TODO: have a more generic way of checking for contradictions
+	 in coreStar I guess...) *)
+      let rec is_pure_form form =
+	let check_purity ff =
+	  (ff.Clogic.spat = Clogic.RMSet.empty) ||
+	    try
+	      ignore (Smt.ask_the_audience f.Clogic.F.ts ff);
+	      false
+	    with Clogic.Assm_Contradiction -> true in
+	check_purity form &&
+	  let form' = {form with Clogic.disjuncts = []} in
+	  List.for_all
+	    (fun (x,y) -> is_pure_form (Clogic.conjunction form' x)
+	      && is_pure_form (Clogic.conjunction form' y))
+	    form.Clogic.disjuncts in
+      is_pure_form f.Clogic.F.form
 
     let lift_inner_form inner_form =
       let ts, form = Clogic.break_ts_form inner_form in
