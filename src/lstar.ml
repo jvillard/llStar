@@ -6,6 +6,8 @@ open Psyntax
 (* LStar modules *)
 open Llutils
 
+let result = ref true
+
 let verify_function logic abduct_logic abstraction_rules specs f =
   let fid = value_id f in
   if not (Llvm.is_declaration f) then (
@@ -42,16 +44,17 @@ let verify_function logic abduct_logic abstraction_rules specs f =
       let specs = Symexec.bi_abduct fid cfg_nodes spec_to_verify
 	logic abduct_logic abstraction_rules in
       dump_into_file (fid ^ ".specs") (Debug.pp_list pp_spec) specs;
-      specs <> []
+      result := !result && (specs <> [])
     else
-      Symexec.verify fid cfg_nodes spec_to_verify logic abstraction_rules
-  ) else true
+      let b = Symexec.verify fid cfg_nodes spec_to_verify logic abstraction_rules in
+      result := !result && b
+  )
 
 let verify_module logic abduct_logic abstruction_rules specs m =
   (* iter_globals env_add_gvar m; *) (* TODO: handle global variables *)
   let verif_fun = verify_function logic abduct_logic abstruction_rules specs in
-  let verdict = Llvm.fold_left_functions (fun b f -> b && verif_fun f) true m in
-  fprintf logf "@.@[Mama says %s@." (if verdict then "yes" else "no")
+  Llvm.iter_functions verif_fun m;
+  fprintf logf "@.@[Mama says %s@." (if !result then "yes" else "no")
 
 let initialise_llvm () =
   if log log_phase then
