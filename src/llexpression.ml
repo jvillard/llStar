@@ -34,8 +34,8 @@ let bvargs64_of_int sz i = bvargs64_of_int64 sz (Int64.of_int i)
 let mkUndef sz = Arg_var (Vars.freshe ())
 let mkUndef64 sz = mkUndef (Arg_string (Int64.to_string sz))
 let mkPointer ptr ptr_t v = mkSPred ("pointer", [ptr; ptr_t; v])
-let mkArray ptr start_idx end_idx size array_t v =
-  mkSPred ("array", [ptr; start_idx; end_idx; size; array_t; v])
+let mkArray ptr start_idx end_idx size elt_sz v =
+  mkSPred ("array", [ptr; start_idx; end_idx; size; elt_sz; v])
 
 let args_sizeof t =
   let size64 = Llvm_target.store_size !lltarget t in
@@ -83,29 +83,19 @@ let args_of_int_const v = match int64_of_const v with
     bvargs_of_int64 sz i
   | None -> Arg_var (Vars.freshe ())
 
-let rec args_of_const_expr v = match constexpr_opcode v with
-  | Opcode.Add ->
+let rec args_of_const_expr v =
+  let mk_binop bopname =
     let x = args_of_value (operand v 0) in
     let y = args_of_value (operand v 1) in
-    Arg_op("bvadd", [x; y])
-  | Opcode.Sub ->
-    let x = args_of_value (operand v 0) in
-    let y = args_of_value (operand v 1) in
-    Arg_op("bvsub", [x; y])
-  | Opcode.Mul ->
-    let x = args_of_value (operand v 0) in
-    let y = args_of_value (operand v 1) in
-    Arg_op("bvmul", [x; y])
-  | Opcode.UDiv
-  | Opcode.SDiv ->
-    let x = args_of_value (operand v 0) in
-    let y = args_of_value (operand v 1) in
-    Arg_op("bvdiv", [x; y])
-  | Opcode.URem
-  | Opcode.SRem ->
-    let x = args_of_value (operand v 0) in
-    let y = args_of_value (operand v 1) in
-    Arg_op("bvrem", [x; y])
+    Arg_op(bopname, [x; y]) in
+  match constexpr_opcode v with
+  | Opcode.Add -> mk_binop "bvadd"
+  | Opcode.Sub -> mk_binop "bvsub"
+  | Opcode.Mul -> mk_binop "bvmul"
+  | Opcode.UDiv -> mk_binop "bvudiv"
+  | Opcode.SDiv -> mk_binop "bvsdiv"
+  | Opcode.URem -> mk_binop "bvurem"
+  | Opcode.SRem -> mk_binop "bvsrem"
   | Opcode.FAdd
   | Opcode.FSub
   | Opcode.FMul
@@ -113,29 +103,12 @@ let rec args_of_const_expr v = match constexpr_opcode v with
   | Opcode.FRem ->
     (* TODO: This is the only safe thing until floats are supported *)
     Arg_var (Vars.freshe ())    
-  (* TODO@CoreStar: translate bitwise operation to z3 *)  
-  | Opcode.Shl ->
-    let x = args_of_value (operand v 0) in
-    let y = args_of_value (operand v 1) in
-    Arg_op("bvshl", [x; y])
-  | Opcode.LShr
-  | Opcode.AShr ->
-    let x = args_of_value (operand v 0) in
-    let y = args_of_value (operand v 1) in
-    Arg_op("bvshr", [x; y])
-  | Opcode.And ->
-    let x = args_of_value (operand v 0) in
-    let y = args_of_value (operand v 1) in
-    Arg_op("bvand", [x; y])
-  | Opcode.Or ->
-    let x = args_of_value (operand v 0) in
-    let y = args_of_value (operand v 1) in
-    Arg_op("bvor", [x; y])
-  | Opcode.Xor ->
-    let x = args_of_value (operand v 0) in
-    let y = args_of_value (operand v 1) in
-    Arg_op("bvxor", [x; y])
-  (* /TODO CoreStar/z3 *)
+  | Opcode.Shl -> mk_binop "bvshl"
+  | Opcode.LShr -> mk_binop "bvlshr"
+  | Opcode.AShr -> mk_binop "bvashr"
+  | Opcode.And -> mk_binop "bvand"
+  | Opcode.Or -> mk_binop "bvor"
+  | Opcode.Xor -> mk_binop "bvxor"
   | Opcode.Unwind | Opcode.LandingPad | Opcode.Resume | Opcode.AtomicRMW
   | Opcode.AtomicCmpXchg | Opcode.Fence | Opcode.InsertValue
   | Opcode.ExtractValue | Opcode.ShuffleVector | Opcode.InsertElement

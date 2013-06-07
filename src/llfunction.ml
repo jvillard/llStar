@@ -167,11 +167,12 @@ let cfg_node_of_instr specs fun_env instr =
     let value_t = element_type ptr_t in
     let sz = args_sizeof value_t in
     let e = Arg_var (Vars.freshe ()) in
-    let heap_id = mkStar (mkSPred ("alloca", [Arg_var id; sz]))
-      (mkPointer (Arg_var id) sz e) in
-    fun_env.fun_alloca_pred <- mkStar fun_env.fun_alloca_pred heap_id;
-    let x = ret_arg in
-    let post = mkStar (mkSPred ("alloca", [x; sz])) (mkPointer x sz e) in
+    let mk_heap x =
+      let allocad = mkSPred ("alloca", [x; sz]) in
+      let heaplet = mkPointer x sz e in
+      mkStar allocad heaplet in
+    fun_env.fun_alloca_pred <- mkStar fun_env.fun_alloca_pred (mk_heap (Arg_var id));
+    let post = mk_heap ret_arg in
     let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([id], spec, []))]
   | Opcode.Load ->
