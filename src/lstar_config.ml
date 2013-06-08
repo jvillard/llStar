@@ -18,6 +18,7 @@ let absrules_file_name = ref impossible_file_name
 let abductrules_file_name = ref impossible_file_name
 
 let optimise_bc = ref true
+let auto_gen_struct_logic = ref true
 let auto_gen_list_logic = ref false
 let abduction_flag = ref false
 
@@ -54,8 +55,14 @@ let arg_list = Config.args_default @ [
    "abduction rules file name (default: "^List.hd default_abductrules_files^")");
   ("-abduct", Arg.Set(abduction_flag),
    "toggles abduction on");
-  ("-lists", Arg.Set(auto_gen_list_logic),
-   "toggles automatic list abstraction rules generation");
+  ("-autostructs", Arg.Set(auto_gen_struct_logic),
+   "enable automatic struct-folding/unfolding rules generation");
+  ("-autolists", Arg.Set(auto_gen_list_logic),
+   "enable automatic list abstraction rules generation");
+  ("-noautostructs", Arg.Clear(auto_gen_struct_logic),
+   "disable automatic struct-folding/unfolding rules generation");
+  ("-noautolists", Arg.Clear(auto_gen_list_logic),
+   "disable automatic list abstraction rules generation");
   ("-outdir", Arg.Set_string(outdir),
    "directory where to output LStar results");
   ("-outputll", Arg.Set_string(output_ll),

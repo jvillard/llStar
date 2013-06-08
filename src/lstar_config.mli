@@ -10,6 +10,7 @@ val absrules_file_name: string ref
 val abductrules_file_name: string ref
 
 val optimise_bc: bool ref
+val auto_gen_struct_logic: bool ref
 val auto_gen_list_logic: bool ref
 val abduction_flag: bool ref
 
