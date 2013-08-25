@@ -1,4 +1,6 @@
 (*** Rulegen: generate rules for the module's types and recursive data structures *)
+(* This assumes that the pointer size is 64! TODO: handle any size! *)
+
 
 open Format
 (* LLVM modules *)
@@ -14,6 +16,12 @@ open Llutils
 
 (*** helper functions to define predicates for structs *)
 
+(** Make a rule with a single premise, no side conditions
+
+    | [pre_lhs]  |- [pre_rhs]
+    --------------------------
+    | [post_lhs] |- [post_rhs]
+*)
 let mk_simple_seq_rule name (pre_lhs,pre_rhs) (post_lhs, post_rhs) =
   let conclusion = (mkEmpty, post_lhs, post_rhs, mkEmpty) in
   let premise = (mkEmpty, pre_lhs, pre_rhs, mkEmpty) in
@@ -44,6 +52,9 @@ let bitsizeof64_field struct_t i =
 
 let args_sizeof_field struct_t i =
   args_sizeof (Array.get (struct_element_types struct_t) i)
+
+let args_type_field struct_t i =
+  args_of_type (Array.get (struct_element_types struct_t) i)
 
 let offset64_of_field_end struct_t i =
   let offset = offset64_of_field struct_t i in
@@ -77,10 +88,10 @@ let mk_padding_of_field struct_t i root =
 
 let mk_field_pointer struct_t i root value =
   if i = 0 then
-    mkPointer root (args_sizeof_field struct_t i) value
+    mkPointer root (args_type_field struct_t i) value
   else
     let offset = Arg_op ("bvadd.64", [root; args_offset_of_field struct_t i]) in
-    mkPointer offset (args_sizeof_field struct_t i) value
+    mkPointer offset (args_type_field struct_t i) value
 
 let mk_padded_field_pointer struct_t i root value =
   let field_pointer = mk_field_pointer struct_t i root value in
@@ -114,6 +125,7 @@ let mk_struct_val_of_fields struct_t fields_values =
        Int64.add sz sztl) in
   fst (concat_bv_list (Array.to_list fvalpad))
 
+
 (*** Scalar rules *)
 
 (** assumes that [t] is an int or struct type *)
@@ -133,26 +145,24 @@ let sizeof_logic_of_type t =
 (** assumes that [t] is a struct type *)
 let eltptr_logic_of_type t =
   let args_struct_t = args_of_type t in
-  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
-  let root_var = Arg_var (Vars.AnyVar (0, "r")) in
+  let root_var = Arg_var (Vars.AnyVar (0, "x")) in
   let jump_var = Arg_var (Vars.AnyVar (0, "j")) in
   let subelt_eltptr_rules i subelt_type =
     let jump = Arg_op ("jump", [bvargs_of_int 64 i; jump_var]) in
-    let equiv_left =
-      mkPPred ("eltptr", [x_var; args_struct_t; root_var; jump]) in
+    let arguments_left = [root_var; args_struct_t; jump] in
     let new_root =
       if i = 0 then root_var
       else Arg_op ("bvadd.64", [root_var; args_offset_of_field t i]) in
-    let equiv_right =
-      mkPPred ("eltptr", [x_var; args_of_type subelt_type;
-			  new_root; jump_var]) in
-    gen_seq_rules_of_equiv ("eltptr_"^(string_of_struct t))
-      (equiv_left, equiv_right) in
-  let eltptr_rules =
-    List.flatten 
-      (Array.to_list
-	 (Array.mapi subelt_eltptr_rules (struct_element_types t))) in
-  let logic = { empty_logic with seq_rules = eltptr_rules; } in
+    let result = mkEltptr new_root (args_of_type subelt_type) jump_var in
+    { function_name = "eltptr";
+      arguments=arguments_left;
+      result=result;
+      guard={without_form=[];rewrite_where=[];if_form=[]};
+      rewrite_name="eltptr_"^(string_of_struct t)^(string_of_int i);
+      saturate=false} in
+  let eltptr_rules = Array.to_list
+    (Array.mapi subelt_eltptr_rules (struct_element_types t)) in
+  let logic = { empty_logic with rw_rules = eltptr_rules; } in
   (logic, logic)
 
 
@@ -167,7 +177,7 @@ let fold_unfold_logic_of_type t =
   let collate_field_values =
     mk_struct_val_of_fields t field_values in
 
-  let select_field base_val i =
+  let bits_of_field base_val i =
     let field_begin =
       numargs_of_int64 (bitoffset64_of_field t i) in
     let field_end =
@@ -177,21 +187,19 @@ let fold_unfold_logic_of_type t =
 	    [field_end; field_begin; base_val]) in
 
   let field_ranged_values base_val =
-    Array.mapi (fun i _ -> select_field base_val i) (struct_element_types t) in
+    Array.mapi (fun i _ -> bits_of_field base_val i) (struct_element_types t) in
 
   let x_var = Arg_var (Vars.AnyVar (0, "x")) in
   let v_var = Arg_var (Vars.AnyVar (0, "v")) in
   let w_var = Arg_var (Vars.AnyVar (0, "w")) in
 
   let mk_struct_pointer root value =
-    mkPointer root (args_sizeof t) value in
+    mkPointer root (args_of_type t) value in
 
   let mk_field_rule i subelt_type =
-    let field_value = select_field v_var i in
     let target_pointer = mk_field_pointer t i x_var w_var in
     mk_simple_seq_rule ((string_of_struct t)^"_field_"^(string_of_int i))
-      (mk_unfolded_struct t x_var (field_ranged_values v_var),
-       pconjunction (mkEQ (w_var,field_value)) target_pointer)
+      (mk_unfolded_struct t x_var (field_ranged_values v_var), target_pointer)
       (mk_struct_pointer x_var v_var, target_pointer) in
 
   let field_rules =
@@ -293,7 +301,6 @@ let node_logic_of_struct t name rec_field =
 
   let abduct_logic = { empty_logic with seq_rules = symex_rules@abduce_node_rules; } in
   (symex_logic, abduct_logic)
-
 
 (** assumes that [t] is a struct type *)
 let sllnode_logic_of_type t = match struct_name t with

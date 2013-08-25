@@ -55,18 +55,6 @@ let cfg_node_of_instr specs fun_env instr =
     let node = Cfg_core.mk_node stmt in
     Printing.add_location node.sid loc;
     node in
-  let cfg_node_of_binop op =
-    let id = Vars.concretep_str (value_id instr) in
-    let v1 = args_of_value (operand instr 0) in
-    let v2 = args_of_value (operand instr 1) in
-    let pre = mkEmpty in
-    let post = mkEQ (ret_arg, Arg_op(op, [v1; v2])) in
-    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([id],spec,[]))] in
-  let type_bvop op =
-    let t = type_of instr in
-    let sz = Llvm_target.size_in_bits !lltarget t in
-    Printf.sprintf "%s.%Ld" op sz in
   match instr_opcode instr with
   (* Terminator Instructions *)
   | Opcode.Ret ->
@@ -132,34 +120,12 @@ let cfg_node_of_instr specs fun_env instr =
     [mk_node (Core.Goto_stmt_core (default_label::!cases_labels))]
   | Opcode.IndirectBr -> implement_this "indirect branch"
   | Opcode.Invoke -> implement_this "Invoke block terminator"
-  | Opcode.Invalid2 -> failwith "\"Invalid\" instruction"
   | Opcode.Unreachable ->
     (* assert False *)
     let spec = Spec.mk_spec mkFalse [] Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([],spec,[]))]
-  | Opcode.Invalid -> failwith "\"Invalid\" instruction"
-  (* Standard Binary Operators *)
-  (* we translate floating point operations into the corresponding
-     ones on mathematical integers *)
-  | Opcode.Add -> cfg_node_of_binop (type_bvop "bvadd")
-  | Opcode.FAdd -> cfg_node_of_binop "builtin_add"
-  | Opcode.Sub -> cfg_node_of_binop (type_bvop "bvsub")
-  | Opcode.FSub -> cfg_node_of_binop "builtin_sub"
-  | Opcode.Mul -> cfg_node_of_binop (type_bvop "bvmul")
-  | Opcode.FMul -> cfg_node_of_binop "builtin_mul"
-  | Opcode.UDiv -> cfg_node_of_binop (type_bvop "bvudiv")
-  | Opcode.SDiv -> cfg_node_of_binop (type_bvop "bvsdiv")
-  | Opcode.FDiv -> cfg_node_of_binop "builtin_div"
-  | Opcode.URem -> cfg_node_of_binop (type_bvop "bvurem")
-  | Opcode.SRem -> cfg_node_of_binop (type_bvop "bvsrem")
-  | Opcode.FRem -> cfg_node_of_binop "builtin_rem"
-  (* Logical Operators *)
-  | Opcode.Shl -> cfg_node_of_binop (type_bvop "bvshl")
-  | Opcode.LShr -> cfg_node_of_binop (type_bvop "bvlshr")
-  | Opcode.AShr -> cfg_node_of_binop (type_bvop "bvashr")
-  | Opcode.And -> cfg_node_of_binop (type_bvop "bvand")
-  | Opcode.Or -> cfg_node_of_binop (type_bvop "bvor")
-  | Opcode.Xor -> cfg_node_of_binop (type_bvop "bvxor")
+  | Opcode.Invalid
+  | Opcode.Invalid2 -> failwith "\"Invalid\" instruction"
   (* Memory Operators *)
   | Opcode.Alloca ->
     let id = Vars.concretep_str (value_id instr) in
@@ -169,7 +135,7 @@ let cfg_node_of_instr specs fun_env instr =
     let e = Arg_var (Vars.freshe ()) in
     let mk_heap x =
       let allocad = mkSPred ("alloca", [x; sz]) in
-      let heaplet = mkPointer x sz e in
+      let heaplet = mkPointer x (args_of_type value_t) e in
       mkStar allocad heaplet in
     fun_env.fun_alloca_pred <- mkStar fun_env.fun_alloca_pred (mk_heap (Arg_var id));
     let post = mk_heap ret_arg in
@@ -181,9 +147,8 @@ let cfg_node_of_instr specs fun_env instr =
     let ptr_v = operand instr 0 in
     let ptr = args_of_value ptr_v in
     let value_t = type_of instr in
-    let sz = args_sizeof value_t in
     let value_e = Arg_var (Vars.freshe ()) in
-    let pointer = mkPointer ptr sz value_e in
+    let pointer = mkPointer ptr (args_of_type value_t) value_e in
     let pre = pointer in
     let post = pconjunction (mkEQ(value_e, ret_arg)) pointer in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
@@ -197,94 +162,13 @@ let cfg_node_of_instr specs fun_env instr =
     let e = Arg_var (Vars.freshe ()) in
     let v = args_of_value value in
     let value_t = type_of value in
-    let pointer_pre = mkPointer ptr (args_sizeof value_t) e in
-    let pointer_post = mkPointer ptr (args_sizeof value_t) v in
+    let pointer_pre = mkPointer ptr (args_of_type value_t) e in
+    let pointer_post = mkPointer ptr (args_of_type value_t) v in
     let pre = pointer_pre in
     let post = pointer_post in
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([], spec, []))]
-  | Opcode.GetElementPtr ->
-    let id = value_id instr in
-    (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00788 *)
-    let value = operand instr 0 in
-    (* jump indices are in operands 1 to (num_operands instr) of instr *)
-    let max_op = num_operands instr in
-    let rec jlist_from_op i =
-      if i = max_op then []
-      else operand instr i::(jlist_from_op (i+1)) in
-    let jump_indices = jlist_from_op 1 in
-    let post = ppred_of_gep ret_arg (type_of value) (args_of_value value) jump_indices  in
-    let spec = Spec.mk_spec [] post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
-  (* Cast Operators *)
-  | Opcode.BitCast
-  | Opcode.Trunc
-  | Opcode.ZExt
-  | Opcode.SExt
-  | Opcode.PtrToInt
-  | Opcode.IntToPtr ->
-    let id = value_id instr in
-    let value = operand instr 0 in
-    let v = args_of_value value in
-    let from_sz = Llvm_target.size_in_bits !lltarget (type_of value) in
-    let to_sz = Llvm_target.size_in_bits !lltarget (type_of instr) in
-    let pre = mkEmpty in
-    let opc = instr_opcode instr in
-    let res =
-      if opc = Opcode.ZExt ||
-	 ((opc = Opcode.PtrToInt || opc = Opcode.IntToPtr)
-	  && Int64.compare from_sz to_sz < 0) then
-	let zeroes = Int64.sub to_sz from_sz in
-	Arg_op(Printf.sprintf "concat.%Ld.%Ld" zeroes from_sz,
-	       [bvargs64_of_int zeroes 0;v])
-      else if opc = Opcode.BitCast ||
-	     ((opc = Opcode.PtrToInt || opc = Opcode.IntToPtr)
-	      && Int64.compare from_sz to_sz = 0) then
-	v
-      else if opc = Opcode.SExt then
-	let signs = Int64.sub to_sz from_sz in
-	Arg_op(Printf.sprintf "sign_extend.%Ld" from_sz,
-	       [numargs_of_int64 signs;v])
-      else if opc = Opcode.Trunc ||
-	     ((opc = Opcode.PtrToInt || opc = Opcode.IntToPtr)
-	      && Int64.compare from_sz to_sz > 0) then
-	Arg_op(Printf.sprintf "extract.%Ld" from_sz,
-	       [numargs_of_int64 (Int64.sub to_sz Int64.one);
-		numargs_of_int 0;v])
-      else (* all cases accounted for, unreachable *)
-	assert(false) in
-    let post = mkEQ(res, ret_arg) in
-    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
-  | Opcode.FPToUI
-  | Opcode.FPToSI
-  | Opcode.UIToFP
-  | Opcode.SIToFP
-  | Opcode.FPTrunc
-  | Opcode.FPExt -> implement_this "conversion operations"
-  (* Other Operators *)
-  | Opcode.ICmp ->
-    let id = value_id instr in
-    let op = match icmp_predicate instr with
-      | None -> assert false
-      | Some p -> match p with
-	  | Icmp.Eq -> "builtin_eq"
-	  | Icmp.Ne -> "builtin_neq"
-	  | Icmp.Ugt -> "bvugt"
-	  | Icmp.Sgt -> "bvsgt"
-	  | Icmp.Uge -> "bvuge"
-	  | Icmp.Sge -> "bvsge"
-	  | Icmp.Ult -> "bvult"
-	  | Icmp.Slt -> "bvslt"
-	  | Icmp.Ule -> "bvule"
-	  | Icmp.Sle -> "bvsle" in
-    let v1 = args_of_value (operand instr 0) in
-    let v2 = args_of_value (operand instr 1) in
-    let pre = mkEmpty in
-    let post = mkEQ (ret_arg, Arg_op(op, [v1; v2])) in
-    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
-    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
-  | Opcode.FCmp -> implement_this "fcmp instr"
+  (* misc instructions that cannot be used in constant expressions *)
   | Opcode.PHI ->
     (* We cannot treat phi nodes directly. Instead, we accumulate the
        phi nodes of the current block to execute all the assignments
@@ -328,20 +212,12 @@ let cfg_node_of_instr specs fun_env instr =
       (* a function call with meta-data in its arguments is for debug info *)
       (* and may be safely ignored *)
       [mk_node Core.Nop_stmt_core])
-  | Opcode.Select -> implement_this "select instr"
   | Opcode.UserOp1
   | Opcode.UserOp2 ->
     warn "Skipping user-defined instruction";
     [mk_node Core.Nop_stmt_core]
   | Opcode.VAArg ->
     warn "Skipping VAArg instruction";
-    [mk_node Core.Nop_stmt_core]
-  | Opcode.ExtractElement
-  | Opcode.InsertElement
-  | Opcode.ShuffleVector
-  | Opcode.ExtractValue
-  | Opcode.InsertValue ->
-    warn "Skipping vector instruction";
     [mk_node Core.Nop_stmt_core]
   | Opcode.Fence ->
     (* this nop is safe since we assume a sequential semantics *)
@@ -351,6 +227,22 @@ let cfg_node_of_instr specs fun_env instr =
   | Opcode.Resume -> implement_this "resume instr"
   | Opcode.LandingPad -> [mk_node Core.Nop_stmt_core]
   | Opcode.Unwind -> implement_this "unwind"
+  (* the remaining opcodes are shared with constant expressions *)
+  | Opcode.Add | Opcode.FAdd | Opcode.Sub | Opcode.FSub | Opcode.Mul
+  | Opcode.FMul | Opcode.UDiv | Opcode.SDiv | Opcode.FDiv | Opcode.URem
+  | Opcode.SRem | Opcode.FRem | Opcode.Shl | Opcode.LShr | Opcode.AShr
+  | Opcode.And | Opcode.Or | Opcode.Xor | Opcode.BitCast | Opcode.Trunc
+  | Opcode.ZExt | Opcode.SExt | Opcode.PtrToInt | Opcode.IntToPtr
+  | Opcode.GetElementPtr | Opcode.FPToUI | Opcode.FPToSI | Opcode.UIToFP
+  | Opcode.SIToFP | Opcode.FPTrunc | Opcode.FPExt | Opcode.ICmp
+  | Opcode.FCmp | Opcode.Select | Opcode.ExtractElement | Opcode.InsertElement
+  | Opcode.ShuffleVector | Opcode.ExtractValue | Opcode.InsertValue ->
+    let id = value_id instr in
+    let args_e = args_of_op (instr_opcode instr) instr in
+    let post = mkEQ (ret_arg, args_e) in
+    let pre = mkEmpty in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
 
 let rec update_cfg_with_new_phi_blocks bfwd bbwd lsrc = function
   | [] -> []

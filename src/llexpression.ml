@@ -36,6 +36,7 @@ let mkUndef64 sz = mkUndef (Arg_string (Int64.to_string sz))
 let mkPointer ptr ptr_t v = mkSPred ("pointer", [ptr; ptr_t; v])
 let mkArray ptr start_idx end_idx size elt_sz v =
   mkSPred ("array", [ptr; start_idx; end_idx; size; elt_sz; v])
+let mkEltptr ptr t jchain = Arg_op ("eltptr", [ptr; t; jchain])
 
 let args_sizeof t =
   let size64 = Llvm_target.store_size !lltarget t in
@@ -83,45 +84,132 @@ let args_of_int_const v = match int64_of_const v with
     bvargs_of_int64 sz i
   | None -> Arg_var (Vars.freshe ())
 
-let rec args_of_const_expr v =
-  let mk_binop bopname =
-    let x = args_of_value (operand v 0) in
-    let y = args_of_value (operand v 1) in
+(** builds binary operation from constant expression or instruction *)
+let rec args_of_op opcode opval =
+  let args_of_binop bopname =
+    let x = args_of_value (operand opval 0) in
+    let y = args_of_value (operand opval 1) in
     Arg_op(bopname, [x; y]) in
-  match constexpr_opcode v with
-  | Opcode.Add -> mk_binop "bvadd"
-  | Opcode.Sub -> mk_binop "bvsub"
-  | Opcode.Mul -> mk_binop "bvmul"
-  | Opcode.UDiv -> mk_binop "bvudiv"
-  | Opcode.SDiv -> mk_binop "bvsdiv"
-  | Opcode.URem -> mk_binop "bvurem"
-  | Opcode.SRem -> mk_binop "bvsrem"
+  let typed_name_of_bvop op =
+    let t = type_of opval in
+    let sz = Llvm_target.size_in_bits !lltarget t in
+    Printf.sprintf "%s.%Ld" op sz in
+  match opcode with
+  (* Standard Binary Operators *)
+  | Opcode.Add -> args_of_binop (typed_name_of_bvop "bvadd")
+  | Opcode.Sub -> args_of_binop (typed_name_of_bvop "bvsub")
+  | Opcode.Mul -> args_of_binop (typed_name_of_bvop "bvmul")
+  | Opcode.UDiv -> args_of_binop (typed_name_of_bvop "bvudiv")
+  | Opcode.SDiv -> args_of_binop (typed_name_of_bvop "bvsdiv")
+  | Opcode.URem -> args_of_binop (typed_name_of_bvop "bvurem")
+  | Opcode.SRem -> args_of_binop (typed_name_of_bvop "bvsrem")
+  (* Logical Operators *)
+  | Opcode.Shl -> args_of_binop (typed_name_of_bvop "bvshl")
+  | Opcode.LShr -> args_of_binop (typed_name_of_bvop "bvlshr")
+  | Opcode.AShr -> args_of_binop (typed_name_of_bvop "bvashr")
+  | Opcode.And -> args_of_binop (typed_name_of_bvop "bvand")
+  | Opcode.Or -> args_of_binop (typed_name_of_bvop "bvor")
+  | Opcode.Xor -> args_of_binop (typed_name_of_bvop "bvxor")
+  (* Conversions Operators *)
+  | Opcode.BitCast
+  | Opcode.Trunc
+  | Opcode.ZExt
+  | Opcode.SExt
+  | Opcode.PtrToInt
+  | Opcode.IntToPtr ->
+    let value = operand opval 0 in
+    let v = args_of_value value in
+    let from_sz = Llvm_target.size_in_bits !lltarget (type_of value) in
+    let to_sz = Llvm_target.size_in_bits !lltarget (type_of opval) in
+    if opcode= Opcode.ZExt ||
+      ((opcode= Opcode.PtrToInt || opcode= Opcode.IntToPtr)
+       && Int64.compare from_sz to_sz < 0) then
+      let zeroes = Int64.sub to_sz from_sz in
+      Arg_op(Printf.sprintf "concat.%Ld.%Ld" zeroes from_sz,
+	     [bvargs64_of_int zeroes 0;v])
+    else if opcode= Opcode.BitCast ||
+	   ((opcode= Opcode.PtrToInt || opcode= Opcode.IntToPtr)
+	    && Int64.compare from_sz to_sz = 0) then
+      v
+    else if opcode= Opcode.SExt then
+      let signs = Int64.sub to_sz from_sz in
+      Arg_op(Printf.sprintf "sign_extend.%Ld" from_sz,
+	     [numargs_of_int64 signs;v])
+    else if opcode= Opcode.Trunc ||
+	   ((opcode= Opcode.PtrToInt || opcode= Opcode.IntToPtr)
+	    && Int64.compare from_sz to_sz > 0) then
+      Arg_op(Printf.sprintf "extract.%Ld" from_sz,
+	     [numargs_of_int64 (Int64.sub to_sz Int64.one);
+	      numargs_of_int 0;v])
+    else (* all cases accounted for, unreachable *) assert(false)
+  (* Other Operators *)
+  | Opcode.GetElementPtr ->
+    let value = operand opval 0 in
+    (* jump indices are in operands 1 to (num_operands opval) of opval *)
+    let max_op = num_operands opval in
+    let rec jlist_from_op i =
+      if i = max_op then []
+      else operand opval i::(jlist_from_op (i+1)) in
+    let rec jump_chain_of_lidx = function
+      | [] -> Arg_op ("jump_end", [])
+      | idx::tl ->
+	(* convert constant integers to 64 bits *)
+	let idx = match int64_of_const idx with
+	  | None -> idx
+	  | Some i -> const_of_int64 (integer_type !llcontext 64) i false in
+	let args_idx = args_of_value idx in
+	Arg_op ("jump", [args_idx; jump_chain_of_lidx tl]) in
+    let jump_chain = jump_chain_of_lidx (jlist_from_op 1) in
+    mkEltptr (args_of_value value) (args_of_type (type_of value)) jump_chain
+  | Opcode.ICmp ->
+    let op = match icmp_predicate opval with
+      | None -> assert false
+      | Some p -> match p with
+	  | Icmp.Eq -> "builtin_eq"
+	  | Icmp.Ne -> "builtin_neq"
+	  | Icmp.Ugt -> "bvugt"
+	  | Icmp.Sgt -> "bvsgt"
+	  | Icmp.Uge -> "bvuge"
+	  | Icmp.Sge -> "bvsge"
+	  | Icmp.Ult -> "bvult"
+	  | Icmp.Slt -> "bvslt"
+	  | Icmp.Ule -> "bvule"
+	  | Icmp.Sle -> "bvsle" in
+    let v1 = args_of_value (operand opval 0) in
+    let v2 = args_of_value (operand opval 1) in
+    Arg_op(op, [v1; v2])
   | Opcode.FAdd
   | Opcode.FSub
   | Opcode.FMul
   | Opcode.FDiv
-  | Opcode.FRem ->
-    (* TODO: This is the only safe thing until floats are supported *)
-    Arg_var (Vars.freshe ())    
-  | Opcode.Shl -> mk_binop "bvshl"
-  | Opcode.LShr -> mk_binop "bvlshr"
-  | Opcode.AShr -> mk_binop "bvashr"
-  | Opcode.And -> mk_binop "bvand"
-  | Opcode.Or -> mk_binop "bvor"
-  | Opcode.Xor -> mk_binop "bvxor"
-  | Opcode.Unwind | Opcode.LandingPad | Opcode.Resume | Opcode.AtomicRMW
-  | Opcode.AtomicCmpXchg | Opcode.Fence | Opcode.InsertValue
-  | Opcode.ExtractValue | Opcode.ShuffleVector | Opcode.InsertElement
-  | Opcode.ExtractElement | Opcode.VAArg | Opcode.UserOp2 | Opcode.UserOp1
-  | Opcode.Select | Opcode.Call | Opcode.PHI | Opcode.FCmp | Opcode.ICmp
-  | Opcode.BitCast | Opcode.IntToPtr | Opcode.PtrToInt | Opcode.FPExt
-  | Opcode.FPTrunc | Opcode.SIToFP | Opcode.UIToFP | Opcode.FPToSI
-  | Opcode.FPToUI | Opcode.SExt | Opcode.ZExt | Opcode.Trunc
-  | Opcode.GetElementPtr | Opcode.Store | Opcode.Load | Opcode.Alloca
-  | Opcode.Unreachable | Opcode.Invalid2 | Opcode.Invoke | Opcode.IndirectBr
-  | Opcode.Switch | Opcode.Br | Opcode.Ret | Opcode.Invalid ->
+  | Opcode.FRem
+  | Opcode.FPToUI
+  | Opcode.FPToSI
+  | Opcode.UIToFP
+  | Opcode.SIToFP
+  | Opcode.FPTrunc
+  | Opcode.FPExt
+  | Opcode.FCmp
+  | Opcode.Select
+  | Opcode.ExtractElement
+  | Opcode.InsertElement
+  | Opcode.ShuffleVector
+  | Opcode.ExtractValue
+  | Opcode.InsertValue ->
     (* TODO: implement *)
     Arg_var (Vars.freshe ())
+  | Opcode.Unwind | Opcode.LandingPad | Opcode.Resume | Opcode.AtomicRMW
+  | Opcode.AtomicCmpXchg | Opcode.Fence | Opcode.VAArg | Opcode.UserOp2
+  | Opcode.UserOp1 | Opcode.Call | Opcode.PHI | Opcode.Store | Opcode.Load
+  | Opcode.Alloca | Opcode.Unreachable | Opcode.Invalid2 | Opcode.Invoke
+  | Opcode.IndirectBr | Opcode.Switch | Opcode.Br | Opcode.Ret
+  | Opcode.Invalid ->
+    (* these opcodes are not allowed in constant expressions according
+       to LLVM language reference *)
+    dump_value opval;
+    failwith "Unexpected operation in expression."
+
+and args_of_const_expr v = args_of_op (constexpr_opcode v) v
 
 and args_of_value v = match classify_value v with
   | NullValue -> implement_this "NullValue"
@@ -151,17 +239,3 @@ and args_of_composite_value aggr v =
     if n < size then args_of_value (operand v n)::(args_of_ops (n+1))
     else [] in
   Arg_op(aggr, args_of_ops 0)
-
-(** compute the pure predicate corresponding to a getelementpointer instruction *)
-let ppred_of_gep x t ptr lidx =
-  let rec jump_chain_of_lidx = function
-    | [] -> Arg_op ("jump_end", [])
-    | idx::tl ->
-      (* convert constant integers to 64 bits *)
-      let idx = match int64_of_const idx with
-	| None -> idx
-	| Some i -> const_of_int64 (integer_type !llcontext 64) i false in
-      let args_idx = args_of_value idx in
-      Arg_op ("jump", [args_idx; jump_chain_of_lidx tl]) in
-  let jump_chain = jump_chain_of_lidx lidx in
-  mkPPred ("eltptr", [x; args_of_type t; ptr; jump_chain])

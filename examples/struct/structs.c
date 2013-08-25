@@ -5,9 +5,23 @@ struct ij {
   int j;
 };
 
-struct oneint {
-  int i;
-};
+
+int prout(void) {
+  struct ij *s;
+
+  s = malloc(sizeof(struct ij));
+  if(!s) return 0;
+  s->i = 3;
+  s->i = 4;
+  s->j = 5;
+  *(int *)((void *)s + sizeof(int)) = 6;
+  free(s);
+  return (int) s + 12;
+}
+
+int caca(struct ij *s) {
+  return s->i;
+}
 
 void setint(int *i) {
   *i = 0;
@@ -19,26 +33,21 @@ void yay_int(struct ij s) {
   s.j = 0;
 }
 
-void setifield(struct oneint *s) {
-  s->i = 0;
+void al(void) {
+  struct ij *p;
+
+  p = malloc(sizeof(struct ij));
+  if (p) free(p);
 }
 
-void yay_yay_int(struct ij *s) {
-  setifield((struct oneint *)s);
-  s->j = 0;
+int unreach(void) {
+  int *p;
+  
+  while(1);
+
+  return 0;
 }
 
-void yay_yay_int2(struct ij *s) {
-  setifield((struct oneint *)s);
-}
-
-int main() {
-  int x = 1664,*y;
-  struct ij s;
-
-  s.i = x;
-  yay_yay_int(&s);
-  s.j = x;
-
-  return s.j;
+int array(int a[], int i) {
+  return a[i];
 }

@@ -25,7 +25,7 @@ int chew_slowly(int a) {
   }
   /* p->next = p; */ /* this is equivalent to the line below */
   *((struct ole **)((void *)p+sizeof(int *))) = p;
-  *(p->next->data) = a;
+  *(p->next->next->next->data) = a;
 
   b = *((*p).data);
   

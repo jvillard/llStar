@@ -2,27 +2,31 @@
  * Generally useful rules about getelementptr 
  *************************************/
 
-equiv pointer_getelementptr0:
-  !eltptr(?x,pointer_type(?gept),?p,jump(NULL(),?j))
-  <=> !eltptr(?x,?gept,?p,?j)
+rewrite pointer_getelementptr0:
+  eltptr(?p,pointer_type(?t),jump(NULL(),?j))
+  = eltptr(?p,?t,?j)
 
-equiv pointer_getelementptr_void:
-  !eltptr(?x,pointer_type(integer_type("8")),?p,jump(?n,?j))
-  <=> !eltptr(?x,pointer_type(integer_type("8")),bvadd.64(?p,?n),?j)
+rewrite pointer_getelementptr_void:
+  eltptr(?p,pointer_type(integer_type("8")),jump(?n,?j))
+  = eltptr(bvadd.64(?p,?n),pointer_type(integer_type("8")),?j)
 
-equiv jump_end:
-  !eltptr(?x,?t,?y,jump_end()) <=> ?x = ?y
+rewrite jump_end:
+  eltptr(?y,?t,jump_end()) = ?y
+
+rewrite pointer_getelementptr_array:
+  eltptr(?x,array_type(?s,?t),jump(?n,?j))
+  = eltptr(bvadd.64(?x,bvmul.64(sizeof(?t),?n)),?j)
 
 /*************************************
  * Simple subtraction rules 
  *************************************/
 
-rule ptr_same_root_same_size:
- | pointer(?x,?sz,?v) |- pointer(?x,?sz,?w)
+rule ptr_same_root_same_type:
+ | pointer(?x,?t,?v) |- pointer(?x,?t,?w)
 without
  ?w != ?v
 if
- pointer(?x,?sz,?v) | |- ?w = ?v
+ pointer(?x,?t,?v) | |- ?w = ?v
 
 rule remove_malloced:
  | malloced(?mb,?n) |- malloced(?mb,?m)

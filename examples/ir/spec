@@ -1,5 +1,20 @@
+test_ret:
+  {}{$ret_v1 = bv_const("32", "42")}
+
+test_unreachable: {False}{False}
+
+test_load:
+  {pointer(x,integer_type("32"),_v)}
+  {pointer(x,integer_type("32"),_v) * $ret_v1 = _v}
+
+test_store:
+  {pointer(x,integer_type("32"),_v)}
+  {pointer(x,integer_type("32"),y)}
+
+test_alloca: {}{$ret_v1 = bv_const("32", "1")}
+
 test_switch:
-  {}{bv_const("32", "1") = $ret_v1}
+  {}{bv_const("1", "1") = $ret_v1}
 
 trunc_and_zext:
   {}{$ret_v1 = @parameter0:}
