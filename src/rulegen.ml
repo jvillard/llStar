@@ -34,57 +34,63 @@ let gen_seq_rules_of_equiv name (equiv_left, equiv_right) =
 let bits_of_bytes x =
   Int64.mul (Int64.of_int 8) x
 
-(** the physical offset inside the struct *)
+let type_of_field struct_t i = Array.get (struct_element_types struct_t) i
+
+(** the physical offset inside the struct, in bytes *)
 let offset64_of_field struct_t i =
   Llvm_target.offset_of_element !lltarget struct_t i
-
-let bitoffset64_of_field struct_t i =
-  bits_of_bytes (offset64_of_field struct_t i)
 
 let args_offset_of_field struct_t i =
   bvargs_of_int64 64 (offset64_of_field struct_t i)
 
-let sizeof64_field struct_t i =
-  Llvm_target.store_size !lltarget (Array.get (struct_element_types struct_t) i)
+let store_size64_of_field struct_t i =
+  Llvm_target.store_size !lltarget (type_of_field struct_t i)
 
-let bitsizeof64_field struct_t i =
-  bits_of_bytes (sizeof64_field struct_t i)
+let bitsize64_of_field struct_t i =
+  Llvm_target.size_in_bits !lltarget (type_of_field struct_t i)
 
-let args_sizeof_field struct_t i =
-  args_sizeof (Array.get (struct_element_types struct_t) i)
+let args_bitsize_of_field struct_t i =
+  bvargs_of_int64 64 (bitsize64_of_field struct_t i)
+
+(** what bit number starts element [i] of [struct_t] *)
+let bitoffset64_of_field struct_t i =
+  bits_of_bytes (offset64_of_field struct_t i)
+
+let args_bitoffset_of_field struct_t i =
+  bvargs_of_int64 64 (bitoffset64_of_field struct_t i)
+
+(** what bit number ends element [i] of [struct_t] *)
+let bitoffset64_of_field_end struct_t i =
+  Int64.sub (Int64.add (bitoffset64_of_field struct_t i) (bitsize64_of_field struct_t i)) Int64.one
+
+let args_bitoffset_of_field_end struct_t i =
+  bvargs_of_int64 64 (bitoffset64_of_field_end struct_t i)
 
 let args_type_field struct_t i =
-  args_of_type (Array.get (struct_element_types struct_t) i)
+  args_of_type (type_of_field struct_t i)
 
-let offset64_of_field_end struct_t i =
-  let offset = offset64_of_field struct_t i in
-  let field_size = sizeof64_field struct_t i in
-  Int64.add offset field_size
-
-let bitoffset64_of_field_end struct_t i =
-  bits_of_bytes (offset64_of_field_end struct_t i)
-
-let padsize64_of_field struct_t i =
+let bitpadsize64_of_field struct_t i =
   let offset = offset64_of_field struct_t i in
   let next_offset =
     if i = Array.length (struct_element_types struct_t) - 1 then
       Llvm_target.store_size !lltarget struct_t
     else offset64_of_field struct_t (i+1) in
-  let elt_size = sizeof64_field struct_t i in
-  Int64.sub next_offset (Int64.add offset elt_size)
+  let storage_size = bits_of_bytes (Int64.sub next_offset offset) in
+  let elt_size = bitsize64_of_field struct_t i in
+  Int64.sub storage_size elt_size
 
-let bitpadsize64_of_field struct_t i =
-  bits_of_bytes (padsize64_of_field struct_t i)
+let args_bitpadsize_of_field struct_t i =
+  bvargs_of_int64 64 (bitpadsize64_of_field struct_t i)
 
 let mk_padding_of_field struct_t i root =
-  let pad_size = padsize64_of_field struct_t i in
-  if pad_size = Int64.zero then None
+  let pad64_size = bitpadsize64_of_field struct_t i in
+  if pad64_size = Int64.zero then None
   else
-    let elt_offset = offset64_of_field struct_t i in
-    let elt_size = sizeof64_field struct_t i in
-    let pad_offset = bvargs_of_int64 64 (Int64.add elt_offset elt_size) in
-    let pad_addr = Arg_op("bvadd.64", [root; pad_offset]) in
-    Some (mkPointer pad_addr (bvargs_of_int64 64 pad_size) (mkUndef64 pad_size))
+    let elt_offset = args_offset_of_field struct_t i in
+    let elt_addr = Arg_op("bvadd.64", [root; elt_offset]) in
+    let elt_size = args_bitsize_of_field struct_t i in
+    let args_pad_size = args_bitpadsize_of_field struct_t i in
+    Some (mkPadding elt_addr elt_size args_pad_size)
 
 let mk_field_pointer struct_t i root value =
   if i = 0 then
@@ -109,7 +115,7 @@ let mk_unfolded_struct struct_t root fields_values =
 let mk_struct_val_of_fields struct_t fields_values =
   let mk_field i subelt_t =
     let v = Array.get fields_values i in
-    let fldsz = bitsizeof64_field struct_t i in
+    let fldsz = bitsize64_of_field struct_t i in
     let padsz = bitpadsize64_of_field struct_t i in
     if padsz = Int64.zero then (v, fldsz)
     else 
@@ -178,11 +184,8 @@ let fold_unfold_logic_of_type t =
     mk_struct_val_of_fields t field_values in
 
   let bits_of_field base_val i =
-    let field_begin =
-      numargs_of_int64 (bitoffset64_of_field t i) in
-    let field_end =
-      numargs_of_int64
-	(Int64.sub (bitoffset64_of_field_end t i) Int64.one)in
+    let field_begin = args_bitoffset_of_field t i in
+    let field_end = args_bitoffset_of_field_end t i in
     Arg_op (Printf.sprintf "extract.%Ld" (Llvm_target.size_in_bits !lltarget t),
 	    [field_end; field_begin; base_val]) in
 
