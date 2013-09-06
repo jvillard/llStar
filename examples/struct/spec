@@ -1,5 +1,18 @@
 import "../../specs/stdlib.spec";
 
+access_fields_of_struct:
+  {pointer(s,named_type("astruct"),_v)}
+  {pointer(s,named_type("astruct"),_v)}
+
+access_fields_of_structs:
+  {pointer(s1,named_type("astruct"),_v1)*pointer(s2,named_type("astruct"),_v2)*pointer(s3,named_type("astruct"),_v3)}
+  {pointer(s1,named_type("astruct"),_v1)*pointer(s2,named_type("astruct"),_v2)*pointer(s3,named_type("astruct"),_v3)}
+
+unfold_set_fold:
+  {pointer(s,named_type("astruct"),_v)}
+  {pointer(s,named_type("astruct"),astruct_val(bv_const("12", "32"), bv_const("32", "52"), NULL()))}
+
+
 norbert:
   {}
   {pointer($ret_v1,named_type("node"),concat.64.64(@parameter1:,concat.32.32(_pad,@parameter0:))) * malloced($ret_v1,sizeof(named_type("node")))

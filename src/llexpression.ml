@@ -34,6 +34,8 @@ let bvargs64_of_int sz i = bvargs64_of_int64 sz (Int64.of_int i)
 let mkUndef sz = Arg_var (Vars.freshe ())
 let mkUndef64 sz = mkUndef (Arg_string (Int64.to_string sz))
 let mkPointer ptr ptr_t v = mkSPred ("pointer", [ptr; ptr_t; v])
+(** padding with [bit_size] bits at [bit_start] bits from base pointer [root] *)
+let mkPadding root bit_start bit_size = mkSPred ("pad", [root; bit_start; bit_size])
 let mkArray ptr start_idx end_idx size elt_sz v =
   mkSPred ("array", [ptr; start_idx; end_idx; size; elt_sz; v])
 let mkEltptr ptr t jchain = Arg_op ("eltptr", [ptr; t; jchain])

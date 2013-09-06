@@ -117,18 +117,18 @@ let mk_struct_val_of_fields struct_t fields_values =
     let v = Array.get fields_values i in
     let fldsz = bitsize64_of_field struct_t i in
     let padsz = bitpadsize64_of_field struct_t i in
-    if padsz = Int64.zero then (v, fldsz)
-    else 
-      (Arg_op (Printf.sprintf "concat.%Ld.%Ld" padsz fldsz, [mkUndef64 padsz; v]),
-       Int64.add padsz fldsz) in
+    if padsz = Int64.zero then (v, fldsz, None)
+    else (v, fldsz, Some(bvargs64_of_int padsz 0, padsz)) in
   let fvalpad = Array.mapi mk_field (struct_element_types struct_t) in
   let rec concat_bv_list = function
     | [] -> (bvargs_of_int 0 0, Int64.zero)
-    | [x] -> x
-    | (bv, sz)::tl -> (* non-empty tail *)
+    | [(bv, sz, None)] -> (bv, sz)
+    | (bv, sz, None)::tl -> (* non-empty tail *)
       let (bvtl, sztl) = concat_bv_list tl in
-      (Arg_op (Printf.sprintf "concat.%Ld.%Ld" sztl sz, [bvtl; bv]),
-       Int64.add sz sztl) in
+      (Arg_op (Printf.sprintf "concat.%Ld.%Ld" sz sztl, [bv; bvtl]),
+       Int64.add sz sztl)
+    | (bv, sz, Some(bv_pad, sz_pad))::tl -> (* padding *)
+      concat_bv_list ((bv, sz, None)::(bv_pad, sz_pad, None)::tl) in
   fst (concat_bv_list (Array.to_list fvalpad))
 
 
@@ -169,6 +169,24 @@ let eltptr_logic_of_type t =
   let eltptr_rules = Array.to_list
     (Array.mapi subelt_eltptr_rules (struct_element_types t)) in
   let logic = { empty_logic with rw_rules = eltptr_rules; } in
+  (logic, logic)
+
+(** assumes that [t] is a struct type *)
+let value_logic_of_type t =
+  (* the name of the predicate indicating a value of type [t] *)
+  let val_pred_name = (string_of_struct t) ^ "_val" in
+  let field_values =
+    Array.mapi (fun i _ -> Arg_var (Vars.AnyVar (0, "v"^(string_of_int i))))
+      (struct_element_types t) in
+  let val_expanded = mk_struct_val_of_fields t field_values in
+  let value_rule =
+    { function_name = val_pred_name;
+      arguments = Array.to_list field_values;
+      result=val_expanded;
+      guard={without_form=[];rewrite_where=[];if_form=[]};
+      rewrite_name=val_pred_name;
+      saturate=false} in
+  let logic = { empty_logic with rw_rules = [value_rule]; } in
   (logic, logic)
 
 
@@ -339,6 +357,7 @@ let logic_of_module m =
     (sizeof_logic_of_type,int_struct_filter)
     ::(eltptr_logic_of_type,struct_filter)
     ::(fold_unfold_logic_of_type,struct_filter)
+    ::(value_logic_of_type,struct_filter)
     ::if !Lstar_config.auto_gen_list_logic then
 	(sllnode_logic_of_type,struct_filter)::[]
       else [] in
