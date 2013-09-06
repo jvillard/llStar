@@ -54,17 +54,19 @@ let args_bitsize_of_field struct_t i =
 
 (** what bit number starts element [i] of [struct_t] *)
 let bitoffset64_of_field struct_t i =
-  bits_of_bytes (offset64_of_field struct_t i)
+  let bitsize_of_struct = Llvm_target.size_in_bits !lltarget struct_t in
+  let bitoffset_of_field = bits_of_bytes (offset64_of_field struct_t i) in
+  Int64.sub (Int64.sub bitsize_of_struct bitoffset_of_field) Int64.one
 
-let args_bitoffset_of_field struct_t i =
-  bvargs_of_int64 64 (bitoffset64_of_field struct_t i)
+let string_args_bitoffset_of_field struct_t i =
+  Arg_string (Int64.to_string (bitoffset64_of_field struct_t i))
 
 (** what bit number ends element [i] of [struct_t] *)
 let bitoffset64_of_field_end struct_t i =
-  Int64.sub (Int64.add (bitoffset64_of_field struct_t i) (bitsize64_of_field struct_t i)) Int64.one
+  Int64.add (Int64.sub (bitoffset64_of_field struct_t i) (bitsize64_of_field struct_t i)) Int64.one
 
-let args_bitoffset_of_field_end struct_t i =
-  bvargs_of_int64 64 (bitoffset64_of_field_end struct_t i)
+let string_args_bitoffset_of_field_end struct_t i =
+  Arg_string (Int64.to_string (bitoffset64_of_field_end struct_t i))
 
 let args_type_field struct_t i =
   args_of_type (type_of_field struct_t i)
@@ -131,6 +133,13 @@ let mk_struct_val_of_fields struct_t fields_values =
       concat_bv_list ((bv, sz, None)::(bv_pad, sz_pad, None)::tl) in
   fst (concat_bv_list (Array.to_list fvalpad))
 
+(** extracts the value of field [i] from value [base_val] of type [struct_t]  *)
+let mk_field_val_of_struct_val struct_t base_val i =
+  let field_begin = string_args_bitoffset_of_field struct_t i in
+  let field_end = string_args_bitoffset_of_field_end struct_t i in
+  Arg_op (Printf.sprintf "extract.%Ld" (Llvm_target.size_in_bits !lltarget struct_t),
+	  [field_begin; field_end; base_val])
+
 
 (*** Scalar rules *)
 
@@ -172,7 +181,7 @@ let eltptr_logic_of_type t =
   (logic, logic)
 
 (** assumes that [t] is a struct type *)
-let value_logic_of_type t =
+let struct_value_logic_of_type t =
   (* the name of the predicate indicating a value of type [t] *)
   let val_pred_name = (string_of_struct t) ^ "_val" in
   let field_values =
@@ -189,6 +198,22 @@ let value_logic_of_type t =
   let logic = { empty_logic with rw_rules = [value_rule]; } in
   (logic, logic)
 
+(** assumes that [t] is a struct type *)
+let struct_field_value_logic_of_type t =
+  (* the name of the predicate indicating a value of type [t] *)
+  let val_field_pred_name i = (string_of_struct t) ^ "_field" ^ (string_of_int i)  in
+  let root = Arg_var (Vars.AnyVar (0, "x")) in
+  let value_rule i =
+    { function_name = val_field_pred_name i;
+      arguments = [root];
+      result = mk_field_val_of_struct_val t root i;
+      guard={without_form=[];rewrite_where=[];if_form=[]};
+      rewrite_name=val_field_pred_name i;
+      saturate=false} in
+  let logic = { empty_logic with
+    rw_rules = Array.to_list (Array.mapi (fun i _ -> value_rule i) (struct_element_types t)); } in
+  (logic, logic)
+
 
 (*** struct rules *)
 
@@ -201,14 +226,8 @@ let fold_unfold_logic_of_type t =
   let collate_field_values =
     mk_struct_val_of_fields t field_values in
 
-  let bits_of_field base_val i =
-    let field_begin = args_bitoffset_of_field t i in
-    let field_end = args_bitoffset_of_field_end t i in
-    Arg_op (Printf.sprintf "extract.%Ld" (Llvm_target.size_in_bits !lltarget t),
-	    [field_end; field_begin; base_val]) in
-
   let field_ranged_values base_val =
-    Array.mapi (fun i _ -> bits_of_field base_val i) (struct_element_types t) in
+    Array.mapi (fun i _ -> mk_field_val_of_struct_val t base_val i) (struct_element_types t) in
 
   let x_var = Arg_var (Vars.AnyVar (0, "x")) in
   let v_var = Arg_var (Vars.AnyVar (0, "v")) in
@@ -357,7 +376,8 @@ let logic_of_module m =
     (sizeof_logic_of_type,int_struct_filter)
     ::(eltptr_logic_of_type,struct_filter)
     ::(fold_unfold_logic_of_type,struct_filter)
-    ::(value_logic_of_type,struct_filter)
+    ::(struct_value_logic_of_type,struct_filter)
+    ::(struct_field_value_logic_of_type,struct_filter)
     ::if !Lstar_config.auto_gen_list_logic then
 	(sllnode_logic_of_type,struct_filter)::[]
       else [] in

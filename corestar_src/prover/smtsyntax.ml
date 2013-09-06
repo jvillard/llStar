@@ -264,7 +264,7 @@ let add_native_bitvector_ops () =
 	      (string_of_int (int_of_string i - int_of_string j + 1))),
 	    args)
 	 with | Failure _ -> f name args)
-      | _ -> f name args
+      | _ -> Format.fprintf Debug.logf "WARNING: You might have mispelled an extract bitvector operation@."; f name args
     else f name args in
   smtname_and_type_of_op := translate_extract !smtname_and_type_of_op;
   let translate_sign_extend f name args =

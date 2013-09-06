@@ -38,6 +38,4 @@ define void @unfold_set_fold(%astruct* %s) {
 
 ; TODO: pointer arithmetic
 
-; TODO: field value extraction:
-; s |-> _v * astruct_field(_v, "0") = x * astruct_field(_v, "1") = y * astruct_field(_v, "2") = z
-; |- _v = astruct_val(x, y, z)
+define void @field_value_extraction() {ret void}
