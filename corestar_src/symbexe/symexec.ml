@@ -344,6 +344,8 @@ exception Contained
 
 
 let check_postcondition (heaps : formset_entry list) (sheap : formset_entry) =
+  if log log_prove then
+    fprintf Debug.logf "Checking post-condition now@.";
   let sheap_noid = fst sheap in
   let node = snd sheap in
   let check_post check_memleaks =

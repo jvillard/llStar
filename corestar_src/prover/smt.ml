@@ -47,7 +47,7 @@ let send_custom_commands =
       let cc = open_in !Config.smt_custom_commands in
       try while true do begin
 	let cmd = input_line cc in
-	if log log_smt then printf "@[%s@." cmd;
+	if log log_smt then Format.fprintf logf "@[%s@." cmd;
 	if Str.string_match decl_re cmd 0 then
 	  predeclared := RegexpSet.add (Str.regexp_string (Str.matched_group 1 cmd)) !predeclared;
 	output_string !smtin cmd;
@@ -57,7 +57,7 @@ let send_custom_commands =
     )
 
 let smt_declare_datatype dtid decl =
-  if log log_smt then printf "@[Sending out %s declaration: %s@." dtid decl;
+  if log log_smt then Format.fprintf logf "@[Sending out %s declaration: %s@." dtid decl;
   output_string !smtin decl; (* TODO: handle errors *)
   predeclared := RegexpSet.add (Str.regexp_string dtid) !predeclared
 
@@ -70,7 +70,7 @@ let smt_init () : unit =
   else
     try
       begin
-        if log log_smt then printf "@[Initialising SMT@.";
+        if log log_smt then Format.fprintf logf "@[Initialising SMT@.";
         let args = System.getenv "JSTAR_SMT_ARGUMENTS" in
         let command = Filename.quote !smtpath ^ " " ^ args in
         if log log_phase then
@@ -79,7 +79,7 @@ let smt_init () : unit =
         smtout := o;  smtin := i;  smterr := e;
         smtout_lex := Lexing.from_channel !smtout;
         Config.smt_run := true;
-        if log log_smt then printf "@[SMT running.@]";
+        if log log_smt then Format.fprintf logf "@[SMT running.@]";
         output_string i "(set-option :print-success false)\n";
         send_custom_commands ();
 	add_native_false ();
@@ -91,21 +91,21 @@ let smt_init () : unit =
     with
     | Unix_error(err,f,a) ->
       match err with
-      | ENOENT -> printf "@[ERROR: Bad path for SMT solver: %s@." a;
+      | ENOENT -> Format.fprintf logf "@[ERROR: Bad path for SMT solver: %s@." a;
                   Config.smt_run := false
       | _ -> raise (Unix_error(err,f,a))
 
 
 let smt_fatal_recover () : unit  =
-  printf "@[<2>SMT ERROR:@ ";
-  printf "The SMT solver <%s> stopped unexpectedly.@." !smtpath;
+  Format.fprintf logf "@[<2>SMT ERROR:@ ";
+  Format.fprintf logf "The SMT solver <%s> stopped unexpectedly.@." !smtpath;
   if log log_smt then
     begin
-      printf "@[Error report from the solver:@.";
-      try while true do printf "@[%s@." (input_line !smterr) done
+      Format.fprintf logf "@[Error report from the solver:@.";
+      try while true do Format.fprintf logf "@[%s@." (input_line !smterr) done
       with End_of_file -> ()
     end;
-  printf "@[Turning off SMT for this example.@.";
+  Format.fprintf logf "@[Turning off SMT for this example.@.";
   ignore (Unix.close_process_full (!smtout, !smtin, !smterr));
   print_flush();
   Config.smt_run := false
@@ -275,7 +275,7 @@ let smt_command
     (cmd : string)
     : unit =
   try
-    if log log_smt then printf "@[%s@." cmd;
+    if log log_smt then Format.fprintf logf "@[%s@." cmd;
     print_flush();
     output_string !smtin cmd;
     output_string !smtin "\n";
@@ -297,7 +297,7 @@ let smt_assert (ass : string) : unit =
 let smt_check_sat () : bool =
     try
       let x = Hashtbl.find smt_memo !smt_onstack in
-      if log log_smt then printf "@[[Found memoised SMT call!]@.";
+      if log log_smt then Format.fprintf logf "@[[Found memoised SMT call!]@.";
       x
     with Not_found ->
       try
@@ -305,10 +305,10 @@ let smt_check_sat () : bool =
 	let x = match smt_listen () with
           | Sat -> true
           | Unsat -> false
-          | Unknown -> if log log_smt then printf
+          | Unknown -> if log log_smt then Format.fprintf logf
               "@[[Warning: smt returned 'unknown' rather than 'sat']@."; true
           | _ -> failwith "TODO" in
-	if log log_smt then printf "@[  %b@." x;
+	if log log_smt then Format.fprintf logf "@[  %b@." x;
 	Hashtbl.add smt_memo !smt_onstack x;
 	x
       with End_of_file -> raise SMT_fatal_error
@@ -407,14 +407,14 @@ let finish_him
     smt_pop(); r
   with
   | Type_mismatch (ta, tb) ->
-    printf "@[SMT ERROR: type mismatch: %a # %a@."
+    Format.fprintf logf "@[SMT ERROR: type mismatch: %a # %a@."
       pp_smt_type ta pp_smt_type tb;
     if log log_smt then dump_typing_context ();
     print_flush();
     false
   | SMT_error r ->
     smt_reset();
-    printf "@[SMT ERROR: %s@." r;
+    Format.fprintf logf "@[SMT ERROR: %s@." r;
     if log log_smt then dump_typing_context ();
     print_flush();
     false
@@ -432,7 +432,7 @@ let true_sequent_smt (seq : sequent) : bool =
   else
   (Clogic.plain seq.assumption  &&  Clogic.plain seq.obligation
     &&
-   ((if log log_smt then printf "@[Calling SMT to prove@\n %a@." Clogic.pp_sequent seq);
+   ((if log log_smt then Format.fprintf logf "@[Calling SMT to prove@\n %a@." Clogic.pp_sequent seq);
     finish_him seq.ts seq.assumption seq.obligation)))
 
 
@@ -443,7 +443,7 @@ let frame_sequent_smt (seq : sequent) : bool =
   else
   (Clogic.plain seq.obligation
     &&
-   ((if log log_smt then printf "@[Calling SMT to get frame from@\n %a@." Clogic.pp_sequent seq);
+   ((if log log_smt then Format.fprintf logf "@[Calling SMT to get frame from@\n %a@." Clogic.pp_sequent seq);
     finish_him seq.ts seq.assumption seq.obligation)))
 
 
@@ -456,8 +456,8 @@ let ask_the_audience
   try
     if log log_smt then
       begin
-        printf "@[Calling SMT to update congruence closure@.";
-        printf "@[Current formula:@\n %a@." Clogic.pp_ts_formula (Clogic.mk_ts_form ts form)
+        Format.fprintf logf "@[Calling SMT to update congruence closure@.";
+        Format.fprintf logf "@[Current formula:@\n %a@." Clogic.pp_ts_formula (Clogic.mk_ts_form ts form)
       end;
     reset_typing_context ();
     (* Construct equalities and ineqalities from ts *)
@@ -476,7 +476,7 @@ let ask_the_audience
     send_all_types ();
     smt_assert assm_query;
     (* check for a contradiction *)
-    if log log_smt then printf "@[[Checking for contradiction in assumption]@.";
+    if log log_smt then Format.fprintf logf "@[[Checking for contradiction in assumption]@.";
     if smt_check_unsat() then (smt_reset(); raise Assm_Contradiction);
     (* check whether there are any new equalities to find; otherwise raise Backtrack.No_match *)
     let reps = map (fun (t,a) -> (t, sexp_of_args a)) (get_args_rep ts) in
@@ -495,7 +495,7 @@ let ask_the_audience
     fold_left make_list_equal ts req_equiv
   with
   | Type_mismatch (ta, tb) ->
-    printf "@[SMT ERROR: type mismatch: %a # %a@."
+    Format.fprintf logf "@[SMT ERROR: type mismatch: %a # %a@."
       pp_smt_type ta pp_smt_type tb;
     if log log_smt then dump_typing_context ();
     smt_reset();
@@ -503,7 +503,7 @@ let ask_the_audience
     raise Backtrack.No_match
   | SMT_error r ->
     smt_reset();
-    printf "@[SMT ERROR: %s@." r;
+    Format.fprintf logf "@[SMT ERROR: %s@." r;
     print_flush();
     if log log_smt then dump_typing_context ();
     raise Backtrack.No_match

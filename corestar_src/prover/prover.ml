@@ -240,7 +240,7 @@ let rewrite_guard_check seq (ts,guard) =
 let simplify_sequent rm seq : sequent option
     =
 try
-(*  printf "Before simplification : %a@\n" pp_sequent seq ;*)
+  (* fprintf Debug.logf "Before simplification : %a@." pp_sequent seq; *)
   (* Try to prove each equality and inequality using ts.
    Note we assume ones we can prove to prove the rest.*)
   let remove test update =
@@ -425,7 +425,7 @@ let apply_rule_list
       )
   in let res = apply_rule_list_inner sequents n in 
   if log log_prove then 
-    fprintf !proof_dump "@\nEnd time :%f@ " (Sys.time ());
+    fprintf !proof_dump "@\nEnd time :%f@." (Sys.time ());
   res
 
 let check_imp (logic : logic) (seq : sequent) : bool = 
