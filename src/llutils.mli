@@ -15,7 +15,7 @@ val add_logic : Psyntax.logic -> Psyntax.logic -> Psyntax.logic
 exception MetaData of Llvm.llvalue
 
 val llcontext : Llvm.llcontext ref
-val lltarget : Llvm_target.TargetData.t ref
+val lltarget : Llvm_target.DataLayout.t ref
 
 (** gets names of named and unnamed variables *)
 val value_id : Llvm.llvalue -> string

@@ -1,7 +1,7 @@
-LLVM_AS=llvm-as-3.1
+LLVM_AS=llvm-as-3.2
 
 LSTAR_OPTIONS=
-SRC=structs.c slow_mofo.c norbert.ll
+SRC=structs.ll slow_mofo.c norbert.ll
 BITCODE=$(SRC:=.bc)
 
 %.ll.bc: %.ll

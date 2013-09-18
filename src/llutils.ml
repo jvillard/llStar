@@ -49,7 +49,7 @@ exception MetaData of llvalue
 
 let idMap = Hashtbl.create 1000
 let llcontext = ref (global_context ())
-let lltarget = ref (Llvm_target.TargetData.create "")
+let lltarget = ref (Llvm_target.DataLayout.create "")
 
 let string_of_struct s =
   match struct_name s with
