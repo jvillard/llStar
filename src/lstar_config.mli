@@ -2,7 +2,6 @@ val outdir: string ref
 
 val bitcode_file_name: string ref
 val bitcode_base_name: string ref
-val bitcode_chopped_name: string ref
 val output_ll: string ref
 val logic_file_name: string ref
 val spec_file_name: string ref
