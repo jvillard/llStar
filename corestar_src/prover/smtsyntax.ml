@@ -330,3 +330,6 @@ let add_native_false () =
     if name = "@False" then ("false", SType_bool, args)
     else f name args in
   smtname_and_type_of_op := add_false !smtname_and_type_of_op
+
+let add_native_op f =
+  smtname_and_type_of_op := f !smtname_and_type_of_op

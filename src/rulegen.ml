@@ -71,28 +71,30 @@ let string_args_bitoffset_of_field_end struct_t i =
 let args_type_field struct_t i =
   args_of_type (type_of_field struct_t i)
 
-let bitpadsize64_of_field struct_t i =
+let padsize64_of_field struct_t i =
   let offset = offset64_of_field struct_t i in
   let next_offset =
     if i = Array.length (struct_element_types struct_t) - 1 then
       Llvm_target.store_size !lltarget struct_t
     else offset64_of_field struct_t (i+1) in
-  let storage_size = bits_of_bytes (Int64.sub next_offset offset) in
-  let elt_size = bitsize64_of_field struct_t i in
-  Int64.sub storage_size elt_size
+  let total_size = Int64.sub next_offset offset in
+  let store_size = Llvm_target.store_size !lltarget (type_of_field struct_t i) in
+  Int64.sub total_size store_size
 
-let args_bitpadsize_of_field struct_t i =
-  bvargs_of_int64 64 (bitpadsize64_of_field struct_t i)
+let args_padsize_of_field struct_t i =
+  bvargs_of_int64 64 (padsize64_of_field struct_t i)
 
 let mk_padding_of_field struct_t i root =
-  let pad64_size = bitpadsize64_of_field struct_t i in
+  let pad64_size = padsize64_of_field struct_t i in
   if pad64_size = Int64.zero then None
   else
-    let elt_offset = args_offset_of_field struct_t i in
-    let elt_addr = Arg_op("bvadd.64", [root; elt_offset]) in
-    let elt_size = args_bitsize_of_field struct_t i in
-    let args_pad_size = args_bitpadsize_of_field struct_t i in
-    Some (mkPadding elt_addr elt_size args_pad_size)
+    let elt_offset = offset64_of_field struct_t i in
+    let pad_offset = Int64.add (store_size64_of_field struct_t i) elt_offset in
+    let pad_addr = if pad_offset = Int64.zero then root
+      else let args_off = bvargs_of_int64 64 pad_offset in
+	   Arg_op("bvadd.64", [root; args_off]) in
+    let args_pad_size = args_padsize_of_field struct_t i in
+    Some (mkPadding pad_addr args_pad_size)
 
 let mk_field_pointer struct_t i root value =
   if i = 0 then
@@ -115,31 +117,13 @@ let mk_unfolded_struct struct_t root fields_values =
   Array.fold_left (fun f p -> mkStar f p) mkEmpty pointers
 
 let mk_struct_val_of_fields struct_t fields_values =
-  let mk_field i subelt_t =
-    let v = Array.get fields_values i in
-    let fldsz = bitsize64_of_field struct_t i in
-    let padsz = bitpadsize64_of_field struct_t i in
-    if padsz = Int64.zero then (v, fldsz, None)
-    else (v, fldsz, Some(bvargs64_of_int padsz 0, padsz)) in
-  let fvalpad = Array.mapi mk_field (struct_element_types struct_t) in
-  let rec concat_bv_list = function
-    | [] -> (bvargs_of_int 0 0, Int64.zero)
-    | [(bv, sz, None)] -> (bv, sz)
-    | (bv, sz, None)::tl -> (* non-empty tail *)
-      let (bvtl, sztl) = concat_bv_list tl in
-      (Arg_op (Printf.sprintf "concat.%Ld.%Ld" sz sztl, [bv; bvtl]),
-       Int64.add sz sztl)
-    | (bv, sz, Some(bv_pad, sz_pad))::tl -> (* padding *)
-      concat_bv_list ((bv, sz, None)::(bv_pad, sz_pad, None)::tl) in
-  fst (concat_bv_list (Array.to_list fvalpad))
+  let struct_constructor = "mk_"^(string_of_struct struct_t) in
+  Arg_op (struct_constructor, Array.to_list fields_values)
 
 (** extracts the value of field [i] from value [base_val] of type [struct_t]  *)
 let mk_field_val_of_struct_val struct_t base_val i =
-  let field_begin = string_args_bitoffset_of_field struct_t i in
-  let field_end = string_args_bitoffset_of_field_end struct_t i in
-  Arg_op (Printf.sprintf "extract.%Ld" (Llvm_target.size_in_bits !lltarget struct_t),
-	  [field_begin; field_end; base_val])
-
+  let field_pred = (string_of_struct struct_t) ^ "_fld" ^ (string_of_int i)  in
+  Arg_op (field_pred, [base_val])
 
 (*** Scalar rules *)
 
@@ -153,7 +137,7 @@ let sizeof_logic_of_type t =
       result=args_size;
       guard={without_form=[];rewrite_where=[];if_form=[]};
       rewrite_name="sizeof_"^(string_of_lltype t);
-      saturate=false} in
+      saturate=true} in
   let logic = { empty_logic with rw_rules = [rewrite_rule]; } in
   (logic, logic)
 
@@ -174,7 +158,7 @@ let eltptr_logic_of_type t =
       result=result;
       guard={without_form=[];rewrite_where=[];if_form=[]};
       rewrite_name="eltptr_"^(string_of_struct t)^(string_of_int i);
-      saturate=false} in
+      saturate=true} in
   let eltptr_rules = Array.to_list
     (Array.mapi subelt_eltptr_rules (struct_element_types t)) in
   let logic = { empty_logic with rw_rules = eltptr_rules; } in
@@ -182,21 +166,8 @@ let eltptr_logic_of_type t =
 
 (** assumes that [t] is a struct type *)
 let struct_value_logic_of_type t =
-  (* the name of the predicate indicating a value of type [t] *)
-  let val_pred_name = (string_of_struct t) ^ "_val" in
-  let field_values =
-    Array.mapi (fun i _ -> Arg_var (Vars.AnyVar (0, "v"^(string_of_int i))))
-      (struct_element_types t) in
-  let val_expanded = mk_struct_val_of_fields t field_values in
-  let value_rule =
-    { function_name = val_pred_name;
-      arguments = Array.to_list field_values;
-      result=val_expanded;
-      guard={without_form=[];rewrite_where=[];if_form=[]};
-      rewrite_name=val_pred_name;
-      saturate=false} in
-  let logic = { empty_logic with rw_rules = [value_rule]; } in
-  (logic, logic)
+  Smtexpression.declare_struct_type t;
+  (empty_logic, empty_logic)
 
 (** assumes that [t] is a struct type *)
 let struct_field_value_logic_of_type t =
@@ -377,7 +348,6 @@ let logic_of_module m =
     ::(eltptr_logic_of_type,struct_filter)
     ::(fold_unfold_logic_of_type,struct_filter)
     ::(struct_value_logic_of_type,struct_filter)
-    ::(struct_field_value_logic_of_type,struct_filter)
     ::if !Lstar_config.auto_gen_list_logic then
 	(sllnode_logic_of_type,struct_filter)::[]
       else [] in

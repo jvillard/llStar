@@ -1,23 +1,5 @@
 import "../../specs/stdlib.spec";
 
-access_fields_of_struct:
-  {pointer(s,named_type("astruct"),_v)}
-  {pointer(s,named_type("astruct"),_v)}
-
-access_fields_of_structs:
-  {pointer(s1,named_type("astruct"),_v1)*pointer(s2,named_type("astruct"),_v2)*pointer(s3,named_type("astruct"),_v3)}
-  {pointer(s1,named_type("astruct"),_v1)*pointer(s2,named_type("astruct"),_v2)*pointer(s3,named_type("astruct"),_v3)}
-
-unfold_set_fold:
-  {pointer(s,named_type("astruct"),_v)}
-  {pointer(s,named_type("astruct"),astruct_val(bv_const("12", "32"), bv_const("32", "52"), NULL()))}
-
-field_value_extraction:
- {astruct_field0(_v) = x * astruct_field1(_v) = y * astruct_field2(_v) = z
- * extract.128("115", "96", _v) = bv_const("20", "0")}
- {_v = astruct_val(x, y, z)}
-
-
 norbert:
   {}
   {pointer($ret_v1,named_type("node"),concat.64.64(@parameter1:,concat.32.32(_pad,@parameter0:))) * malloced($ret_v1,sizeof(named_type("node")))
@@ -30,39 +12,6 @@ chew_slowly:
 setint:
   {pointer(@parameter0:,integer_type(numeric_const("32")),_w)}
   {pointer(@parameter0:,integer_type(numeric_const("32")),bv_const("32", "0"))}
-
-/* this function is modified by LLVM which does not appear to support passing
- * structs by value...
-*/
-yay_int: {pointer(@parameter0:,pointer_type(named_type("struct.ij")),_v)
-      * pointer(_v,named_type("struct.ij"),_w)}
-  {pointer(@parameter0:,pointer_type(named_type("struct.ij")),_v)
-      * pointer(_v,named_type("struct.ij"),_w)}
-
-youpi_int: {pointer(@parameter0:,pointer_type(named_type("struct.ij")),_v)
-      * pointer(_v,sizeof(named_type("struct.ij")),_w)}
-  {pointer(@parameter0:,pointer_type(named_type("struct.ij")),_v)
-      * pointer(_v,named_type("struct.ij"),_w)}
-
-setifield:
-  {pointer(@parameter0:,sizeof(named_type("struct.oneint")),_v)}
-  {pointer(@parameter0:,sizeof(named_type("struct.oneint")),bv_const("32", "0"))}
-
-yay_yay_int:
-  {pointer(@parameter0:,sizeof(named_type("struct.ij")),_v)}
-  {pointer(@parameter0:,sizeof(named_type("struct.ij")),concat.32.32(bv_const("32", "0"),bv_const("32", "0")))}
-
-yay_yay_int2:
-  {pointer(@parameter0:,sizeof(named_type("struct.ij")),concat.32.32(bv_const("32", "0"),_v))}
-  {pointer(@parameter0:,sizeof(named_type("struct.ij")),bv_const("64", "0"))}
-
-main:
-   {}
-   {$ret_v1 = bvmul.32(bv_const("32", "32"),bv_const("32", "52"))}
-
-caca:
-  {pointer(@parameter0:,named_type("struct.ij"),_w)}
-  {pointer(@parameter0:,named_type("struct.ij"),_z)}
 
 array:
   {pointer(@parameter0:,array_type(integer_type(numeric_const("32")),_n),_v) * bvuge(@parameter1:,bvconst("32","0")) * bvult(@parameter1:,_n)}
