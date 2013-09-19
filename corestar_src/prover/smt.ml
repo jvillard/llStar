@@ -33,6 +33,8 @@ let smtout = ref Pervasives.stdin;;
 let smtin = ref Pervasives.stderr;;
 let smterr = ref Pervasives.stdin;;
 let smtpath = ref ""
+let smtlineno = ref 0 (** line number of the last command *)
+                      (* useful when we get an error from the smt solver *)
 
 let smtout_lex = ref (Lexing.from_string "");;
 
@@ -46,8 +48,9 @@ let send_custom_commands =
     if !Config.smt_custom_commands <> "" then (
       let cc = open_in !Config.smt_custom_commands in
       try while true do begin
+	incr smtlineno;
 	let cmd = input_line cc in
-	if log log_smt then Format.fprintf logf "@[%s@." cmd;
+	if log log_smt then Format.fprintf logf "@[%n: %s@." !smtlineno cmd;
 	if Str.string_match decl_re cmd 0 then
 	  predeclared := RegexpSet.add (Str.regexp_string (Str.matched_group 1 cmd)) !predeclared;
 	output_string !smtin cmd;
@@ -57,8 +60,10 @@ let send_custom_commands =
     )
 
 let smt_declare_datatype dtid decl =
-  if log log_smt then Format.fprintf logf "@[Sending out %s declaration: %s@." dtid decl;
+  incr smtlineno;
+  if log log_smt then Format.fprintf logf "@[%n: %s@." !smtlineno decl;
   output_string !smtin decl; (* TODO: handle errors *)
+  output_char !smtin '\n';
   predeclared := RegexpSet.add (Str.regexp_string dtid) !predeclared
 
 let smt_init () : unit =
@@ -79,6 +84,7 @@ let smt_init () : unit =
         smtout := o;  smtin := i;  smterr := e;
         smtout_lex := Lexing.from_channel !smtout;
         Config.smt_run := true;
+	incr smtlineno;
         if log log_smt then Format.fprintf logf "@[SMT running.@]";
         output_string i "(set-option :print-success false)\n";
         send_custom_commands ();
@@ -275,7 +281,8 @@ let smt_command
     (cmd : string)
     : unit =
   try
-    if log log_smt then Format.fprintf logf "@[%s@." cmd;
+    incr smtlineno;
+    if log log_smt then Format.fprintf logf "@[%d: %s@." !smtlineno cmd;
     print_flush();
     output_string !smtin cmd;
     output_string !smtin "\n";
