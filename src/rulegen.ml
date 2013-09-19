@@ -16,6 +16,12 @@ open Llutils
 
 (*** helper functions to define predicates for structs *)
 
+
+let mk_psequent matched lhs rhs abd = (matched,lhs,rhs,abd)
+let mk_sequent_rule name premises_list conclusion without wheres =
+  (conclusion, premises_list, name, without, wheres)
+
+
 (** Make a rule with a single premise, no side conditions
 
     | [pre_lhs]  |- [pre_rhs]
@@ -141,6 +147,9 @@ let sizeof_logic_of_type t =
   let logic = { empty_logic with rw_rules = [rewrite_rule]; } in
   (logic, logic)
 
+
+(*** Structure rules *)
+
 (** assumes that [t] is a struct type *)
 let eltptr_logic_of_type t =
   let args_struct_t = args_of_type t in
@@ -186,8 +195,6 @@ let struct_field_value_logic_of_type t =
   (logic, logic)
 
 
-(*** struct rules *)
-
 (** assumes that [t] is a struct type *)
 let fold_unfold_logic_of_type t =
   let field_values =
@@ -223,6 +230,42 @@ let fold_unfold_logic_of_type t =
 	(mk_struct_pointer x_var collate_field_values, mk_struct_pointer x_var v_var)
 	(mk_unfolded_struct t x_var field_values, mk_struct_pointer x_var v_var)::
 	field_rules
+    else [] in
+  let logic = { empty_logic with seq_rules = rules; } in
+  (logic, logic)
+
+(** assumes that [t] is a struct type *)
+let bytearray_to_struct_conversions t =
+  let x_avar = Vars.AnyVar (0, "x") in
+  let v_evar = Vars.EVar (0, "v") in
+  let w_avar = Vars.AnyVar (0, "w") in
+  let argsv z = Arg_var z in
+
+  let mk_struct_pointer root value =
+    mkPointer root (args_of_type t) value in
+
+  let mk_bytearray_pointer root value =
+    mkPointer root (mkArrayType (args_sizeof t) mkI8Type) value in
+
+  let rules =
+    if Array.length (struct_element_types t) > 0 then
+      let structform = mk_struct_pointer (argsv x_avar) (argsv w_avar) in
+      let arrayform = mk_bytearray_pointer (argsv x_avar) (argsv v_evar) in
+      let s_implies_a_premises = [[mk_psequent structform mkEmpty mkEmpty mkEmpty]] in
+      let s_implies_a_conclusion = mk_psequent mkEmpty structform arrayform mkEmpty in
+      let s_implies_a_rule = mk_sequent_rule ((string_of_struct t)^"_implies_bytearray")
+	s_implies_a_premises s_implies_a_conclusion
+	([], [])
+	[NotInContext (Var (VarSet.singleton v_evar))] in
+      let structform = mk_struct_pointer (argsv x_avar) (argsv v_evar) in
+      let arrayform = mk_bytearray_pointer (argsv x_avar) (argsv w_avar) in
+      let a_implies_s_premises = [[mk_psequent arrayform mkEmpty mkEmpty mkEmpty]] in
+      let a_implies_s_conclusion = mk_psequent mkEmpty arrayform structform mkEmpty in
+      let a_implies_s_rule = mk_sequent_rule ("bytearray_implies_"^(string_of_struct t))
+	a_implies_s_premises a_implies_s_conclusion
+	([], [])
+	[NotInContext (Var (VarSet.singleton v_evar))] in
+      [s_implies_a_rule; a_implies_s_rule]
     else [] in
   let logic = { empty_logic with seq_rules = rules; } in
   (logic, logic)
@@ -348,6 +391,7 @@ let logic_of_module m =
     ::(eltptr_logic_of_type,struct_filter)
     ::(fold_unfold_logic_of_type,struct_filter)
     ::(struct_value_logic_of_type,struct_filter)
+    ::(bytearray_to_struct_conversions,struct_filter)
     ::if !Lstar_config.auto_gen_list_logic then
 	(sllnode_logic_of_type,struct_filter)::[]
       else [] in

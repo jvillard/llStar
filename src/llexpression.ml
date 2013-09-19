@@ -40,43 +40,60 @@ let mkArray ptr start_idx end_idx size elt_sz v =
   mkSPred ("array", [ptr; start_idx; end_idx; size; elt_sz; v])
 let mkEltptr ptr t jchain = Arg_op ("eltptr", [ptr; t; jchain])
 
+let mkIntegerType sz = Arg_op("integer_type", [sz])
+let mkFloatType = Arg_op("float_type", [])
+let mkVoidType = Arg_op("void_type", [])
+let mkLabelType = Arg_op("label_type", [])
+let mkNamedType name = Arg_op("named_type", [name])
+let mkStructType elts_t = Arg_op("struct_type", elts_t)
+let mkFunctionType args_t ret_t = Arg_op("function_type", ret_t::args_t)
+let mkPointerType elt_t = Arg_op("pointer_type", [elt_t])
+let mkVectorType elt_t = Arg_op("pointer_type", [elt_t])
+let mkArrayType size elts_t = Arg_op("array_type", [size; elts_t])
+let mkMDType = Arg_op("MD_type", [])
+
+let mkI8Type = Arg_op("integer_type", [Arg_string "8"])
+let mkI32Type = Arg_op("integer_type", [Arg_string "32"])
+let mkI64Type = Arg_op("integer_type", [Arg_string "64"])
+let mkVoidPointerType elt_t = mkPointerType mkI8Type
+
+
 let args_sizeof t =
   let size64 = Llvm_target.store_size !lltarget t in
   bvargs_of_int64 64 size64
 
 let rec args_of_type t = match (classify_type t) with
-  | Void -> Arg_op("void_type",[])
+  | Void -> mkVoidType
   | Float
   | Half
   | Double
   | X86fp80
   | Fp128
-  | Ppc_fp128 -> Arg_op("float_type", [])
-  | Label -> Arg_op("label_type", [])
-  | Integer -> Arg_op("integer_type", [numargs_of_int (integer_bitwidth t)])
+  | Ppc_fp128 -> mkFloatType
+  | Label -> mkLabelType
+  | Integer -> mkIntegerType (numargs_of_int (integer_bitwidth t))
   | TypeKind.Function -> (* silly name clash *)
     let ret_type = return_type t in
     let par_types = param_types t in
-    Arg_op("function_type", args_of_type ret_type::(args_of_type_array par_types))
+    mkFunctionType (args_of_type_array par_types) (args_of_type ret_type)
   | Struct -> (
     if is_opaque t then Arg_op("opaque_type", [])
     else match struct_name t with
       | None ->
 	let elts_types = struct_element_types t in
-	Arg_op("struct_type", args_of_type_array elts_types)
-      | Some n ->
-	Arg_op("named_type", [Arg_string n])
+	mkStructType (args_of_type_array elts_types)
+      | Some n -> mkNamedType (Arg_string n)
   )
   | Array ->
     let elt_t = element_type t in
-    Arg_op("array_type", [args_of_type elt_t])
+    mkArrayType (bvargs_of_int 64 (array_length t)) (args_of_type elt_t)
   | Pointer ->
     let elt_t = element_type t in
-    Arg_op("pointer_type", [args_of_type elt_t])
+    mkPointerType (args_of_type elt_t)
   | Vector ->
     let elt_t = element_type t in
-    Arg_op("vector_type", [args_of_type elt_t])
-  | Metadata -> Arg_op("MD_type", [])
+    mkVectorType (args_of_type elt_t)
+  | Metadata -> mkMDType
 and args_of_type_array ta =
   Array.to_list (Array.map args_of_type ta)
 

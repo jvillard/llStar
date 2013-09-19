@@ -1,18 +1,5 @@
 import "../../rules/llvm.logic";
 
-rule i8array_to_astruct:
-  | pointer(?x, array_type(bv_const("64", "16"), integer_type("8")), _v)
-  |- pointer(?x, named_type("astruct"), _w)
-if
-  pointer(?x, array_type(bv_const("64", "16"), integer_type("8")), _v) | |- _v = _w
-
-rule astruct_to_i8array:
-  |  pointer(?x, named_type("astruct"), _v)
-  |- pointer(?x, array_type(bv_const("64", "16"), integer_type("8")), _w)
-  
-if
-  pointer(?x, named_type("astruct"), _v) | |- _v = _w
-
 /*
 rule alt_node_to_prove_norbert:
    | pointer(?x, bv_const("64", "4"), ?v0) * pointer(bvadd.64(?x,

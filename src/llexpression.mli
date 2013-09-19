@@ -13,6 +13,23 @@ val mkPointer : Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.form
 val mkPadding : Psyntax.term -> Psyntax.term -> Psyntax.form
 val mkArray : Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.form
 val mkEltptr : Psyntax.args -> Psyntax.args -> Psyntax.args -> Psyntax.args
+val mkIntegerType : Psyntax.args -> Psyntax.args
+val mkFloatType : Psyntax.args
+val mkVoidType : Psyntax.args
+val mkLabelType : Psyntax.args
+val mkNamedType : Psyntax.args -> Psyntax.args
+val mkStructType : Psyntax.args list -> Psyntax.args
+val mkFunctionType : Psyntax.args list -> Psyntax.args -> Psyntax.args
+val mkPointerType : Psyntax.args -> Psyntax.args
+val mkVectorType : Psyntax.args -> Psyntax.args
+val mkArrayType : Psyntax.args -> Psyntax.args -> Psyntax.args
+val mkMDType : Psyntax.args
+
+val mkI8Type : Psyntax.args
+val mkI32Type : Psyntax.args
+val mkI64Type : Psyntax.args
+val mkVoidPointerType : Psyntax.args -> Psyntax.args
+
 val args_sizeof : Llvm.lltype -> Psyntax.args
 val args_of_type : Llvm.lltype -> Psyntax.args
 val args_of_int_const : Llvm.llvalue -> Psyntax.args
