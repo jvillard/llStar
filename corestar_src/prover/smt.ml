@@ -42,22 +42,26 @@ let smt_memo = Hashtbl.create 31;;
 
 let smt_onstack = ref [[]];;
 
-let send_custom_commands =
+let smt_dumpstack () =
+  Format.fprintf logf "@[Current SMT stack:\n";
+  List.iter (fun s -> Format.fprintf logf "@[%s@." s) (List.flatten !smt_onstack);
+  Format.fprintf logf "End of current SMT stack.@."
+
+let send_custom_commands () =
   let decl_re = Str.regexp "[ \t]*([ \t]*declare-fun[ \t]+\\([^ \t()]+\\)" in
-  fun () ->
-    if !Config.smt_custom_commands <> "" then (
-      let cc = open_in !Config.smt_custom_commands in
-      try while true do begin
-	incr smtlineno;
-	let cmd = input_line cc in
-	if log log_smt then Format.fprintf logf "@[%n: %s@." !smtlineno cmd;
-	if Str.string_match decl_re cmd 0 then
-	  predeclared := RegexpSet.add (Str.regexp_string (Str.matched_group 1 cmd)) !predeclared;
-	output_string !smtin cmd;
-	output_char !smtin '\n'
-      end done
-      with End_of_file -> close_in cc
-    )
+  if !Config.smt_custom_commands <> "" then (
+    let cc = open_in !Config.smt_custom_commands in
+    try while true do begin
+      incr smtlineno;
+      let cmd = input_line cc in
+      if log log_smt then Format.fprintf logf "@[%n: %s@." !smtlineno cmd;
+      if Str.string_match decl_re cmd 0 then
+	predeclared := RegexpSet.add (Str.regexp_string (Str.matched_group 1 cmd)) !predeclared;
+      output_string !smtin cmd;
+      output_char !smtin '\n'
+    end done
+    with End_of_file -> close_in cc
+  )
 
 let smt_declare_datatype dtid decl =
   incr smtlineno;
@@ -420,14 +424,16 @@ let finish_him
     print_flush();
     false
   | SMT_error r ->
-    smt_reset();
     Format.fprintf logf "@[SMT ERROR: %s@." r;
     if log log_smt then dump_typing_context ();
+    if log log_smt then smt_dumpstack ();
+    smt_reset();
     print_flush();
     false
   | SMT_fatal_error ->
-    smt_fatal_recover();
     if log log_smt then dump_typing_context ();
+    if log log_smt then smt_dumpstack ();
+    smt_fatal_recover();
     false
 
 
@@ -509,13 +515,15 @@ let ask_the_audience
     print_flush();
     raise Backtrack.No_match
   | SMT_error r ->
-    smt_reset();
     Format.fprintf logf "@[SMT ERROR: %s@." r;
-    print_flush();
     if log log_smt then dump_typing_context ();
+    if log log_smt then smt_dumpstack ();
+    print_flush();
+    smt_reset();
     raise Backtrack.No_match
   | SMT_fatal_error ->
-    smt_fatal_recover();
     if log log_smt then dump_typing_context ();
+    if log log_smt then smt_dumpstack ();
+    smt_fatal_recover();
     raise Backtrack.No_match
 
