@@ -11,9 +11,8 @@ val mkUndef : Psyntax.args -> Psyntax.args
 val mkUndef64 : int64 -> Psyntax.args
 val mkPointer : Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.form
 val mkPadding : Psyntax.term -> Psyntax.term -> Psyntax.form
-val mkArray : Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.form
 val mkEltptr : Psyntax.args -> Psyntax.args -> Psyntax.args -> Psyntax.args
-val mkIntegerType : Psyntax.args -> Psyntax.args
+val mkIntegerType : int -> Psyntax.args
 val mkFloatType : Psyntax.args
 val mkVoidType : Psyntax.args
 val mkLabelType : Psyntax.args
@@ -29,6 +28,7 @@ val mkI8Type : Psyntax.args
 val mkI32Type : Psyntax.args
 val mkI64Type : Psyntax.args
 val mkVoidPointerType : Psyntax.args -> Psyntax.args
+val mkValConversion : Psyntax.args -> Psyntax.args -> Psyntax.args -> Psyntax.args
 
 val args_sizeof : Llvm.lltype -> Psyntax.args
 val args_of_type : Llvm.lltype -> Psyntax.args

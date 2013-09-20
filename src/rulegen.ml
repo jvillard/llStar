@@ -14,9 +14,6 @@ open Llexpression
 open Llutils
 
 
-(*** helper functions to define predicates for structs *)
-
-
 let mk_psequent matched lhs rhs abd = (matched,lhs,rhs,abd)
 let mk_sequent_rule name premises_list conclusion without wheres =
   (conclusion, premises_list, name, without, wheres)
@@ -28,14 +25,17 @@ let mk_sequent_rule name premises_list conclusion without wheres =
     --------------------------
     | [post_lhs] |- [post_rhs]
 *)
-let mk_simple_seq_rule name (pre_lhs,pre_rhs) (post_lhs, post_rhs) =
+let mk_simple_sequent_rule name (pre_lhs,pre_rhs) (post_lhs, post_rhs) =
   let conclusion = (mkEmpty, post_lhs, post_rhs, mkEmpty) in
   let premise = (mkEmpty, pre_lhs, pre_rhs, mkEmpty) in
   (conclusion, [[premise]], name, ([], []), [])
 
-let gen_seq_rules_of_equiv name (equiv_left, equiv_right) =
-  mk_simple_seq_rule (name^"_left") (equiv_right, mkEmpty) (equiv_left, mkEmpty)::
-  mk_simple_seq_rule (name^"_right") (mkEmpty, equiv_right) (mkEmpty, equiv_left)::[]
+let gen_sequent_rules_of_equiv name (equiv_left, equiv_right) =
+  mk_simple_sequent_rule (name^"_left") (equiv_right, mkEmpty) (equiv_left, mkEmpty)::
+  mk_simple_sequent_rule (name^"_right") (mkEmpty, equiv_right) (mkEmpty, equiv_left)::[]
+
+
+(*** helper functions to define predicates for structs *)
 
 let bits_of_bytes x =
   Int64.mul (Int64.of_int 8) x
@@ -49,8 +49,8 @@ let offset64_of_field struct_t i =
 let args_offset_of_field struct_t i =
   bvargs_of_int64 64 (offset64_of_field struct_t i)
 
-let store_size64_of_field struct_t i =
-  Llvm_target.store_size !lltarget (type_of_field struct_t i)
+let alloc_size64_of_field struct_t i =
+  Llvm_target.abi_size !lltarget (type_of_field struct_t i)
 
 let bitsize64_of_field struct_t i =
   Llvm_target.size_in_bits !lltarget (type_of_field struct_t i)
@@ -81,11 +81,11 @@ let padsize64_of_field struct_t i =
   let offset = offset64_of_field struct_t i in
   let next_offset =
     if i = Array.length (struct_element_types struct_t) - 1 then
-      Llvm_target.store_size !lltarget struct_t
+      Llvm_target.abi_size !lltarget struct_t
     else offset64_of_field struct_t (i+1) in
   let total_size = Int64.sub next_offset offset in
-  let store_size = Llvm_target.store_size !lltarget (type_of_field struct_t i) in
-  Int64.sub total_size store_size
+  let alloc_size = Llvm_target.abi_size !lltarget (type_of_field struct_t i) in
+  Int64.sub total_size alloc_size
 
 let args_padsize_of_field struct_t i =
   bvargs_of_int64 64 (padsize64_of_field struct_t i)
@@ -95,7 +95,7 @@ let mk_padding_of_field struct_t i root =
   if pad64_size = Int64.zero then None
   else
     let elt_offset = offset64_of_field struct_t i in
-    let pad_offset = Int64.add (store_size64_of_field struct_t i) elt_offset in
+    let pad_offset = Int64.add (alloc_size64_of_field struct_t i) elt_offset in
     let pad_addr = if pad_offset = Int64.zero then root
       else let args_off = bvargs_of_int64 64 pad_offset in
 	   Arg_op("bvadd.64", [root; args_off]) in
@@ -216,7 +216,7 @@ let fold_unfold_logic_of_type t =
 
   let mk_field_rule i subelt_type =
     let target_pointer = mk_field_pointer t i x_var w_var in
-    mk_simple_seq_rule ((string_of_struct t)^"_field_"^(string_of_int i))
+    mk_simple_sequent_rule ((string_of_struct t)^"_field_"^(string_of_int i))
       (mk_unfolded_struct t x_var (field_ranged_values v_var), target_pointer)
       (mk_struct_pointer x_var v_var, target_pointer) in
 
@@ -226,7 +226,7 @@ let fold_unfold_logic_of_type t =
 
   let rules =
     if Array.length (struct_element_types t) > 1 then
-      mk_simple_seq_rule ("collate_"^(string_of_struct t))
+      mk_simple_sequent_rule ("collate_"^(string_of_struct t))
 	(mk_struct_pointer x_var collate_field_values, mk_struct_pointer x_var v_var)
 	(mk_unfolded_struct t x_var field_values, mk_struct_pointer x_var v_var)::
 	field_rules
@@ -238,16 +238,21 @@ let fold_unfold_logic_of_type t =
 let bytearray_to_struct_conversions t =
   let x_avar = Vars.AnyVar (0, "x") in
   let v_evar = Vars.EVar (0, "v") in
+  let v_avar = Vars.AnyVar (0, "v") in
   let w_avar = Vars.AnyVar (0, "w") in
+  let field_argsv =
+    Array.mapi (fun i _ -> Arg_var (Vars.AnyVar (0, "v"^(string_of_int i))))
+      (struct_element_types t) in
   let argsv z = Arg_var z in
 
-  let mk_struct_pointer root value =
-    mkPointer root (args_of_type t) value in
+  let array_t = Llvm.array_type (Llvm.i8_type !llcontext) (Int64.to_int (Llvm_target.abi_size !lltarget t)) in
+  let array_type = args_of_type array_t in
+  let struct_type = args_of_type t in
+  let mk_struct_pointer root value = mkPointer root struct_type value in
+  let mk_field_pointer i root value = mk_field_pointer t i root value in
+  let mk_bytearray_pointer root value = mkPointer root array_type value in
 
-  let mk_bytearray_pointer root value =
-    mkPointer root (mkArrayType (args_sizeof t) mkI8Type) value in
-
-  let rules =
+  let array_struct_rules =
     if Array.length (struct_element_types t) > 0 then
       let structform = mk_struct_pointer (argsv x_avar) (argsv w_avar) in
       let arrayform = mk_bytearray_pointer (argsv x_avar) (argsv v_evar) in
@@ -267,9 +272,32 @@ let bytearray_to_struct_conversions t =
 	[NotInContext (Var (VarSet.singleton v_evar))] in
       [s_implies_a_rule; a_implies_s_rule]
     else [] in
+  let array_field_rule i =
+    let array_val = argsv v_avar in
+    let struct_val = mkValConversion array_type struct_type array_val in
+    let arrayform = mk_bytearray_pointer (argsv x_avar) array_val in
+    let structform = mk_struct_pointer (argsv x_avar) struct_val in
+    let fieldform = mk_field_pointer i (argsv x_avar) (argsv w_avar) in
+    let a_implies_f_premises = (structform, fieldform) in
+    let a_implies_f_conclusion = (arrayform, fieldform) in
+    mk_simple_sequent_rule ("bytearray_implies_"^(string_of_struct t)^"_fld"^(string_of_int i))
+      a_implies_f_premises a_implies_f_conclusion in
+  let fields_array_rule =
+    let array_val = argsv w_avar in
+    let struct_val = mk_struct_val_of_fields t field_argsv in
+    let foldedstructform = mk_struct_pointer (argsv x_avar) struct_val in
+    let explodedstructform = mk_unfolded_struct t (argsv x_avar) field_argsv in
+    let arrayform = mk_bytearray_pointer (argsv x_avar) array_val in
+    let fs_implies_a_premises = (foldedstructform, arrayform) in
+    let fs_implies_a_conclusion = (explodedstructform, arrayform) in
+    mk_simple_sequent_rule ((string_of_struct t)^"_flds_implies_bytearray")
+      fs_implies_a_premises fs_implies_a_conclusion in
+  let rules = array_struct_rules@Array.to_list
+    (Array.mapi (fun i _ -> array_field_rule i) (struct_element_types t))@
+    [fields_array_rule] in
+
   let logic = { empty_logic with seq_rules = rules; } in
   (logic, logic)
-
 
 (** assumes that [t] is a struct type *)
 let node_logic_of_struct t name rec_field =
@@ -297,11 +325,11 @@ let node_logic_of_struct t name rec_field =
       of its constituent fields. TODO: and match the field! *)
   let mk_expand_node_rule i subelt_type =
     if i = rec_field then
-      (mk_simple_seq_rule "node_lookup_next"
+      (mk_simple_sequent_rule "node_lookup_next"
 	 (mk_unfolded_struct_ i_var rec_field n_var, mk_rec_field i_var n2_var)
 	 (mk_node i_var n_var, mk_rec_field i_var n2_var))
     else
-      (mk_simple_seq_rule ("node_lookup_field_"^(string_of_int i))
+      (mk_simple_sequent_rule ("node_lookup_field_"^(string_of_int i))
 	 (mk_unfolded_struct_ i_var rec_field n_var, mk_field_pointer t i i_var n2_var)
 	 (mk_node i_var n_var, mk_field_pointer t i i_var n2_var)) in
 
@@ -318,11 +346,11 @@ let node_logic_of_struct t name rec_field =
 
        If all fields of a node object are present on the lhs, we collapse them to
        the node predicate. *)
-      (mk_simple_seq_rule "node_rollup_left"
+      (mk_simple_sequent_rule "node_rollup_left"
 	 (mk_node i_var n_var, mkEmpty)
 	 (mk_unfolded_struct_ i_var rec_field n_var, mkEmpty))::
     (* Convert all nodes on LHS to singleton list segments. *)
-      (* (mk_simple_seq_rule "lseg_node_rollup_left" *)
+      (* (mk_simple_sequent_rule "lseg_node_rollup_left" *)
       (* 	 (mk_lseg_ne i_var n_var, mkEmpty) *)
       (* 	 (mk_node i_var n_var, mkEmpty)):: *)
 	[] in

@@ -36,11 +36,9 @@ let mkUndef64 sz = mkUndef (Arg_string (Int64.to_string sz))
 let mkPointer ptr ptr_t v = mkSPred ("pointer", [ptr; ptr_t; v])
 (** padding with [size] bytes at address [x] *)
 let mkPadding x size = mkSPred ("pad", [x; size])
-let mkArray ptr start_idx end_idx size elt_sz v =
-  mkSPred ("array", [ptr; start_idx; end_idx; size; elt_sz; v])
 let mkEltptr ptr t jchain = Arg_op ("eltptr", [ptr; t; jchain])
 
-let mkIntegerType sz = Arg_op("integer_type", [sz])
+let mkIntegerType sz = Arg_op("integer_type", [Arg_string (string_of_int sz)])
 let mkFloatType = Arg_op("float_type", [])
 let mkVoidType = Arg_op("void_type", [])
 let mkLabelType = Arg_op("label_type", [])
@@ -57,6 +55,8 @@ let mkI32Type = Arg_op("integer_type", [Arg_string "32"])
 let mkI64Type = Arg_op("integer_type", [Arg_string "64"])
 let mkVoidPointerType elt_t = mkPointerType mkI8Type
 
+(* [v] of type [t1] is symbolically converted to a value of type [t2] *)
+let mkValConversion t1 t2 v = Arg_op ("cast_value", [t1; t2; v])
 
 let args_sizeof t =
   let size64 = Llvm_target.store_size !lltarget t in
@@ -71,7 +71,7 @@ let rec args_of_type t = match (classify_type t) with
   | Fp128
   | Ppc_fp128 -> mkFloatType
   | Label -> mkLabelType
-  | Integer -> mkIntegerType (numargs_of_int (integer_bitwidth t))
+  | Integer -> mkIntegerType (integer_bitwidth t)
   | TypeKind.Function -> (* silly name clash *)
     let ret_type = return_type t in
     let par_types = param_types t in
