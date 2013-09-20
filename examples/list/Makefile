@@ -1,6 +1,6 @@
 LLVM_AS=llvm-as-3.2
 
-LSTAR_OPTIONS=-a ../../rules/lseg.abs -autolists -abduct -abduct_file ../../rules/abduct.logic
+LSTAR_OPTIONS=-a ../../rules/lseg.abs -autolists
 SRC=smaug.ll list.c
 BITCODE=$(SRC:=.bc)
 

@@ -1,0 +1,7 @@
+smaug:
+  {lseg("node",@parameter0:,bv_const("64", "0"))}
+  {lseg("node",@parameter0:,bv_const("64", "0"))}
+
+traverse:
+  {lseg("struct.node",@parameter0:,bv_const("64", "0"))}
+  {lseg("struct.node",@parameter0:,bv_const("64", "0"))}
