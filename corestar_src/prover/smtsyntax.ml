@@ -230,7 +230,7 @@ let add_native_bitvector_ops () =
     ["bvand"; "bvor"; "bvadd"; "bvmul"; "bvudiv"; "bvurem"; "bvshl"; "bvlshr";
      (* the operations below are not in official SMT-LIB2, but z3
 	knows about them. TODO: provide macros for them? *)
-     "bvsdiv"; "bvsrem"; "bvashr"; "bvxor";
+     "bvsub"; "bvsdiv"; "bvsrem"; "bvashr"; "bvxor";
     ];
   let translate_un_bvop f bop name args =
     let r = Str.regexp (Printf.sprintf "%s.\\([0-9]+\\)" bop) in
