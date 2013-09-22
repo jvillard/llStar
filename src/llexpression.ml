@@ -59,7 +59,7 @@ let mkVoidPointerType elt_t = mkPointerType mkI8Type
 let mkValConversion t1 t2 v = Arg_op ("cast_value", [t1; t2; v])
 
 let args_sizeof t =
-  let size64 = Llvm_target.store_size !lltarget t in
+  let size64 = Llvm_target.abi_size !lltarget t in
   bvargs_of_int64 64 size64
 
 let rec args_of_type t = match (classify_type t) with
