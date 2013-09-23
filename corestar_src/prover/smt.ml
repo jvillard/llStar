@@ -223,6 +223,11 @@ let sexp_of_pred = function
     let (_, t2) = sexp_of_args a2 in
     unify t1 t2;
     ("true", SType_bool)
+  | (binrel, (Arg_op ("tuple", [a1; a2]))) when List.mem_assoc binrel bvbinrels ->
+    let (e1, t1) = sexp_of_args a1 in
+    let (e2, t2) = sexp_of_args a2 in
+    unify t1 t2;
+    (Printf.sprintf "(%s %s %s)" binrel e1 e2, SType_bool)
   | (name, (Arg_op ("tuple",args))) ->
     let (pred_name, pred_type, args) = !smtname_and_type_of_op name args in
     let (args_exp, args_types) = sexp_of_args_list args in
