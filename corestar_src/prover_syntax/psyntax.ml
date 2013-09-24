@@ -475,14 +475,14 @@ let pp_sequent_rule f ((c, hss, n, w, ss) : sequent_rule) =
   let p a b c = fprintf f "@\n@[<4>%s%a@]" a b c in
   fprintf f "@\n@[<2>rule %s:" n;
   p "" pp_psequent c;
+  p "without " pp_entailment w;
+  if ss <> [] then
+    p "where " (list_format ";" string_where) ss;
   (match hss with
     | [] -> ()
     | x::xs ->
         let ps = list_format ";" pp_psequent in
         p "if " ps x; List.iter (p "or" ps) xs);
-  p "without " pp_entailment w;
-  if ss <> [] then
-    p "where " (list_format ";" string_where) ss;
   fprintf f "@]"
 
 
