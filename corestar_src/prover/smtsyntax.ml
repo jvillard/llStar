@@ -211,7 +211,13 @@ let rec sexp_of_sort_list = function
 
 let smtname_and_type_of_op :
     (string -> Psyntax.args list -> (string * smt_type * Psyntax.args list)) ref
-    = ref (fun name args -> (id_munge ("op_"^name), lookup_type ("op_"^name), args))
+    =
+  let default_context name args =
+    let smt_name =
+      if is_predeclared name then name
+      else id_munge ("op_"^name) in
+    (smt_name, lookup_type ("op_"^name), args) in
+  ref default_context
 
 (** bitvector operations *)
 let add_native_bitvector_ops () =
