@@ -70,7 +70,7 @@ let set_log = function
   | "parse" -> log_active := !log_active lor log_parse
   | "cfg" -> log_active := !log_active lor log_cfg
   | "smt" -> log_active := !log_active lor log_smt
-  | _ -> raise (Arg.Bad "No such logging mode.")
+  | s -> raise (Arg.Bad (Printf.sprintf "%s: no such logging mode" s))
 
 let clear_logs () =
   log_active := 0
