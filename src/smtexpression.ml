@@ -92,4 +92,4 @@ let declare_struct_type t =
       if name = fldcons then (fldcons, SType_fun ([struct_t],field_t), args)
       else f name args in
     add_native_op match_native_field_op)
-    elts;
+    elts
