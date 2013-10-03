@@ -90,10 +90,10 @@ let pp_whole pp_element pp_separator =
   fun ppf x -> ignore (pp_element pp_separator ppf true x)
 
 (* {{{ printing for typical collection elements *)
-let pp_binary_op operator pp_operand ppf (l, r) =
-  fprintf ppf "@[@[%a@]%s@[%a@]@]@," pp_operand l operator pp_operand r
-let pp_eq pp_operand = pp_binary_op "=" pp_operand
-let pp_neq pp_operand = pp_binary_op "!=" pp_operand
-let pp_disjunct pp_operand = pp_binary_op " || " pp_operand
+let pp_binary_op pareno parenc operator pp_operand ppf (l, r) =
+  fprintf ppf "@[@[%s%a%s@]%s@[%s%a%s@]@]@," pareno pp_operand l parenc operator pareno pp_operand r parenc
+let pp_eq pp_operand = pp_binary_op "" "" "=" pp_operand
+let pp_neq pp_operand = pp_binary_op "" "" "!=" pp_operand
+let pp_disjunct pp_operand = pp_binary_op "(" ")" " || " pp_operand
 (* }}} *)
 (* }}} *)
