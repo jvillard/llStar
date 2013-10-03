@@ -368,13 +368,12 @@ let exists_sexp idl sexp =
   else Printf.sprintf "(exists (%s) %s)" exists_decls sexp
 
 (** try to establish that the pure parts of a sequent are valid using the SMT solver *)
-let finish_him
-    (ts : term_structure)
-    (asm : formula)
-    (obl : formula)
-    : bool =
+let finish_him evars ts asm obl =
   try
     reset_typing_context ();
+    Format.fprintf logf "\nEVARS: ";
+    VarSet.iter (Format.fprintf logf "%a " Vars.pp_var) evars;
+    Format.fprintf logf "\n";
     let eqs = filter (fun (a,b) -> a <> b) (get_eqs_norecs ts) in
     let neqs = filter (fun (a,b) -> a <> b) (get_neqs_norecs ts) in
     let asm_eq_sexp = String.concat " " (map sexp_of_eq eqs) in
@@ -384,35 +383,8 @@ let finish_him
     let obl_sexp = sexp_of_form ts obl in
     (* Construct the query *)
     let asm_sexp = "(and true "^asm_eq_sexp^" "^asm_neq_sexp^" "^asm_sexp^") " in
-    let rec add_ev_of_form_to_vset form vset =
-      let vset_eqneqs =
-	fold_left
-	  (fun evset (a1,a2) ->
-	    let (x, y) =
-	      (get_pargs_norecs false ts [] a1, get_pargs_norecs false ts [] a2) in
-	    ev_args y (ev_args x evset)
-	  )
-	  vset
-	  (form.eqs@form.neqs) in
-      let vset_disjs =
-	fold_left
-	  (fun evset (f1,f2) ->
-	    add_ev_of_form_to_vset f2 (add_ev_of_form_to_vset f1 evset))
-	  vset_eqneqs
-	  form.disjuncts in
-      RMSet.fold_to_list form.plain
-	(fun (_,r) evset ->
-	  let args = get_pargs_norecs false ts [] r in
-	  ev_args args evset)
-	vset_disjs in
-    let ts_eqneq_vset =
-      ev_args_list (let (a,b) = split (eqs@neqs) in a@b) VarSet.empty in
-    let left_vset = add_ev_of_form_to_vset asm ts_eqneq_vset in
-    let obl_vset = add_ev_of_form_to_vset obl VarSet.empty in
-    let evars = VarSet.diff obl_vset left_vset in
     let evars_ids = List.map (fun v -> id_munge (Vars.string_var v))
       (VarSet.elements evars) in
-
     smt_push(); (* Push a frame to allow reuse of prover *)
     send_all_types ();
     let obl_sexp = exists_sexp evars_ids obl_sexp in
@@ -442,6 +414,47 @@ let finish_him
     false
 
 
+let ev_of_seq seq =
+  let eqs = filter (fun (a,b) -> a <> b) (get_eqs_norecs seq.ts) in
+  let neqs = filter (fun (a,b) -> a <> b) (get_neqs_norecs seq.ts) in
+  let add_ev_of_rmset_to_vset r vset =
+    RMSet.fold_to_list r
+      (fun (_,r) evset ->
+	let args = get_pargs_norecs false seq.ts [] r in
+	ev_args args evset)
+      vset in
+  let rec add_ev_of_form_to_vset form vset =
+    let vset_eqneqs =
+      fold_left
+	(fun evset (a1,a2) ->
+	  let (x, y) =
+	    (get_pargs_norecs false seq.ts [] a1, get_pargs_norecs false seq.ts [] a2) in
+	  ev_args y (ev_args x evset)
+	)
+	vset
+	(form.eqs@form.neqs) in
+    let vset_disjs =
+      fold_left
+	(fun evset (f1,f2) ->
+	  add_ev_of_form_to_vset f2 (add_ev_of_form_to_vset f1 evset))
+	vset_eqneqs
+	form.disjuncts in
+    add_ev_of_rmset_to_vset form.plain vset_disjs in
+  let ts_eqneq_vset =
+    ev_args_list (let (a,b) = split (eqs@neqs) in a@b) VarSet.empty in
+  let left_vset =
+    add_ev_of_rmset_to_vset seq.matched
+      (add_ev_of_form_to_vset seq.antiframe 
+	 (add_ev_of_form_to_vset seq.assumption ts_eqneq_vset)) in
+  let obl_vset = add_ev_of_form_to_vset seq.obligation VarSet.empty in
+  Format.fprintf logf "A gauche: ";
+  VarSet.iter (Format.fprintf logf "%a " Vars.pp_var) left_vset;
+  Format.fprintf logf "\nA droite: ";
+  VarSet.iter (Format.fprintf logf "%a " Vars.pp_var) obl_vset;
+  Format.fprintf logf "\n";
+  VarSet.diff obl_vset left_vset
+
+
 let true_sequent_smt (seq : sequent) : bool =
   (Clogic.true_sequent seq)
     ||
@@ -451,10 +464,11 @@ let true_sequent_smt (seq : sequent) : bool =
   (Clogic.plain seq.assumption  &&  Clogic.plain seq.obligation
     &&
    ((if log log_smt then Format.fprintf logf "@[Calling SMT to prove@\n %a@." Clogic.pp_sequent seq);
-    finish_him seq.ts seq.assumption seq.obligation)))
+    finish_him (ev_of_seq seq) seq.ts seq.assumption seq.obligation)))
 
 
 let frame_sequent_smt (seq : sequent) : bool =
+  (* Format.fprintf logf "@[frame_sequent_smt %a@." Clogic.pp_sequent seq;*)
   (Clogic.frame_sequent seq)
     ||
   (if (not !Config.smt_run) then false
@@ -462,7 +476,7 @@ let frame_sequent_smt (seq : sequent) : bool =
   (Clogic.plain seq.obligation
     &&
    ((if log log_smt then Format.fprintf logf "@[Calling SMT to get frame from@\n %a@." Clogic.pp_sequent seq);
-    finish_him seq.ts seq.assumption seq.obligation)))
+    finish_him (ev_of_seq seq) seq.ts seq.assumption seq.obligation)))
 
 
 (* Update the congruence closure using the SMT solver *)

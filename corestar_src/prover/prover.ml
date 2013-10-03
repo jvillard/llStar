@@ -167,7 +167,7 @@ let check wheres seq : bool  =
             if log log_smt then 
                Format.printf "[Calling SMT to discharge a pure guard]@\nguard:@\n%a@\nheap:@\n%a@\n" 
                pp_ts_formula (mk_ts_form ts f) pp_sequent seq;  
-            Smt.finish_him ts seq.assumption f
+            Smt.finish_him (Smt.ev_of_seq seq) ts seq.assumption f
           end
         else raise No_match
   ) wheres
