@@ -144,7 +144,7 @@ let make_sequent (pseq : pat_sequent) : sequent option =
   sequent_join (empty_sequent ()) pseq
 
 
-let check rmo ts wheres seq =
+let rec check rmo wheres seq =
   let sreps = sequent_reps seq [] in
   let check_where = function
     | NotInContext (Psyntax.Var varset) ->
@@ -152,31 +152,42 @@ let check rmo ts wheres seq =
 	fun v ->
 	  Cterm.var_not_used_in seq.ts v sreps
       ) varset in
-      if b then Some ts else None
+      if b then Some (seq.ts) else None
     | NotInTerm (Psyntax.Var varset, term) ->
       let b = vs_for_all (
 	fun v ->
 	  Cterm.var_not_used_in_term seq.ts v term
       ) varset in
-      if b then Some ts else None
+      if b then Some (seq.ts) else None
     | PureGuard pf -> 
       if !Config.smt_run then 
         begin
           let sf = convert_to_inner pf in 
           let (f,ts) = convert_ground seq.ts sf in 
 	  let ts = match rmo with
-	    | Some rm -> (try Cterm.rewrite ts rm (fun _ -> true) with Contradiction -> ts)
+	    | Some rm -> (try Cterm.rewrite ts rm (rewrite_guard_check seq) with Contradiction -> ts)
 	    | None -> ts in
           if log log_smt then 
             Format.printf "[Calling SMT to discharge a pure guard]@\nguard:@\n%a@\nheap:@\n%a@\n" 
               pp_ts_formula (mk_ts_form ts f) pp_sequent seq;  
           let b = Smt.finish_him (Smt.ev_of_seq seq) ts seq.assumption f in
-	  if b then Some ts else None
+	  if b then Some (seq.ts) else raise No_match
         end
       else raise No_match in
   List.fold_left (function
   | None -> fun _ -> None
-  | Some ts -> check_where) (Some ts) wheres
+  | Some ts -> check_where) (Some seq.ts) wheres
+and rewrite_guard_check seq (ts,guard) =
+  if contains ts seq.assumption (convert_to_inner guard.if_form) then
+    let without = convert_to_inner guard.without_form in
+    if not (is_sempty without) && contains ts seq.assumption without then
+      false
+    else
+      (* don't give rewrite rules to "check" when checking the guard of another rewrite rule *)
+      (* if Some ts is returned in that case, we know it is the same ts we gave it *)
+      is_some (check None guard.rewrite_where seq)
+  else
+    false
 
 
 (* TODO Doesn't use obligation equalities to help with match. *)
@@ -204,41 +215,31 @@ let apply_rule rm sr seq =
 		raise No_match
 	      else if (not (is_sempty sr.without_right) && contains ts ob sr.without_right) then
 		raise No_match
-	      else match (check (Some rm) ts sr.where
-			      {seq with  (* TODO: do we want to use the old asm / ob here for the SMT guard? *)
-				ts = ts;
-				obligation = ob;
-				assumption = ass}) with
-	      | None -> raise No_match
-	      | Some ts ->
-		fprintf !(Debug.proof_dump) "Match rule %s@\n" sr.name;
-		let seq =
-		  {seq with
-		   ts = ts;
-		   obligation = ob;
-                   assumption = ass;
-                   antiframe = ant; } in 
-		List.map
-		  (map_option
-		     (sequent_join_fresh seq))
-		  sr.premises
+	      else
+		let tso =
+		  check (Some rm) sr.where
+		    {seq with  (* TODO: do we want to use the old asm / ob here for the SMT guard? *)
+		      ts = ts;
+		      obligation = ob;
+		      assumption = ass} in
+		match tso with
+		| None -> raise No_match
+		| Some ts ->
+		  fprintf !Debug.proof_dump "Match rule %s@\n" sr.name;
+		  let seq =
+		    {seq with
+		      ts = ts;
+		      obligation = ob;
+                      assumption = ass;
+                      antiframe = ant; } in 
+		  List.map
+		    (map_option
+		       (sequent_join_fresh seq))
+		    sr.premises
 	    )
     )
     )
     )
-
-
-let rewrite_guard_check seq (ts,guard) =
-  if contains ts seq.assumption (convert_to_inner guard.if_form) then
-    let without = convert_to_inner guard.without_form in
-    if not (is_sempty without) && contains ts seq.assumption without then
-      false
-    else
-      (* don't give rewrite rules to "check" when checking the guard of another rewrite rule *)
-      (* if Some ts is returned in that case, we know it is the same ts we gave it *)
-      is_some (check None ts guard.rewrite_where seq)
-  else
-    false
 
 
 let simplify_sequent rm seq : sequent option
