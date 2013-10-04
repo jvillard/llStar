@@ -371,9 +371,6 @@ let exists_sexp idl sexp =
 let finish_him evars ts asm obl =
   try
     reset_typing_context ();
-    Format.fprintf logf "\nEVARS: ";
-    VarSet.iter (Format.fprintf logf "%a " Vars.pp_var) evars;
-    Format.fprintf logf "\n";
     let eqs = filter (fun (a,b) -> a <> b) (get_eqs_norecs ts) in
     let neqs = filter (fun (a,b) -> a <> b) (get_neqs_norecs ts) in
     let asm_eq_sexp = String.concat " " (map sexp_of_eq eqs) in
@@ -447,11 +444,6 @@ let ev_of_seq seq =
       (add_ev_of_form_to_vset seq.antiframe 
 	 (add_ev_of_form_to_vset seq.assumption ts_eqneq_vset)) in
   let obl_vset = add_ev_of_form_to_vset seq.obligation VarSet.empty in
-  Format.fprintf logf "A gauche: ";
-  VarSet.iter (Format.fprintf logf "%a " Vars.pp_var) left_vset;
-  Format.fprintf logf "\nA droite: ";
-  VarSet.iter (Format.fprintf logf "%a " Vars.pp_var) obl_vset;
-  Format.fprintf logf "\n";
   VarSet.diff obl_vset left_vset
 
 
