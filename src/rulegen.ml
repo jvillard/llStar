@@ -17,7 +17,9 @@ open Llutils
 let mk_psequent matched lhs rhs abd = (matched,lhs,rhs,abd)
 let mk_sequent_rule name premises_list conclusion without wheres =
   (conclusion, premises_list, name, without, wheres)
-
+let mk_equiv_rule name guard lhs rhs without =
+  List.map (function SeqRule s -> s | _ -> assert false)
+    (expand_equiv_rules [EquivRule (name, guard, lhs, rhs, without)])
 
 (** Make a rule with a single premise, no side conditions
 
@@ -30,9 +32,8 @@ let mk_simple_sequent_rule name (pre_lhs,pre_rhs) (post_lhs, post_rhs) =
   let premise = (mkEmpty, pre_lhs, pre_rhs, mkEmpty) in
   (conclusion, [[premise]], name, ([], []), [])
 
-let gen_sequent_rules_of_equiv name (equiv_left, equiv_right) =
-  mk_simple_sequent_rule (name^"_left") (equiv_right, mkEmpty) (equiv_left, mkEmpty)::
-  mk_simple_sequent_rule (name^"_right") (mkEmpty, equiv_right) (mkEmpty, equiv_left)::[]
+let mk_simple_equiv_rule name equiv_left equiv_right =
+  mk_equiv_rule name mkEmpty equiv_left equiv_right mkEmpty
 
 
 (*** helper functions to define predicates for structs *)
@@ -196,14 +197,7 @@ let struct_field_value_logic_of_type t =
 
 
 (** assumes that [t] is a struct type *)
-let fold_unfold_logic_of_type t =
-  let field_values =
-    Array.mapi (fun i _ -> Arg_var (Vars.AnyVar (0, "v"^(string_of_int i))))
-      (struct_element_types t) in
-  
-  let collate_field_values =
-    mk_struct_val_of_fields t field_values in
-
+let unfold_logic_of_type t =
   let field_ranged_values base_val =
     Array.mapi (fun i _ -> mk_field_val_of_struct_val t base_val i) (struct_element_types t) in
 
@@ -223,14 +217,20 @@ let fold_unfold_logic_of_type t =
   let field_rules =
     let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
     Array.to_list rules_array in
+  let logic = { empty_logic with seq_rules = field_rules; } in
+  (logic, logic)
 
+(** assumes that [t] is a struct type *)
+let fold_logic_of_type t =
+  let field_values =
+    Array.mapi (fun i _ -> Arg_var (Vars.AnyVar (0, "v"^(string_of_int i))))
+      (struct_element_types t) in
+  let collate_field_values = mk_struct_val_of_fields t field_values in
+  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
   let rules =
-    if Array.length (struct_element_types t) > 1 then
-      mk_simple_sequent_rule ("collate_"^(string_of_struct t))
-	(mk_struct_pointer x_var collate_field_values, mk_struct_pointer x_var v_var)
-	(mk_unfolded_struct t x_var field_values, mk_struct_pointer x_var v_var)::
-	field_rules
-    else [] in
+    mk_simple_equiv_rule ("collate_"^(string_of_struct t))
+      (mk_unfolded_struct t x_var field_values)
+      (mkPointer x_var (args_of_type t) collate_field_values) in
   let logic = { empty_logic with seq_rules = rules; } in
   (logic, logic)
 
@@ -417,9 +417,10 @@ let logic_of_module m =
   let rule_generators =
     (sizeof_logic_of_type,int_struct_filter)
     ::(eltptr_logic_of_type,struct_filter)
-    ::(fold_unfold_logic_of_type,struct_filter)
+    ::(unfold_logic_of_type,struct_filter)
     ::(struct_value_logic_of_type,struct_filter)
     ::(bytearray_to_struct_conversions,struct_filter)
+    ::(fold_logic_of_type,struct_filter)
     ::if !Lstar_config.auto_gen_list_logic then
 	(sllnode_logic_of_type,struct_filter)::[]
       else [] in

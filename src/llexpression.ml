@@ -238,7 +238,7 @@ and args_of_value v = match classify_value v with
   | MDNode -> raise (MetaData v)
   | MDString -> raise (MetaData v)
   | BlockAddress -> Arg_op("block_addr", [args_of_value (operand v 0)])
-  | ConstantAggregateZero -> implement_this "ConstantAggregateZero"
+  | ConstantAggregateZero -> dump_value v; implement_this "ConstantAggregateZero"
   | ConstantArray -> args_of_composite_value "array" v
   | ConstantExpr -> args_of_const_expr v
   | ConstantFP -> Arg_var (Vars.freshe ())
