@@ -53,6 +53,9 @@ let args_offset_of_field struct_t i =
 let alloc_size64_of_field struct_t i =
   Llvm_target.abi_size !lltarget (type_of_field struct_t i)
 
+let args_alloc_sizeof_field struct_t i =
+  bvargs_of_int64 64 (alloc_size64_of_field struct_t i)
+
 let bitsize64_of_field struct_t i =
   Llvm_target.size_in_bits !lltarget (type_of_field struct_t i)
 
@@ -206,7 +209,7 @@ let unfold_logic_of_type t =
 
   let x_var = Arg_var (Vars.AnyVar (0, "x")) in
   let j_var = Arg_var (Vars.AnyVar (0, "j")) in
-  (* let t_var = Arg_var (Vars.AnyVar (0, "t")) in *)
+  let t_var = Arg_var (Vars.AnyVar (0, "t")) in
   let v_var = Arg_var (Vars.AnyVar (0, "v")) in
   let w_var = Arg_var (Vars.AnyVar (0, "w")) in
 
@@ -215,12 +218,12 @@ let unfold_logic_of_type t =
 
   let mk_field_rule i subelt_type =
     let addr = mkEltptr x_var (args_of_type t) (mkJump (bvargs_of_int 64 i) j_var) in
-    (* let target_pointer = mkPointer addr t_var w_var in *)
-    let target_pointer = mkPointer addr (args_type_field t i) w_var in
-    (* let target_pointer = mk_field_pointer t i x_var w_var in *)
-    mk_simple_sequent_rule ((string_of_struct t)^"_field_"^(string_of_int i))
-      (mk_unfolded_struct t x_var (field_ranged_values v_var), target_pointer)
-      (mk_struct_pointer x_var v_var, target_pointer) in
+    let target_pointer = mkPointer addr t_var w_var in
+    mk_sequent_rule ((string_of_struct t)^"_field_"^(string_of_int i))
+      [[(mkEmpty, mk_unfolded_struct t x_var (field_ranged_values v_var), target_pointer, mkEmpty)]]
+      (mkEmpty, mk_struct_pointer x_var v_var, target_pointer, mkEmpty)
+      (mkEmpty,mkEmpty)
+      [PureGuard (mkPPred ("bvule", [Arg_op ("sizeof", [t_var]); args_alloc_sizeof_field t i]))] in
 
   let field_rules =
     let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
@@ -414,18 +417,27 @@ let logic_of_module m =
 	(sllnode_logic_of_type,struct_filter)::[]
       else [] in
   let add_logic_pair (l1,m1) (l2,m2) = (add_logic l1 l2, add_logic m1 m2) in
+  let ptr_bitsize =
+    Llvm_target.size_in_bits !lltarget (pointer_type (i8_type !llcontext)) in
   let nullptr_rw =
     { function_name = "NULL";
       arguments=[];
-      result=bvargs64_of_int (Llvm_target.size_in_bits !lltarget
-				(pointer_type (i8_type !llcontext))) 0;
+      result=bvargs64_of_int ptr_bitsize 0;
       guard={without_form=[];rewrite_where=[];if_form=[]};
       rewrite_name="nullptr";
       saturate=true} in
-  (* always include the above rewrite of NULL() *)
+  let sizeof_ptr_rw =
+    { function_name = "sizeof";
+      arguments=[mkPointerType (Arg_var (Vars.AnyVar (0, "t")))];
+      result=bvargs64_of_int ptr_bitsize (Llvm_target.pointer_size !lltarget);
+      guard={without_form=[];rewrite_where=[];if_form=[]};
+      rewrite_name="sizeof_pointer_type";
+      saturate=true} in
+  (* always include the above rewrite of NULL() and sizeof pointer_type *)
+  let init_rw = [nullptr_rw; sizeof_ptr_rw] in
   let starting_logic =
-    ({empty_logic with rw_rules = [nullptr_rw]; },
-     {empty_logic with rw_rules = [nullptr_rw]; }) in
+    ({empty_logic with rw_rules = init_rw; },
+     {empty_logic with rw_rules = init_rw; }) in
   (** applies all rulegen functions that are compatible with [t] *)
   let logic_of_type t =
     List.fold_left

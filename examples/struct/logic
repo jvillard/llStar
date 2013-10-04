@@ -1,5 +1,5 @@
 import "../../rules/llvm.logic";
-
+ 
 /*
 rule alt_node_to_prove_norbert:
    | pointer(?x, bv_const("64", "4"), ?v0) * pointer(bvadd.64(?x,

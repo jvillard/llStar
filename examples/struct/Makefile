@@ -1,7 +1,7 @@
 LLVM_AS=llvm-as-3.2
 
 LSTAR_OPTIONS=
-SRC=field_access.ll dynalloc.ll corner_structs.ll slow_mofo.c norbert.ll
+SRC=field_access.ll dynalloc.ll nested.ll corner_structs.ll slow_mofo.c norbert.ll
 BITCODE=$(SRC:=.bc)
 TEST=$(BITCODE:.bc=.test)
 

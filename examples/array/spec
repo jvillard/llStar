@@ -1,5 +1,9 @@
 import "../../specs/stdlib.spec";
 
+assert_in_bounds:
+ {pointer(@parameter0:,integer_type(numeric_const("64")),_n) * !bvule(_n, @parameter1:)}
+ {pointer(@parameter0:,integer_type(numeric_const("64")),_m) * !bvule(_m, @parameter1:)}
+
 const_iter: {}{}
 
 const_access_begin: {}{}
@@ -17,5 +21,5 @@ access_i32:
 
 multi_accesses: {}{$ret_v1 = bv_const("32", "0")}
 const_array_iter: {}{}
-heap_array_iter: {}{}
+heap_array_iter: {!bvugt(@parameter0:,NULL())}{}
 stack_array_iter: {}{}

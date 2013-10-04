@@ -38,6 +38,8 @@ rewrite pointer_getelementptr_any:
   eltptr(?x,pointer_type(?t),jump(?n,?j))
   = eltptr(bvadd.64(?x,bvmul.64(?n,sizeof(?t))),?t,?j)
 
+rewrite sizeof_array:
+  sizeof(array_type(?n,?t)) = bvmul.64(?n,sizeof(?t))
 
 /*************************************
  * Simple subtraction rules 
@@ -109,13 +111,14 @@ rule pointer_different :
 if
   pointer(?x,?t,?v) * pointer(?y,?tt,?vv) | |-
 
+/*
 rule pointer_same_fail :
   pointer(?x,?t,?v) * pointer(?x,?tt,?vv) | |-
 where
   sizeof(?t) != NULL() pureguard;
   sizeof(?tt) != NULL() pureguard
 if
-
+*/
 
 
 rule array_extract_first_elt:
