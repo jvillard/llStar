@@ -607,11 +607,11 @@ let rewrite (ts : term_structure) (rm : rewrite_rule list) (query : term_structu
 (*	      Format.printf "Adding term %a = %a@\n to %a@\n" (pp_c ts) x (pp_c ts) c  pp_ts ts;*)
 	      if equal ts x c || not (query (ts,r.guard)) then 
 		begin
-(*		  Format.printf "Already matched. @\n";*)
+		  (* Format.fprintf Debug.logf "Already matched. @\n"; *)
 		  raise Backtrack.No_match
 		end
 	      else 
-		Format.fprintf !(Debug.proof_dump) "Making %a = %a using %s@\n" 
+		Format.fprintf !Debug.proof_dump "Making %a = %a using %s@\n" 
 		  (pp_c ts) c (pp_c ts) x r.rewrite_name;
 (*	        CC.print ts.cc;*)
 		let ts = make_equal ts x c in

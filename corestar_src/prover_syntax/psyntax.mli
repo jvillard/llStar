@@ -128,6 +128,7 @@ type where =
   | NotInContext of varterm 
   | NotInTerm of varterm * args
   | PureGuard of pform 
+val pp_where : Format.formatter -> where -> unit
 type sequent_rule =
     psequent * psequent list list * string * (pform * pform) * where list
 val pp_sequent_rule : Format.formatter -> sequent_rule -> unit

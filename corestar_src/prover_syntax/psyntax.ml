@@ -442,7 +442,7 @@ type where =
 let string_vs ppf vs =
   vs_iter (fun v -> Format.fprintf ppf "%s" (string_var v)) vs
 
-let string_where ppf where = 
+let pp_where ppf where = 
   match where with 
     NotInContext (Var vs) -> 
       Format.fprintf ppf "%a notincontext" 
@@ -477,7 +477,7 @@ let pp_sequent_rule f ((c, hss, n, w, ss) : sequent_rule) =
   p "" pp_psequent c;
   p "without " pp_entailment w;
   if ss <> [] then
-    p "where " (list_format ";" string_where) ss;
+    p "where " (list_format ";" pp_where) ss;
   (match hss with
     | [] -> ()
     | x::xs ->
@@ -510,7 +510,7 @@ let pp_rewrite_guard f rg =
   if rg.if_form <> [] then
     p "if" string_form rg.if_form;
   if rg.rewrite_where <> [] then
-    p "where" (pp_list string_where) rg.rewrite_where
+    p "where" (pp_list pp_where) rg.rewrite_where
 
 let pp_rewrite_rule f rw =
   fprintf f "@\n@[<2>rewrite %s%s:"
