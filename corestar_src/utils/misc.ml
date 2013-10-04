@@ -13,6 +13,8 @@
 
 open Backtrack 
 
+let is_some = function Some _ -> true | None -> false
+
 let map_option f l =
   let f' acc x = match f x with
     | None -> acc

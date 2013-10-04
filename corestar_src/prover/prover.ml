@@ -144,41 +144,43 @@ let make_sequent (pseq : pat_sequent) : sequent option =
   sequent_join (empty_sequent ()) pseq
 
 
-let check wheres seq : bool  =
+let check rmo ts wheres seq =
   let sreps = sequent_reps seq [] in
-  List.for_all
-    (
-  function
+  let check_where = function
     | NotInContext (Psyntax.Var varset) ->
-	vs_for_all (
-	  fun v ->
-	    Cterm.var_not_used_in seq.ts v sreps
-	) varset
+      let b = vs_for_all (
+	fun v ->
+	  Cterm.var_not_used_in seq.ts v sreps
+      ) varset in
+      if b then Some ts else None
     | NotInTerm (Psyntax.Var varset, term) ->
-	vs_for_all (
-	  fun v ->
-	    Cterm.var_not_used_in_term seq.ts v term
-	) varset
+      let b = vs_for_all (
+	fun v ->
+	  Cterm.var_not_used_in_term seq.ts v term
+      ) varset in
+      if b then Some ts else None
     | PureGuard pf -> 
-        if !Config.smt_run then 
-          begin
-            let sf = convert_to_inner pf in 
-            let (f,ts) = convert_ground seq.ts sf in 
-            if log log_smt then 
-               Format.printf "[Calling SMT to discharge a pure guard]@\nguard:@\n%a@\nheap:@\n%a@\n" 
-               pp_ts_formula (mk_ts_form ts f) pp_sequent seq;  
-            Smt.finish_him (Smt.ev_of_seq seq) ts seq.assumption f
-          end
-        else raise No_match
-  ) wheres
+      if !Config.smt_run then 
+        begin
+          let sf = convert_to_inner pf in 
+          let (f,ts) = convert_ground seq.ts sf in 
+	  let ts = match rmo with
+	    | Some rm -> (try Cterm.rewrite ts rm (fun _ -> true) with Contradiction -> ts)
+	    | None -> ts in
+          if log log_smt then 
+            Format.printf "[Calling SMT to discharge a pure guard]@\nguard:@\n%a@\nheap:@\n%a@\n" 
+              pp_ts_formula (mk_ts_form ts f) pp_sequent seq;  
+          let b = Smt.finish_him (Smt.ev_of_seq seq) ts seq.assumption f in
+	  if b then Some ts else None
+        end
+      else raise No_match in
+  List.fold_left (function
+  | None -> fun _ -> None
+  | Some ts -> check_where) (Some ts) wheres
 
 
 (* TODO Doesn't use obligation equalities to help with match. *)
-let apply_rule
-     (sr : inner_sequent_rule)
-     (seq : sequent)
-     : sequent list list
-     =
+let apply_rule rm sr seq =
   (* Should reset any matching variables in the ts to avoid clashes. *)
   let ts = blank_pattern_vars seq.ts in
   (* Match obligation *)
@@ -202,12 +204,13 @@ let apply_rule
 		raise No_match
 	      else if (not (is_sempty sr.without_right) && contains ts ob sr.without_right) then
 		raise No_match
-	      else if (not (check sr.where {seq with  (* TODO: do we want to use the old asm / ob here for the SMT guard? *)
-					    ts = ts;
-					    obligation = ob;
-					    assumption = ass})) then
-		  raise No_match
-	      else begin
+	      else match (check (Some rm) ts sr.where
+			      {seq with  (* TODO: do we want to use the old asm / ob here for the SMT guard? *)
+				ts = ts;
+				obligation = ob;
+				assumption = ass}) with
+	      | None -> raise No_match
+	      | Some ts ->
 		fprintf !(Debug.proof_dump) "Match rule %s@\n" sr.name;
 		let seq =
 		  {seq with
@@ -219,10 +222,9 @@ let apply_rule
 		  (map_option
 		     (sequent_join_fresh seq))
 		  sr.premises
-	      end
 	    )
-	    )
-	)
+    )
+    )
     )
 
 
@@ -232,7 +234,9 @@ let rewrite_guard_check seq (ts,guard) =
     if not (is_sempty without) && contains ts seq.assumption without then
       false
     else
-      check guard.rewrite_where seq
+      (* don't give rewrite rules to "check" when checking the guard of another rewrite rule *)
+      (* if Some ts is returned in that case, we know it is the same ts we gave it *)
+      is_some (check None ts guard.rewrite_where seq)
   else
     false
 
@@ -349,18 +353,13 @@ let string_of_proof () =
 exception Failed_eg of Clogic.sequent list
 
 
-let rec apply_rule_list_once 
-   (rules : sequent_rule list) 
-   (seq : Clogic.sequent) 
-   : Clogic.sequent list list
-   =
-  match rules with 
-    [] -> raise No_match
+let rec apply_rule_list_once rw_rules seq_rules seq = match seq_rules with 
+  | [] -> raise No_match
   | rule::rules ->
-      try 
-      apply_rule (Clogic.convert_rule rule) seq
-      with 
-      | No_match -> apply_rule_list_once rules seq
+    try 
+      apply_rule rw_rules (Clogic.convert_rule rule) seq
+    with 
+    | No_match -> apply_rule_list_once rw_rules rules seq
 
 
 let rec sequents_backtrack 
@@ -404,7 +403,7 @@ let apply_rule_list
 	     [seq]
 	   else
 	   try 
-	     search (apply_rule_list_once logic.seq_rules seq)
+	     search (apply_rule_list_once logic.rw_rules logic.seq_rules seq)
 	   with No_match -> 
 	   try 
 		 if may_finish seq then 
