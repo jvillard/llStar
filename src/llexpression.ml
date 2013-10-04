@@ -36,6 +36,8 @@ let mkUndef64 sz = mkUndef (Arg_string (Int64.to_string sz))
 let mkPointer ptr ptr_t v = mkSPred ("pointer", [ptr; ptr_t; v])
 (** padding with [size] bytes at address [x] *)
 let mkPadding x size = mkSPred ("pad", [x; size])
+let mkJumpEnd = Arg_op ("jump_end", [])
+let mkJump jhead jtail = Arg_op ("jump", [jhead; jtail])
 let mkEltptr ptr t jchain = Arg_op ("eltptr", [ptr; t; jchain])
 
 let mkIntegerType sz = Arg_op("integer_type", [Arg_string (string_of_int sz)])
@@ -170,14 +172,14 @@ let rec args_of_op opcode opval =
       if i = max_op then []
       else operand opval i::(jlist_from_op (i+1)) in
     let rec jump_chain_of_lidx = function
-      | [] -> Arg_op ("jump_end", [])
+      | [] -> mkJumpEnd
       | idx::tl ->
 	(* convert constant integers to 64 bits *)
 	let idx = match int64_of_const idx with
 	  | None -> idx
 	  | Some i -> const_of_int64 (integer_type !llcontext 64) i false in
 	let args_idx = args_of_value idx in
-	Arg_op ("jump", [args_idx; jump_chain_of_lidx tl]) in
+	mkJump args_idx (jump_chain_of_lidx tl) in
     let jump_chain = jump_chain_of_lidx (jlist_from_op 1) in
     mkEltptr (args_of_value value) (args_of_type (type_of value)) jump_chain
   | Opcode.ICmp ->
