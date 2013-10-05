@@ -13,7 +13,7 @@ open Llutils
 (** return value expression constant *)
 let ret_arg = Arg_var(Spec.ret_v1)
 
-(* shorthands for integer expressions *)
+(* shorthands for value expressions *)
 let numargs i = Arg_op("numeric_const",[i])
 let numargs_of_str i = numargs (Arg_string i)
 let numargs_of_int i = numargs_of_str (string_of_int i)
@@ -28,6 +28,10 @@ let bvargs64_of_int64 sz i =
 let bvargs_of_int sz i = bvargs64_of_int64 (Int64.of_int sz) (Int64.of_int i)
 let bvargs_of_int64 sz i = bvargs64_of_int64 (Int64.of_int sz) i
 let bvargs64_of_int sz i = bvargs64_of_int64 sz (Int64.of_int i)
+let fpargs_of_float fp = Arg_op("fp_const", [Arg_string (string_of_float fp)])
+let mkVoid = Arg_op("void", [])
+let mkStruct t elts_v = Arg_op(Smtexpression.smtconstr_of_struct t, elts_v)
+let mkNullPtr = Arg_op("NULL", [])
 
 (* a few functions for creating predicates. Adds a layer of
    type-safety and avoids catastrophic typos *)
@@ -64,40 +68,49 @@ let args_sizeof t =
   let size64 = Llvm_target.abi_size !lltarget t in
   bvargs_of_int64 64 size64
 
-let rec args_of_type t = match (classify_type t) with
-  | Void -> mkVoidType
+let rec args_type_and_zero_of_type t = match (classify_type t) with
+  | Void -> (mkVoidType, mkVoid)
   | Float
   | Half
   | Double
   | X86fp80
   | Fp128
-  | Ppc_fp128 -> mkFloatType
-  | Label -> mkLabelType
-  | Integer -> mkIntegerType (integer_bitwidth t)
+  | Ppc_fp128 -> (mkFloatType, fpargs_of_float 0.0)
+  | Label -> (mkLabelType, mkVoid)
+  | Integer ->
+    let sz = integer_bitwidth t in
+    (mkIntegerType sz, bvargs_of_int sz 0)
   | TypeKind.Function -> (* silly name clash *)
-    let ret_type = return_type t in
-    let par_types = param_types t in
-    mkFunctionType (args_of_type_array par_types) (args_of_type ret_type)
+    let ret_type = fst (args_type_and_zero_of_type (return_type t)) in
+    let par_types = fst (args_type_and_zero_of_type_array (param_types t)) in
+    (mkFunctionType par_types ret_type, mkVoid)
   | Struct -> (
-    if is_opaque t then Arg_op("opaque_type", [])
-    else match struct_name t with
-      | None ->
+    if is_opaque t then (Arg_op("opaque_type", []), mkVoid)
+    else
 	let elts_types = struct_element_types t in
-	mkStructType (args_of_type_array elts_types)
-      | Some n -> mkNamedType (Arg_string n)
+	let (elt_ta, elt_za) = args_type_and_zero_of_type_array elts_types in
+	let struct_zero = mkStruct t elt_za in
+	match struct_name t with
+	| None ->
+	  (mkStructType elt_ta, struct_zero)
+	| Some n -> (mkNamedType (Arg_string n), struct_zero)
   )
   | Array ->
-    let elt_t = element_type t in
-    mkArrayType (bvargs_of_int 64 (array_length t)) (args_of_type elt_t)
+    let (elt_t, elt_z) = args_type_and_zero_of_type (element_type t) in
+    (mkArrayType (bvargs_of_int 64 (array_length t)) elt_t,
+     mkVoid)
   | Pointer ->
-    let elt_t = element_type t in
-    mkPointerType (args_of_type elt_t)
+    let elt_t = fst (args_type_and_zero_of_type (element_type t)) in
+    (mkPointerType elt_t, mkNullPtr)
   | Vector ->
-    let elt_t = element_type t in
-    mkVectorType (args_of_type elt_t)
-  | Metadata -> mkMDType
-and args_of_type_array ta =
-  Array.to_list (Array.map args_of_type ta)
+    let elt_t = fst (args_type_and_zero_of_type (element_type t)) in
+    (mkVectorType elt_t, mkVoid)
+  | Metadata -> (mkMDType, mkVoid)
+and args_type_and_zero_of_type_array ta =
+  List.split (Array.to_list (Array.map args_type_and_zero_of_type ta))
+
+let args_of_type t = fst (args_type_and_zero_of_type t)
+let args_zero_of_type t = snd (args_type_and_zero_of_type t)
 
 let args_of_int_const v = match int64_of_const v with
   | Some i ->
@@ -240,14 +253,14 @@ and args_of_value v = match classify_value v with
   | MDNode -> raise (MetaData v)
   | MDString -> raise (MetaData v)
   | BlockAddress -> Arg_op("block_addr", [args_of_value (operand v 0)])
-  | ConstantAggregateZero -> dump_value v; implement_this "ConstantAggregateZero"
-  | ConstantArray -> args_of_composite_value "array" v
+  | ConstantAggregateZero -> args_zero_of_type (type_of v)
+  | ConstantArray -> args_of_composite_value "array_const" v
   | ConstantExpr -> args_of_const_expr v
   | ConstantFP -> Arg_var (Vars.freshe ())
   | ConstantInt -> args_of_int_const v
   | ConstantPointerNull -> bvargs64_of_int (size_in_bits !lltarget (type_of v)) 0
-  | ConstantStruct -> args_of_composite_value "struct" v
-  | ConstantVector -> args_of_composite_value "vector" v
+  | ConstantStruct -> args_of_composite_value (Smtexpression.smtconstr_of_struct (type_of v)) v
+  | ConstantVector -> args_of_composite_value "vector_const" v
   | Function -> Arg_op("function", [args_of_value (operand v 0)])
   | GlobalAlias -> implement_this "value is a global alias" (* undocumented? *)
   | GlobalVariable -> Arg_var (Vars.concretep_str (value_id v))

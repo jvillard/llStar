@@ -19,24 +19,16 @@ equiv ival:
  * and the rules are the same for arrays and pointers
  * so we might as well care only about pointers
  */
-rewrite eltptr_array:
-  eltptr(?p,array_type(?n, ?t),?j)
-  = eltptr(?p,pointer_type(?t),?j)
+equiv eltptr_array:
+  pointer(eltptr(?p,array_type(?n, ?at),?j),?t,?v)
+  <=> pointer(eltptr(?p,pointer_type(?at),?j),?t,?v)
 
-rewrite jump_end:
-  eltptr(?y,?t,jump_end()) = ?y
+equiv jump_end:
+  pointer(eltptr(?y,?t,jump_end()),?tt,?v) <=> pointer(?y,?tt,?v)
 
-rewrite pointer_getelementptr0:
-  eltptr(?p,pointer_type(?t),jump(bv_const("64", "0"),?j))
-  = eltptr(?p,?t,?j)
-
-rewrite pointer_getelementptr1:
-  eltptr(?x,pointer_type(?t),jump(bv_const("64", "1"),?j))
-  = eltptr(bvadd.64(?x,sizeof(?t)),?t,?j)
-
-rewrite pointer_getelementptr_any:
-  eltptr(?x,pointer_type(?t),jump(?n,?j))
-  = eltptr(bvadd.64(?x,bvmul.64(?n,sizeof(?t))),?t,?j)
+equiv pointer_getelementptr0:
+  pointer(eltptr(?p,pointer_type(?pt),jump(bv_const("64", "0"),?j)),?t,?v)
+  <=> pointer(eltptr(?p,?pt,?j),?t,?v)
 
 rewrite sizeof_array:
   sizeof(array_type(?n,?t)) = bvmul.64(?n,sizeof(?t))
@@ -123,19 +115,17 @@ if
 
 rule array_extract_first_elt:
   | pointer(?x, array_type(?n, ?t), ?v)
-  * ?y = eltptr(?x, pointer_type(?t), jump(NULL(), ?j))
-  |- pointer(?y, ?t, ?w)
+  |- pointer(?x, ?t, ?w)
 if
   | pointer(?x, ?t, select(?v, bv_const("64", "0"))) *
   pointer(eltptr(?x, pointer_type(?t), jump(bv_const("64", "1"), jump_end())),
           array_type(bvsub.64(?n,bv_const("64", "1")), ?t),
           array_right_shift(?v,bv_const("64","1")))
- |- pointer(?y, ?t, ?w)
+ |- pointer(?x, ?t, ?w)
 
 rule array_extract_elt:
   | pointer(?x, array_type(?n, ?t), ?v)
-  * ?y = eltptr(?x, pointer_type(?t), jump(?o, jump_end()))
- |- pointer(?y, ?t, ?w)
+ |- pointer(eltptr(?x, pointer_type(?t), jump(?o, jump_end())), ?t, ?w)
 without
   ?o = NULL()
 where
@@ -152,8 +142,9 @@ equiv empty_array:
   pointer(?x, array_type(bv_const("64", "0"), ?t), ?v) <=> ?x = ?x
 
 equiv merge_pointer_array:
+ ?o = sizeof(?t) =>
    pointer(?x, ?t, ?v1)
- * pointer(eltptr(?x, pointer_type(?t), jump(bv_const("64", "1"), jump_end())),
+ * pointer(bvadd.64(?x,?o),
            array_type(?m, ?t), ?v)
  <=> pointer(?x, array_type(bvadd.64(?m,bv_const("64", "1")), ?t),
              store(array_shift_left(?v,bv_const("64", "1")), bv_const("64", "0"), ?v1))
@@ -167,9 +158,18 @@ equiv merge_array_pointer_array:
   <=>
   pointer(?x, array_type(?n, ?t), store(?v,?o,?vo))
 
+equiv pointer_getelementptr1:
+  pointer(eltptr(?x,pointer_type(?pt),jump(bv_const("64", "1"),?j)),?t,?v)
+  <=> pointer(eltptr(bvadd.64(?x,sizeof(?pt)),?t,?j),?t,?v)
+
+equiv pointer_getelementptr_any:
+  pointer(eltptr(?x,pointer_type(?pt),jump(?n,?j)),?t,?v)
+  <=> pointer(eltptr(bvadd.64(?x,bvmul.64(?n,sizeof(?pt))),?pt,?j),?t,?v)
+without ?n = NULL()
+
 equiv merge_array_pointer:
    pointer(?x, array_type(?s, ?t), ?v)
- * pointer(eltptr(?x,pointer_type(?t),jump(?s,jump_end())),?t,?vp)
+ * pointer(bvadd.64(?x,bvmul.64(?s,sizeof(?t))),?t,?vp)
  <=> pointer(?x,array_type(bvadd.64(?s,bv_const("64","1")),?t),store(?v,?s,?vp))
 
 equiv merge_array_array:

@@ -150,7 +150,7 @@ let sizeof_logic_of_type t =
       result=args_size;
       guard={without_form=[];rewrite_where=[];if_form=[]};
       rewrite_name="sizeof_"^(string_of_lltype t);
-      saturate=true} in
+      saturate=false} in
   let logic = { empty_logic with rw_rules = [rewrite_rule]; } in
   (logic, logic)
 
@@ -162,22 +162,21 @@ let eltptr_logic_of_type t =
   let args_struct_t = args_of_type t in
   let root_var = Arg_var (Vars.AnyVar (0, "x")) in
   let jump_var = Arg_var (Vars.AnyVar (0, "j")) in
+  let t_var = Arg_var (Vars.AnyVar (0, "t")) in
+  let v_var = Arg_var (Vars.AnyVar (0, "v")) in
   let subelt_eltptr_rules i subelt_type =
-    let jump = Arg_op ("jump", [bvargs_of_int 64 i; jump_var]) in
-    let arguments_left = [root_var; args_struct_t; jump] in
+    let jump = mkJump (bvargs_of_int 64 i) jump_var in
+    let orig_eltptr = mkEltptr root_var args_struct_t jump in
     let new_root =
       if i = 0 then root_var
       else Arg_op ("bvadd.64", [root_var; args_offset_of_field t i]) in
     let result = mkEltptr new_root (args_of_type subelt_type) jump_var in
-    { function_name = "eltptr";
-      arguments=arguments_left;
-      result=result;
-      guard={without_form=[];rewrite_where=[];if_form=[]};
-      rewrite_name="eltptr_"^(string_of_struct t)^(string_of_int i);
-      saturate=true} in
-  let eltptr_rules = Array.to_list
-    (Array.mapi subelt_eltptr_rules (struct_element_types t)) in
-  let logic = { empty_logic with rw_rules = eltptr_rules; } in
+    mk_simple_equiv_rule ("eltptr_"^(string_of_struct t)^(string_of_int i))
+      (mkPointer orig_eltptr t_var v_var)
+      (mkPointer result t_var v_var) in
+  let eltptr_rules = List.flatten (Array.to_list
+    (Array.mapi subelt_eltptr_rules (struct_element_types t))) in
+  let logic = { empty_logic with seq_rules = eltptr_rules; } in
   (logic, logic)
 
 (** assumes that [t] is a struct type *)
@@ -202,29 +201,23 @@ let struct_field_value_logic_of_type t =
   (logic, logic)
 
 
-(** assumes that [t] is a struct type *)
+(** unfolds a struct pointer on the lhs when the pointer on the rhs is exactly one of the fields of [t] *)
+(* this is not enough for nested structs or devious pointer casting, but it is
+    efficient to try that first as it will be a common case *)
+(* assumes that [t] is a struct type *)
 let unfold_logic_of_type t =
   let field_ranged_values base_val =
     Array.mapi (fun i _ -> mk_field_val_of_struct_val t base_val i) (struct_element_types t) in
-
   let x_var = Arg_var (Vars.AnyVar (0, "x")) in
-  let j_var = Arg_var (Vars.AnyVar (0, "j")) in
-  let t_var = Arg_var (Vars.AnyVar (0, "t")) in
   let v_var = Arg_var (Vars.AnyVar (0, "v")) in
   let w_var = Arg_var (Vars.AnyVar (0, "w")) in
-
-  let mk_struct_pointer root value =
-    mkPointer root (args_of_type t) value in
-
+  (* the whole struct *)
+  let struct_pointer = mkPointer x_var (args_of_type t) v_var in
   let mk_field_rule i subelt_type =
-    let addr = mkEltptr x_var (args_of_type t) (mkJump (bvargs_of_int 64 i) j_var) in
-    let target_pointer = mkPointer addr t_var w_var in
-    mk_sequent_rule ((string_of_struct t)^"_field_"^(string_of_int i))
-      [[(mkEmpty, mk_unfolded_struct t x_var (field_ranged_values v_var), target_pointer, mkEmpty)]]
-      (mkEmpty, mk_struct_pointer x_var v_var, target_pointer, mkEmpty)
-      (mkEmpty,mkEmpty)
-      [PureGuard (mkPPred ("bvule", [Arg_op ("sizeof", [t_var]); args_alloc_sizeof_field t i]))] in
-
+    let target_pointer = mk_field_pointer t i x_var w_var in
+    mk_simple_sequent_rule ((string_of_struct t)^"_field_"^(string_of_int i))
+      (mk_unfolded_struct t x_var (field_ranged_values v_var), target_pointer)
+      (struct_pointer, target_pointer) in
   let field_rules =
     let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
     Array.to_list rules_array in
@@ -425,14 +418,14 @@ let logic_of_module m =
       result=bvargs64_of_int ptr_bitsize 0;
       guard={without_form=[];rewrite_where=[];if_form=[]};
       rewrite_name="nullptr";
-      saturate=true} in
+      saturate=false} in
   let sizeof_ptr_rw =
     { function_name = "sizeof";
       arguments=[mkPointerType (Arg_var (Vars.AnyVar (0, "t")))];
       result=bvargs64_of_int ptr_bitsize (Llvm_target.pointer_size !lltarget);
       guard={without_form=[];rewrite_where=[];if_form=[]};
       rewrite_name="sizeof_pointer_type";
-      saturate=true} in
+      saturate=false} in
   (* always include the above rewrite of NULL() and sizeof pointer_type *)
   let init_rw = [nullptr_rw; sizeof_ptr_rw] in
   let starting_logic =
