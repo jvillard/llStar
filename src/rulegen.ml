@@ -426,6 +426,27 @@ let sllnode_logic_of_type t = match struct_name t with
     with Not_found -> (empty_logic, empty_logic)
 
 
+let remove_pointer_arith_same_root_same_size =
+  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
+  let t_var = Arg_var (Vars.AnyVar (0, "t")) in
+  let v_var = Arg_var (Vars.AnyVar (0, "v")) in
+  let y_var = Arg_var (Vars.AnyVar (0, "y")) in
+  let w_var = Arg_var (Vars.AnyVar (0, "w")) in
+  let src_pointer = mkPointer x_var t_var v_var in
+  let target_pointer = mkPointer y_var t_var w_var in
+  let eq_x_y = mkEQ(x_var, y_var) in
+  let rule =
+    mk_sequent_rule "remove_pointer_arith_same_root_same_size"
+      [[(src_pointer, eq_x_y, mkEQ(v_var, w_var), mkEmpty)]]
+      (mkEmpty, src_pointer, target_pointer, mkEmpty)
+      (mkEmpty, mkEmpty)
+      [PureGuard eq_x_y] in
+  let logic = { empty_logic with seq_rules = [rule] } in
+  (logic, logic)
+
+type rule_apply =
+| ApplyOnce of (Psyntax.logic * Psyntax.logic)
+| ApplyAtType of (lltype -> Psyntax.logic * Psyntax.logic) * (lltype -> bool)
 
 (** generates the logic and the abduction logic of module [m] *)
 let logic_of_module m =
@@ -439,16 +460,18 @@ let logic_of_module m =
   (** pairs of rule generation functions and a filter that checks they
       are applied only to certain types *)
   let rule_generators =
-    (sizeof_logic_of_type,int_struct_filter)
-    ::(eltptr_logic_of_type,struct_filter)
-    ::(unfold_logic_of_type,struct_filter)
-    ::(struct_value_logic_of_type,struct_filter)
-    ::(bytearray_to_struct_conversions,struct_filter)
-    ::(fold_logic_of_type,struct_filter)
+    ApplyAtType (sizeof_logic_of_type, int_struct_filter)
+    ::ApplyAtType (eltptr_logic_of_type, struct_filter)
+    ::ApplyAtType (unfold_logic_of_type, struct_filter)
+    ::ApplyAtType (struct_value_logic_of_type, struct_filter)
+    ::ApplyAtType (bytearray_to_struct_conversions, struct_filter)
     ::(if !Lstar_config.auto_gen_list_logic then
-	[(sllnode_logic_of_type,struct_filter)]
+	[ApplyAtType (sllnode_logic_of_type, struct_filter)]
       else [])
-    @[(arith_unfold_logic_of_type,struct_filter)] in 
+    @ApplyOnce remove_pointer_arith_same_root_same_size
+    ::ApplyAtType (arith_unfold_logic_of_type, struct_filter)
+    ::ApplyAtType (fold_logic_of_type, struct_filter)
+    ::[] in 
   let add_logic_pair (l1,m1) (l2,m2) = (add_logic l1 l2, add_logic m1 m2) in
   let ptr_bitsize =
     Llvm_target.size_in_bits !lltarget (pointer_type (i8_type !llcontext)) in
@@ -471,12 +494,11 @@ let logic_of_module m =
   let starting_logic =
     ({empty_logic with rw_rules = init_rw; },
      {empty_logic with rw_rules = init_rw; }) in
-  (** applies all rulegen functions that are compatible with [t] *)
-  let logic_of_type t =
-    List.fold_left
-      (fun log (rulegen_fun, filter) ->
-	if filter t then add_logic_pair log (rulegen_fun t)
-	else log) (empty_logic, empty_logic) rule_generators in
   let all_types = collect_types_in_module m in
-  let logics = List.map logic_of_type all_types in
-  List.fold_left add_logic_pair starting_logic logics
+  let apply_generator log = function
+    | ApplyOnce g -> add_logic_pair log g
+    | ApplyAtType (g, f) ->
+      let f_types = List.filter f all_types in
+      List.fold_left add_logic_pair log (List.map g f_types) in
+  List.fold_left apply_generator starting_logic rule_generators
+
