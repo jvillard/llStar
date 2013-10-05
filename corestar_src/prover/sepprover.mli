@@ -44,6 +44,8 @@ val string_inner_form_af : Format.formatter -> inner_form_af -> unit
 val implies : logic -> inner_form -> form -> bool
 val implies_opt : logic -> inner_form option -> form -> bool
 val inconsistent : logic -> inner_form -> bool
+val smt_inconsistent : inner_form -> bool
+val smt_inconsistent_af : inner_form_af -> bool
 val inconsistent_opt : logic -> inner_form option -> bool
 val is_pure : inner_form -> bool
 val frame : logic -> inner_form -> form -> inner_form list option

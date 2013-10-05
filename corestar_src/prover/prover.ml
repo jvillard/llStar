@@ -192,6 +192,7 @@ and rewrite_guard_check seq (ts,guard) =
 
 (* TODO Doesn't use obligation equalities to help with match. *)
 let apply_rule rm sr seq =
+  (* Format.fprintf Debug.logf "Trying rule %s@." sr.name; *)
   (* Should reset any matching variables in the ts to avoid clashes. *)
   let ts = blank_pattern_vars seq.ts in
   (* Match obligation *)
@@ -226,6 +227,7 @@ let apply_rule rm sr seq =
 		| None -> raise No_match
 		| Some ts ->
 		  fprintf !Debug.proof_dump "Match rule %s@\n" sr.name;
+		  (* Format.fprintf Debug.logf "Match rule %s@\n" sr.name; *)
 		  let seq =
 		    {seq with
 		      ts = ts;

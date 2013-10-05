@@ -470,6 +470,31 @@ let frame_sequent_smt (seq : sequent) : bool =
    ((if log log_smt then Format.fprintf logf "@[Calling SMT to get frame from@\n %a@." Clogic.pp_sequent seq);
     finish_him (ev_of_seq seq) seq.ts seq.assumption seq.obligation)))
 
+(* Update the congruence closure using the SMT solver *)
+let smt_check_contradiction ts form =
+  !Config.smt_run &&
+    (reset_typing_context ();
+     (* Construct equalities and ineqalities from ts *)
+     let eqs = filter (fun (a,b) -> a <> b) (get_eqs_norecs ts) in
+     let neqs = filter (fun (a,b) -> a <> b) (get_neqs_norecs ts) in
+     let ts_eq_sexp = String.concat " " (map sexp_of_eq eqs) in
+     let ts_neq_sexp = String.concat " " (map sexp_of_neq neqs) in
+     (* get types from ts *)
+     let _ = map sexp_of_args (get_args_all ts) in
+     let form_sexp = sexp_of_form ts form in
+     (* Assert the assumption *)
+     let assm_query = "(and true " ^ ts_eq_sexp ^" "^ ts_neq_sexp ^" "^ form_sexp ^ ")" in
+     
+     smt_push(); (* Push a frame to allow reuse of prover *)
+     (* declare predicates *)
+     send_all_types ();
+     smt_assert assm_query;
+     (* check for a contradiction *)
+     if log log_smt then Format.fprintf logf "@[[Checking for contradiction in conclusion]@.";
+     let b = smt_check_unsat() in
+     smt_pop();
+     b)
+
 
 (* Update the congruence closure using the SMT solver *)
 let ask_the_audience

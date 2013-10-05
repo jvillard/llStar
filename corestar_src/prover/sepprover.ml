@@ -172,6 +172,12 @@ open Psyntax
     let inconsistent : logic -> inner_form -> bool
       = fun logic inner_form1 -> Prover.check_inconsistency logic inner_form1
 
+    let smt_inconsistent : inner_form -> bool
+      = fun f -> Smt.smt_check_contradiction f.Clogic.F.ts f.Clogic.F.form
+
+    let smt_inconsistent_af : inner_form_af -> bool
+      = fun f -> Smt.smt_check_contradiction f.Clogic.AF.ts f.Clogic.AF.form
+
     let inconsistent_opt : logic -> inner_form option -> bool
       = fun logic inner_form1 ->
 	match inner_form1 with

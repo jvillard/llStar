@@ -129,8 +129,11 @@ let jsr logic (pre : inner_form_af) (spec : spec) (abduct : bool) : inner_form_a
     | Some frame_antiframe_list ->
       let res = Misc.map_option 
         (fun frame_antiframe ->
-          try Some (Sepprover.conjoin_af frame_antiframe spec_post (inner_form_af_to_af pre))
-          with Contradiction -> None) 
+          try
+	    let af = Sepprover.conjoin_af frame_antiframe spec_post (inner_form_af_to_af pre) in
+	    if smt_inconsistent_af af then None
+	    else Some af
+          with Contradiction -> None)
         frame_antiframe_list in 
       let res = List.map (fun frame_antiframe -> 
         vs_fold (fun e ts_form -> kill_var_af e ts_form) ev frame_antiframe) res in 
@@ -150,7 +153,11 @@ let jsr_excep logic (pre : inner_form) (spec : spec) : (inner_form  list * ts_ex
       |	Some frame_list -> 
         let res = Misc.map_option 
           (fun post -> (*Prover.tidy_one*) 
-            try Some (Sepprover.conjoin spec_post post) with Contradiction -> None) 
+            try 
+	      let form = Sepprover.conjoin spec_post post in
+	      if smt_inconsistent form then None
+	      else Some form
+	    with Contradiction -> None)
         frame_list in 
         let excep_res = List.map (conjunction_excep_convert spec_excep) frame_list in 
         let res = List.map (fun ts -> vs_fold (fun e ts -> kill_var e ts) ev ts) res in 
