@@ -1,6 +1,10 @@
 malloc:
   {}
-  {($ret_v1 != NULL() * malloced($ret_v1,@parameter0:) * pointer($ret_v1,array_type(@parameter0:,integer_type(numeric_const("8"))),_v)) || $ret_v1 = NULL()}
+  {($ret_v1 != NULL()
+    * !bvult(bvadd.64($ret_v1,@parameter0:),bv_const("64", "18446744073709551615")) /* no overflow (2^64 - 1) */
+    * malloced($ret_v1,@parameter0:)
+    * pointer($ret_v1,array_type(@parameter0:,integer_type(numeric_const("8"))),_v))
+  || $ret_v1 = NULL()}
 
 __safe_malloc:
   {}

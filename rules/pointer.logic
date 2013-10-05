@@ -158,6 +158,11 @@ equiv merge_array_pointer_array:
   <=>
   pointer(?x, array_type(?n, ?t), store(?v,?o,?vo))
 
+equiv pointer_getelementptr_i8any:
+  pointer(eltptr(?x,pointer_type(integer_type("8")),jump(?n,?j)),?t,?v)
+  <=> pointer(eltptr(bvadd.64(?x,?n),?pt,?j),?t,?v)
+without ?n = NULL()
+
 equiv pointer_getelementptr1:
   pointer(eltptr(?x,pointer_type(?pt),jump(bv_const("64", "1"),?j)),?t,?v)
   <=> pointer(eltptr(bvadd.64(?x,sizeof(?pt)),?t,?j),?t,?v)

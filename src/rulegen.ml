@@ -140,7 +140,7 @@ let mk_field_val_of_struct_val struct_t base_val i =
 
 (*** Scalar rules *)
 
-(** assumes that [t] is an int or struct type *)
+(* assumes that [t] is an int or struct type *)
 let sizeof_logic_of_type t =
   let args_t = args_of_type t in
   let args_size = args_sizeof t in
@@ -157,7 +157,7 @@ let sizeof_logic_of_type t =
 
 (*** Structure rules *)
 
-(** assumes that [t] is a struct type *)
+(* assumes that [t] is a struct type *)
 let eltptr_logic_of_type t =
   let args_struct_t = args_of_type t in
   let root_var = Arg_var (Vars.AnyVar (0, "x")) in
@@ -179,7 +179,7 @@ let eltptr_logic_of_type t =
   let logic = { empty_logic with seq_rules = eltptr_rules; } in
   (logic, logic)
 
-(** assumes that [t] is a struct type *)
+(* assumes that [t] is a struct type *)
 let struct_value_logic_of_type t =
   Smtexpression.declare_struct_type t;
   (empty_logic, empty_logic)
@@ -224,7 +224,35 @@ let unfold_logic_of_type t =
   let logic = { empty_logic with seq_rules = field_rules; } in
   (logic, logic)
 
-(** assumes that [t] is a struct type *)
+(** unfolds a struct pointer on the lhs when the pointer on the rhs is inside of the fields of [t] *)
+(* assumes that [t] is a struct type *)
+let arith_unfold_logic_of_type t =
+  let field_ranged_values base_val =
+    Array.mapi (fun i _ -> mk_field_val_of_struct_val t base_val i) (struct_element_types t) in
+  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
+  let v_var = Arg_var (Vars.AnyVar (0, "v")) in
+  let y_var = Arg_var (Vars.AnyVar (0, "y")) in
+  let t_var = Arg_var (Vars.AnyVar (0, "t")) in
+  let w_var = Arg_var (Vars.AnyVar (0, "w")) in
+  (* the whole struct *)
+  let struct_pointer = mkPointer x_var (args_of_type t) v_var in
+  let mk_field_rule i subelt_type =
+    let target_pointer = mkPointer y_var t_var w_var in
+    let offset_end_of_field = bvargs_of_int64 64 (Int64.add (alloc_size64_of_field t i) (offset64_of_field t i)) in
+    mk_sequent_rule ((string_of_struct t)^"_inside_field_"^(string_of_int i))
+      [[(mkEmpty, mk_unfolded_struct t x_var (field_ranged_values v_var), target_pointer, mkEmpty)]]
+      (mkEmpty, struct_pointer, target_pointer, mkEmpty)
+      (mkEmpty, mkEmpty)
+      [PureGuard (mkPPred ("bvule", [Arg_op("bvadd.64", [x_var; args_offset_of_field t i]); y_var]));
+       PureGuard (mkPPred ("bvule", [Arg_op("bvadd.64", [y_var; Arg_op("sizeof", [t_var])]);
+				     Arg_op("bvadd.64", [x_var; offset_end_of_field])]))] in
+  let field_rules =
+    let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
+    Array.to_list rules_array in
+  let logic = { empty_logic with seq_rules = field_rules; } in
+  (logic, logic)
+
+(* assumes that [t] is a struct type *)
 let fold_logic_of_type t =
   let field_values =
     Array.mapi (fun i _ -> Arg_var (Vars.AnyVar (0, "v"^(string_of_int i))))
@@ -238,7 +266,7 @@ let fold_logic_of_type t =
   let logic = { empty_logic with seq_rules = rules; } in
   (logic, logic)
 
-(** assumes that [t] is a struct type *)
+(* assumes that [t] is a struct type *)
 let bytearray_to_struct_conversions t =
   let x_avar = Vars.AnyVar (0, "x") in
   let y_avar = Vars.AnyVar (0, "y") in
@@ -278,13 +306,24 @@ let bytearray_to_struct_conversions t =
     let structform = mk_struct_pointer (argsv x_avar) struct_val in
     let arrayform = mk_bytearray_pointer (argsv x_avar) array_val in
     let eltptr = mkEQ (argsv y_avar,
-		       mkEltptr (argsv x_avar) struct_type (argsv j_avar)) in
-    mk_simple_equiv_rule "fold_bytearray_on_field_access" (mkStar eltptr arrayform) structform in
-  let rules = array_struct_rule::struct_array_rule::array_field_rules in
+		       mkEltptr (argsv x_avar) (mkPointerType struct_type) (argsv j_avar)) in
+    mk_simple_equiv_rule ("fold_bytearray_on_"^(string_of_struct t)^"_field_access") (mkStar eltptr arrayform) structform in
+  let array_field_rules_free_value =
+    let free_val = argsv v_evar in
+    let structform = mk_struct_pointer (argsv x_avar) free_val in
+    let arrayform = mk_bytearray_pointer (argsv x_avar) free_val in
+    let eltptr = mkEQ (argsv y_avar,
+		       mkEltptr (argsv x_avar) (mkPointerType struct_type) (argsv j_avar)) in
+    mk_sequent_rule ("fold_bytearray_on_"^(string_of_struct t)^"_field_access_free_val")
+      [[(mkEmpty, structform, mkEmpty, mkEmpty)]]
+      (mkEmpty, mkStar eltptr arrayform, mkEmpty, mkEmpty)
+      ([], [])
+      [NotInContext (Var (VarSet.singleton v_evar))] in
+  let rules = array_struct_rule::struct_array_rule::array_field_rules_free_value::array_field_rules in
   let logic = { empty_logic with seq_rules = rules; } in
   (logic, logic)
 
-(** assumes that [t] is a struct type *)
+(* assumes that [t] is a struct type *)
 let node_logic_of_struct t name rec_field =
   let fresh_field_values =
     Array.map (fun _ -> Arg_var (Vars.freshe ())) (struct_element_types t) in
@@ -369,7 +408,7 @@ let node_logic_of_struct t name rec_field =
   let abduct_logic = { empty_logic with seq_rules = symex_rules@abduce_node_rules; } in
   (symex_logic, abduct_logic)
 
-(** assumes that [t] is a struct type *)
+(* assumes that [t] is a struct type *)
 let sllnode_logic_of_type t = match struct_name t with
   | None ->
     (* recursive structs are necessarily named *)
@@ -406,9 +445,10 @@ let logic_of_module m =
     ::(struct_value_logic_of_type,struct_filter)
     ::(bytearray_to_struct_conversions,struct_filter)
     ::(fold_logic_of_type,struct_filter)
-    ::if !Lstar_config.auto_gen_list_logic then
-	(sllnode_logic_of_type,struct_filter)::[]
-      else [] in
+    ::(if !Lstar_config.auto_gen_list_logic then
+	[(sllnode_logic_of_type,struct_filter)]
+      else [])
+    @[(arith_unfold_logic_of_type,struct_filter)] in 
   let add_logic_pair (l1,m1) (l2,m2) = (add_logic l1 l2, add_logic m1 m2) in
   let ptr_bitsize =
     Llvm_target.size_in_bits !lltarget (pointer_type (i8_type !llcontext)) in
