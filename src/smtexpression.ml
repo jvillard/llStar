@@ -82,14 +82,14 @@ let declare_struct_type t =
   let elts_smt_t = Array.to_list (Array.map (fun ft -> smttype_of_lltype ft) elts) in
   let struct_constr_t = SType_fun (elts_smt_t ,struct_t) in
   let match_native_struct f name args =
-    if name = struct_constr then (struct_constr, struct_constr_t, args)
+    if id_munge name = struct_constr then (struct_constr, struct_constr_t, args)
     else f name args in
   add_native_op match_native_struct;
   Array.iteri (fun i t ->
     let field_t = smttype_of_lltype t in
     let fldcons = field_constr i in
     let match_native_field_op f name args =
-      if name = fldcons then (fldcons, SType_fun ([struct_t],field_t), args)
+      if id_munge name = fldcons then (fldcons, SType_fun ([struct_t],field_t), args)
       else f name args in
     add_native_op match_native_field_op)
     elts
