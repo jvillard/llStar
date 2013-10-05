@@ -28,31 +28,31 @@ define i32 @test_alloca() {
 
 ; a bug in llvm ocaml bindings makes this crash
 ; cf http://lists.cs.uiuc.edu/pipermail/llvm-commits/Week-of-Mon-20130527/176487.html
-; define i1 @test_switch(i32 %rand) {
-;   %1 = alloca i32, align 4
-;   %x = alloca i32, align 4
-;   store i32 %rand, i32* %1, align 4
-;   store i32 1, i32* %x, align 4
-;   %2 = load i32* %1, align 4
-;   switch i32 %2, label %4 [
-;     i32 0, label %3
-;     i32 1, label %5
-;   ]
+define i1 @test_switch(i32 %rand) {
+  %1 = alloca i32, align 4
+  %x = alloca i32, align 4
+  store i32 %rand, i32* %1, align 4
+  store i32 1, i32* %x, align 4
+  %2 = load i32* %1, align 4
+  switch i32 %2, label %4 [
+    i32 0, label %3
+    i32 1, label %5
+  ]
 
-; ; <label>:3
-;   store i32 0, i32* %x, align 4
-;   br label %5
+; <label>:3
+  store i32 0, i32* %x, align 4
+  br label %5
 
-; ; <label>:4
-;   store i32 1, i32* %1, align 4
-;   br label %5
+; <label>:4
+  store i32 1, i32* %1, align 4
+  br label %5
 
-; ; <label>:5
-;   %6 = load i32* %x, align 4
-;   %7 = load i32* %1, align 4
-;   %8 = icmp eq i32 %6, %7
-;   ret i1 %8
-; }
+; <label>:5
+  %6 = load i32* %x, align 4
+  %7 = load i32* %1, align 4
+  %8 = icmp eq i32 %6, %7
+  ret i1 %8
+}
 
 define i32 @trunc_and_zext(i32 %x) nounwind uwtable {
   %1 = alloca i32, align 4

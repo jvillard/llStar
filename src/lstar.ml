@@ -52,6 +52,8 @@ let verify_function logic abduct_logic abstraction_rules specs f =
 
 let verify_module logic abduct_logic abstruction_rules specs m =
   (* iter_globals env_add_gvar m; *) (* TODO: handle global variables *)
+  if log log_phase then
+    fprintf logf "Verifying module. The mission starts now.@.";
   let verif_fun = verify_function logic abduct_logic abstruction_rules specs in
   Llvm.iter_functions verif_fun m;
   fprintf logf "@.@[Mama says %s@." (if !result then "yes" else "no")
