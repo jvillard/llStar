@@ -153,7 +153,7 @@ let jsr_excep logic (pre : inner_form) (spec : spec) : (inner_form  list * ts_ex
       |	Some frame_list -> 
         let res = Misc.map_option 
           (fun post -> (*Prover.tidy_one*) 
-            try 
+            try
 	      let form = Sepprover.conjoin spec_post post in
 	      if smt_inconsistent form then None
 	      else Some form

@@ -388,7 +388,6 @@ let apply_rule_list
 (* Clear pretty print buffer *)
   Buffer.clear buffer_dump;
 (*  let rules,rwm,ep = logic in *)
-  let n = 0 in
   if log log_prove then
     (List.iter (fun seq -> fprintf !proof_dump "Goal@ %a@\n@\n" Clogic.pp_sequent seq) sequents;
      fprintf !proof_dump "Start time :%f @\n" (Sys.time ()));
@@ -416,16 +415,18 @@ let apply_rule_list
 	       with No_match -> 
 		 try 
 		   search (Clogic.apply_or_right seq)
-		 with No_match -> 
-                 try 
-	             let ts' = Smt.ask_the_audience seq.ts seq.assumption in
-	             search [[ {seq with ts = ts'} ]]
-                   with 
-                   | Assm_Contradiction -> []
-                   | No_match -> raise (Failed_eg [seq])
+		 with No_match ->
+		   if smt_check_contradiction seq.ts seq.assumption then []
+		   else raise (Failed_eg [seq])
+                 (* try  *)
+	         (*     let ts' = Smt.ask_the_audience seq.ts seq.assumption in *)
+	         (*     search [[ {seq with ts = ts'} ]] *)
+                 (*   with  *)
+                 (*   | Assm_Contradiction -> [] *)
+                 (*   | No_match -> raise (Failed_eg [seq]) *)
 	 ) sequents 
       )
-  in let res = apply_rule_list_inner sequents n in 
+  in let res = apply_rule_list_inner sequents 0 in 
   if log log_prove then 
     fprintf !proof_dump "@\nEnd time :%f@." (Sys.time ());
   res

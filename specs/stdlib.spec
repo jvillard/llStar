@@ -3,7 +3,7 @@ malloc:
   {($ret_v1 != NULL()
     * !bvugt(bvadd.64($ret_v1,@parameter0:),$ret_v1) /* no overflow (2^64 - 1) */
     * malloced($ret_v1,@parameter0:)
-    * pointer($ret_v1,array_type(@parameter0:,integer_type(numeric_const("8"))),_v))
+    * pointer($ret_v1,array_type(@parameter0:,integer_type("8")),_v))
   || $ret_v1 = NULL()}
 
 __safe_malloc:

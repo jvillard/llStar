@@ -39,8 +39,6 @@ rewrite sizeof_array:
 
 rule ptr_same_root_same_type:
  | pointer(?x,?t,?v) |- pointer(?x,?t,?w)
-without
- ?w != ?v
 if
  pointer(?x,?t,?v) | |- ?w = ?v
 
@@ -55,8 +53,6 @@ if
 
 rule remove_malloced:
  | malloced(?mb,?n) |- malloced(?mb,?m)
-without
- ?n != ?m
 if
  malloced(?mb,?n) | |- ?n = ?m
 
