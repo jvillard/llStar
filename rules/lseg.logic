@@ -10,7 +10,6 @@ import "pointer.logic";
  ***************************************/
 
 
-
 rule node_not_nil:
   node(?s,NULL(),?y) | |-
 if
@@ -134,3 +133,12 @@ rule lseg_ne_lseg_ne_contr :
  | |- lseg_ne(?s,?x,?t) * lseg_ne(?ss,?x,?z)
 if
  | |- x!=x 
+
+
+/* this helps with pointer arithmetic */
+rule node_no_overflow:
+  | node(?s,?x,?n) |-
+without
+  !bvugt(bvadd.64(?x, sizeof(named_type(?s))),?x)
+if
+  | !bvugt(bvadd.64(?x, sizeof(named_type(?s))),?x) * node(?s,?x,?n) |-

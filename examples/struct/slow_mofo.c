@@ -42,3 +42,13 @@ int chew_slowly(int a) {
   free(p);
   return b;
 }
+
+int main(void) {
+  int n;
+  
+  if (chew_slowly(n) != n)
+    return 0;
+  else goto ERROR;
+
+ ERROR: return 1;
+}

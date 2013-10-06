@@ -210,3 +210,11 @@ where
 if
  | pointer(?x, ?t, ?w)
  |- pointer(?x, ?t, _v)
+
+rule ptr_no_overflow:
+ | pointer(?x,?t,?v) |-
+without
+  !bvugt(bvadd.64(?x, sizeof(?t)),?x)
+if
+ | pointer(?x,?t,?v) * !bvugt(bvadd.64(?x, sizeof(?t)),?x) |-
+
