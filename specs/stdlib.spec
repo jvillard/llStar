@@ -12,12 +12,12 @@ __safe_malloc:
 
 /*
 free:
-  {malloced(@parameter0:,_s) * pointer(@parameter0:,array_type(_s,integer_type(numeric_const("8"))),_v)}
+  {malloced(@parameter0:,_s) * pointer(@parameter0:,array_type(_s,integer_type("8")),_v)}
   {}
 */
 
 free:
-  {malloced(@parameter0:,sizeof(?t)) * pointer(@parameter0:,?t,_v)}
+  {malloced(@parameter0:,?s) * pointer(@parameter0:,array_type(?s,integer_type("8")),_v)}
   {}
 
 __VERIFIER_assert:

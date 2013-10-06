@@ -190,3 +190,27 @@ where ?m = ?n pureguard
 if
  pointer(?x, array_type(?m, ?t), ?v) |
  |- ?v = ?w
+
+rule remove_same_size:
+ | pointer(?x, array_type(?s, integer_type("8")), _v)
+ |- pointer(?x, ?t, ?w)
+without
+ ?t = array_type(?as,?ta)
+where
+  _v notincontext;
+  sizeof(?t) = ?s pureguard
+if
+ | pointer(?x, ?t, _v)
+ |- pointer(?x, ?t, ?w)
+
+rule array_remove_same_size:
+ | pointer(?x, ?t, ?w)
+ |- pointer(?x, array_type(?s, integer_type("8")), _v)
+without
+ ?t = array_type(?as,?ta)
+where
+  _v notincontext;
+  sizeof(?t) = ?s pureguard
+if
+ | pointer(?x, ?t, ?w)
+ |- pointer(?x, ?t, _v)
