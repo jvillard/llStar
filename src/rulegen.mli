@@ -1,2 +1,2 @@
 (** generates the logic and the abduction logic of module [m] *)
-val logic_of_module : Llvm.llmodule -> Psyntax.logic * Psyntax.logic
+val add_logic_of_module : Psyntax.logic * Psyntax.logic -> Llvm.llmodule -> Psyntax.logic * Psyntax.logic

@@ -436,12 +436,38 @@ let remove_pointer_arith_same_root_same_size =
   let logic = { empty_logic with seq_rules = [rule] } in
   (logic, logic)
 
+let nullptr_logic =
+  let ptr_bitsize =
+    Llvm_target.size_in_bits !lltarget (pointer_type (i8_type !llcontext)) in
+  let nullptr_rw =
+    { function_name = "NULL";
+      arguments=[];
+      result=bvargs64_of_int ptr_bitsize 0;
+      guard={without_form=[];rewrite_where=[];if_form=[]};
+      rewrite_name="nullptr";
+      saturate=false} in
+  let logic = { empty_logic with rw_rules = [nullptr_rw] } in
+  (logic, logic)
+
+let sizeof_ptr_logic =
+  let ptr_bitsize =
+    Llvm_target.size_in_bits !lltarget (pointer_type (i8_type !llcontext)) in
+  let sizeof_ptr_rw =
+    { function_name = "sizeof";
+      arguments=[mkPointerType (Arg_var (Vars.AnyVar (0, "t")))];
+      result=bvargs64_of_int ptr_bitsize (Llvm_target.pointer_size !lltarget);
+      guard={without_form=[];rewrite_where=[];if_form=[]};
+      rewrite_name="sizeof_pointer_type";
+      saturate=false} in
+  let logic = { empty_logic with rw_rules = [sizeof_ptr_rw] } in
+  (logic, logic)
+
 type rule_apply =
 | ApplyOnce of (Psyntax.logic * Psyntax.logic)
 | ApplyAtType of (lltype -> Psyntax.logic * Psyntax.logic) * (lltype -> bool)
 
 (** generates the logic and the abduction logic of module [m] *)
-let logic_of_module m =
+let add_logic_of_module base_logic m =
   let int_struct_filter t = match classify_type t with
     | Integer
     | Struct -> true
@@ -452,7 +478,10 @@ let logic_of_module m =
   (** pairs of rule generation functions and a filter that checks they
       are applied only to certain types *)
   let rule_generators =
-    ApplyAtType (sizeof_logic_of_type, int_struct_filter)
+    ApplyOnce base_logic
+    ::ApplyOnce nullptr_logic
+    ::ApplyOnce sizeof_ptr_logic
+    ::ApplyAtType (sizeof_logic_of_type, int_struct_filter)
     ::ApplyAtType (eltptr_logic_of_type, struct_filter)
     ::ApplyAtType (unfold_logic_of_type, struct_filter)
     ::ApplyAtType (struct_value_logic_of_type, struct_filter)
@@ -465,32 +494,11 @@ let logic_of_module m =
     ::ApplyAtType (fold_logic_of_type, struct_filter)
     ::[] in 
   let add_logic_pair (l1,m1) (l2,m2) = (add_logic l1 l2, add_logic m1 m2) in
-  let ptr_bitsize =
-    Llvm_target.size_in_bits !lltarget (pointer_type (i8_type !llcontext)) in
-  let nullptr_rw =
-    { function_name = "NULL";
-      arguments=[];
-      result=bvargs64_of_int ptr_bitsize 0;
-      guard={without_form=[];rewrite_where=[];if_form=[]};
-      rewrite_name="nullptr";
-      saturate=false} in
-  let sizeof_ptr_rw =
-    { function_name = "sizeof";
-      arguments=[mkPointerType (Arg_var (Vars.AnyVar (0, "t")))];
-      result=bvargs64_of_int ptr_bitsize (Llvm_target.pointer_size !lltarget);
-      guard={without_form=[];rewrite_where=[];if_form=[]};
-      rewrite_name="sizeof_pointer_type";
-      saturate=false} in
-  (* always include the above rewrite of NULL() and sizeof pointer_type *)
-  let init_rw = [nullptr_rw; sizeof_ptr_rw] in
-  let starting_logic =
-    ({empty_logic with rw_rules = init_rw; },
-     {empty_logic with rw_rules = init_rw; }) in
   let all_types = collect_types_in_module m in
   let apply_generator log = function
     | ApplyOnce g -> add_logic_pair log g
     | ApplyAtType (g, f) ->
       let f_types = List.filter f all_types in
       List.fold_left add_logic_pair log (List.map g f_types) in
-  List.fold_left apply_generator starting_logic rule_generators
+  List.fold_left apply_generator (empty_logic, empty_logic) rule_generators
 

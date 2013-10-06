@@ -127,9 +127,7 @@ let initialise_logic llmod =
     if !Lstar_config.auto_gen_struct_logic then
       (if log log_phase then
 	  fprintf logf "@.@[<2>Generating logic for the module";
-       let (module_logic, module_abduct_logic) = Rulegen.logic_of_module llmod in
-       (add_logic logic module_logic,
-	add_logic abduct_logic module_abduct_logic)
+       Rulegen.add_logic_of_module (logic, abduct_logic) llmod
       ) else (logic, abduct_logic) in
   dump_into_file "logic_rules.txt"
     (Debug.pp_list pp_sequent_rule) logic.seq_rules;
