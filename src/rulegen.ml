@@ -206,21 +206,32 @@ let struct_field_value_logic_of_type t =
     efficient to try that first as it will be a common case *)
 (* assumes that [t] is a struct type *)
 let unfold_logic_of_type t =
-  let field_ranged_values base_val =
-    Array.mapi (fun i _ -> mk_field_val_of_struct_val t base_val i) (struct_element_types t) in
   let x_var = Arg_var (Vars.AnyVar (0, "x")) in
   let v_var = Arg_var (Vars.AnyVar (0, "v")) in
   let w_var = Arg_var (Vars.AnyVar (0, "w")) in
-  (* the whole struct *)
-  let struct_pointer = mkPointer x_var (args_of_type t) v_var in
-  let mk_field_rule i subelt_type =
+  let mk_field_rule1 i subelt_type =
+    (* take a struct with value { v_1, ..., v_n } and one of its fields on the rhs and unfold it *)
+    (* apply this rule before the next as it avoids cluttering of folding of unfolding of ... of struct values *)
     let target_pointer = mk_field_pointer t i x_var w_var in
+    let field_base_values =
+      Array.mapi (fun i _ -> Arg_var (Vars.AnyVar (0, "v"^(string_of_int i)))) (struct_element_types t) in
+    let struct_pointer = mkPointer x_var (args_of_type t) (mk_struct_val_of_fields t field_base_values) in
     mk_simple_sequent_rule ((string_of_struct t)^"_field_"^(string_of_int i))
-      (mk_unfolded_struct t x_var (field_ranged_values v_var), target_pointer)
+      (mk_unfolded_struct t x_var field_base_values, target_pointer)
+      (struct_pointer, target_pointer) in
+  let mk_field_rule2 i subelt_type =
+    (* take a struct with value v and one of its fields on the rhs and unfold it *)
+    let target_pointer = mk_field_pointer t i x_var w_var in
+    let struct_pointer = mkPointer x_var (args_of_type t) v_var in
+    let field_struct_derived_values =
+      Array.mapi (fun i _ -> mk_field_val_of_struct_val t v_var i) (struct_element_types t) in
+    mk_simple_sequent_rule ((string_of_struct t)^"_field_"^(string_of_int i))
+      (mk_unfolded_struct t x_var field_struct_derived_values, target_pointer)
       (struct_pointer, target_pointer) in
   let field_rules =
-    let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
-    Array.to_list rules_array in
+    let rules_array1 = Array.mapi mk_field_rule1 (struct_element_types t) in
+    let rules_array2 = Array.mapi mk_field_rule2 (struct_element_types t) in
+    (Array.to_list rules_array1)@(Array.to_list rules_array2) in
   let logic = { empty_logic with seq_rules = field_rules; } in
   (logic, logic)
 
@@ -273,7 +284,6 @@ let bytearray_to_struct_conversions t =
   let j_avar = Vars.AnyVar (0, "j") in
   let v_evar = Vars.EVar (0, "v") in
   let v_avar = Vars.AnyVar (0, "v") in
-  let w_avar = Vars.AnyVar (0, "w") in
   let argsv z = Arg_var z in
 
   let array_t = Llvm.array_type (Llvm.i8_type !llcontext) (Int64.to_int (Llvm_target.abi_size !lltarget t)) in
