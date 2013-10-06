@@ -282,24 +282,6 @@ let bytearray_to_struct_conversions t =
   let mk_struct_pointer root value = mkPointer root struct_type value in
   let mk_bytearray_pointer root value = mkPointer root array_type value in
 
-  let struct_array_rule =
-    let structform = mk_struct_pointer (argsv x_avar) (argsv w_avar) in
-    let arrayform = mk_bytearray_pointer (argsv x_avar) (argsv v_evar) in
-    let s_implies_a_premises = [[mk_psequent structform mkEmpty mkEmpty mkEmpty]] in
-    let s_implies_a_conclusion = mk_psequent mkEmpty structform arrayform mkEmpty in
-    mk_sequent_rule ((string_of_struct t)^"_implies_bytearray")
-      s_implies_a_premises s_implies_a_conclusion
-      ([], [])
-      [NotInContext (Var (VarSet.singleton v_evar))] in
-  let array_struct_rule =
-    let structform = mk_struct_pointer (argsv x_avar) (argsv v_evar) in
-    let arrayform = mk_bytearray_pointer (argsv x_avar) (argsv w_avar) in
-    let a_implies_s_premises = [[mk_psequent arrayform mkEmpty mkEmpty mkEmpty]] in
-    let a_implies_s_conclusion = mk_psequent mkEmpty arrayform structform mkEmpty in
-    mk_sequent_rule ("bytearray_implies_"^(string_of_struct t))
-      a_implies_s_premises a_implies_s_conclusion
-      ([], [])
-      [NotInContext (Var (VarSet.singleton v_evar))] in
   let array_field_rules =
     let array_val = argsv v_avar in
     let struct_val = mkValConversion array_type struct_type array_val in
@@ -319,7 +301,7 @@ let bytearray_to_struct_conversions t =
       (mkEmpty, mkStar eltptr arrayform, mkEmpty, mkEmpty)
       ([], [])
       [NotInContext (Var (VarSet.singleton v_evar))] in
-  let rules = array_struct_rule::struct_array_rule::array_field_rules_free_value::array_field_rules in
+  let rules = array_field_rules_free_value::array_field_rules in
   let logic = { empty_logic with seq_rules = rules; } in
   (logic, logic)
 
