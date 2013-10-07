@@ -37,7 +37,7 @@ open Psyntax
 	let check_purity ff =
 	  (ff.Clogic.spat = Clogic.RMSet.empty) ||
 	    try
-	      ignore (Smt.ask_the_audience f.Clogic.F.ts ff);
+	      ignore (Smt.smt_check_contradiction f.Clogic.F.ts ff);
 	      false
 	    with Clogic.Assm_Contradiction -> true in
 	check_purity form &&
