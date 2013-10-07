@@ -150,6 +150,9 @@ open Psyntax
     let update_var_to_af : var -> term -> inner_form_af -> inner_form_af
       = fun v e f -> Clogic.update_var_to_af f v e
 
+    let freshen_evars = Clogic.freshen_evars
+    let freshen_evars_af = Clogic.freshen_evars_af
+
     let string_inner_form : Format.formatter -> inner_form -> unit =
       Clogic.pp_ts_formula
 

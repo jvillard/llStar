@@ -92,6 +92,8 @@ val kill_var : F.ts_formula -> Vars.var -> F.ts_formula
 val kill_var_af : AF.ts_formula -> Vars.var -> AF.ts_formula
 val update_var_to : F.ts_formula -> Vars.var -> Psyntax.args -> F.ts_formula
 val update_var_to_af : AF.ts_formula -> Vars.var -> Psyntax.args -> AF.ts_formula
+val freshen_evars : F.ts_formula -> F.ts_formula
+val freshen_evars_af : AF.ts_formula -> AF.ts_formula
 val pp_ts_formula : Format.formatter -> F.ts_formula -> unit
 val pp_ts_formula_af : Format.formatter -> AF.ts_formula -> unit
 val pp_syntactic_form : Format.formatter -> syntactic_form -> unit

@@ -504,6 +504,11 @@ and execute_core_stmt
 
       explore_node (snd sheap);
       let heaps_abs = List.map (fun (if1,if2) -> combine if1 if2) (cross_product frames_abs antiframes_abs) in
+      (* Format.fprintf Debug.logf "heaps before freshening:\n"; *)
+      (* List.iter (fun heap -> Format.fprintf Debug.logf "@\n    %a\n@.%!" heap_pprinter heap;) heaps_abs; *)
+      let heaps_abs = List.map freshen_evars_af heaps_abs in
+      (* Format.fprintf Debug.logf "heaps after freshening:\n"; *)
+      (* List.iter (fun heap -> Format.fprintf Debug.logf "@\n    %a\n@.%!" heap_pprinter heap;) heaps_abs; *)
       let sheaps_abs = add_id_abs_formset n heaps_abs in
       List.iter
         (fun sheap2 ->

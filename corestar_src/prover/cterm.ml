@@ -582,6 +582,28 @@ let kill_var ts v =
   with Not_found -> 
     ts
 
+(** freshen variable [v] that has representative [r] in [ts] *)
+(* assumes that VarMap.find [v] [ts].evars returns [r] *)
+let freshen_evar v r ts =
+  try 
+    let cc = CC.delete ts.cc r in 
+    let evars = VarMap.remove v ts.evars in 
+    let pp_term = CMap.find r ts.originals in
+    let originals = CMap.remove r ts.originals in 
+    let (evars, originals) = 
+      match pp_term with
+	FArg_var EVar (v',n) when v = EVar (v',n) -> 
+	  let refreshed_v = Vars.freshen_exists v in
+	  (VarMap.add refreshed_v r evars,
+	   CMap.add r (FArg_var refreshed_v) originals)
+      |  _ -> (evars, originals)
+    in
+    {ts with evars = evars; cc=cc; originals=originals} 
+  with Not_found -> 
+    ts
+
+let freshen_evars ts = VarMap.fold freshen_evar ts.evars ts
+
 let update_var_to ts v e = 
   let c,ts = add_term false e ts in
   let ts = kill_var ts v in 

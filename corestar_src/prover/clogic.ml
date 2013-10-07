@@ -99,6 +99,10 @@ let update_var_to ts_form v e =
 let update_var_to_af ts_form v e =
   {ts_form with AF.ts = Cterm.update_var_to ts_form.AF.ts v e}
 
+let freshen_evars ts_form = { ts_form with F.ts = Cterm.freshen_evars ts_form.F.ts }
+
+let freshen_evars_af ts_form =  { ts_form with AF.ts = Cterm.freshen_evars ts_form.AF.ts }
+
 (* {{{ pretty printing
  * See 
  *   http://rgrig.blogspot.com/2010/09/certain-type-of-pretty-printing-in.html

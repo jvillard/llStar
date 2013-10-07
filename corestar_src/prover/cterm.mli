@@ -109,6 +109,7 @@ val get_neqs_norecs : term_structure -> (Psyntax.args * Psyntax.args) list
 
 val get_term : term_structure -> term_handle-> Psyntax.args
 val kill_var : term_structure -> Vars.var -> term_structure 
+val freshen_evars : term_structure -> term_structure
 val update_var_to : term_structure -> Vars.var -> Psyntax.args -> term_structure
 
 val rewrite : term_structure -> Psyntax.rewrite_rule list -> (term_structure * Psyntax.rewrite_guard -> bool) -> term_structure
