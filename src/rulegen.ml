@@ -315,107 +315,56 @@ let bytearray_to_struct_conversions t =
   let logic = { empty_logic with seq_rules = rules; } in
   (logic, logic)
 
+let mkNode name root next = mkSPred ("node", [name; root; next])
+
 (* assumes that [t] is a struct type *)
-let node_logic_of_struct t name rec_field =
-  let fresh_field_values =
-    Array.map (fun _ -> Arg_var (Vars.freshe ())) (struct_element_types t) in
-
-  let mk_rec_field root value = mk_field_pointer t rec_field root value in
-  let mk_node ptr value = mkSPred ("node", [name; ptr; value]) in
-
-  let i_var = Arg_var (Vars.AnyVar (0, "i")) in
+let concretise_node_logic_of_type t name rec_field = 
+  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
   let n_var = Arg_var (Vars.AnyVar (0, "n")) in
-  let n2_var = Arg_var (Vars.AnyVar (0, "n2")) in
-
-  let mk_unfolded_struct_ root i value =
-    let old_field_val = Array.get fresh_field_values i in
-    Array.set fresh_field_values i value;
-    let us = mk_unfolded_struct t root fresh_field_values in
-    Array.set fresh_field_values i old_field_val;
-    us in
-
-  (** Expand node.
-
-      If we have a node predicate on the LHS of an implication and one of the
-      fields of the node object appears on the RHS, then we rewrite the node in terms
-      of its constituent fields. TODO: and match the field! *)
-  let mk_expand_node_rule i subelt_type =
-    if i = rec_field then
-      (mk_simple_sequent_rule "node_lookup_next"
-	 (mk_unfolded_struct_ i_var rec_field n_var, mk_rec_field i_var n2_var)
-	 (mk_node i_var n_var, mk_rec_field i_var n2_var))
-    else
-      (mk_simple_sequent_rule ("node_lookup_field_"^(string_of_int i))
-	 (mk_unfolded_struct_ i_var rec_field n_var, mk_field_pointer t i i_var n2_var)
-	 (mk_node i_var n_var, mk_field_pointer t i i_var n2_var)) in
-
-  let expand_node_rules =
-    let rules_array = Array.mapi mk_expand_node_rule (struct_element_types t) in
-    Array.to_list rules_array in
-
-  (** the list of rules that don't need to know about the structure of the nodes
-      * the ones that are included in the distribution instead of generated
-      * see rules/lseg.logic *)
-  let symex_rules =
-      expand_node_rules@
-    (* Collapse to node.
-
-       If all fields of a node object are present on the lhs, we collapse them to
-       the node predicate. *)
-      (mk_simple_sequent_rule "node_rollup_left"
-	 (mk_node i_var n_var, mkEmpty)
-	 (mk_unfolded_struct_ i_var rec_field n_var, mkEmpty))::
-    (* Convert all nodes on LHS to singleton list segments. *)
-      (* (mk_simple_sequent_rule "lseg_node_rollup_left" *)
-      (* 	 (mk_lseg_ne i_var n_var, mkEmpty) *)
-      (* 	 (mk_node i_var n_var, mkEmpty)):: *)
-	[] in
-  let symex_logic = {empty_logic with seq_rules = symex_rules; } in
-
-  (* rules for abduction of list nodes *)
-
-  (** abduce an entire node whenever we need to abduce any of the fields *)
-  let mk_abduce_node_rule i subelt_type =
-    if i = rec_field then
-      let conclusion = (mkEmpty, mkEmpty, mk_rec_field i_var n_var, mkEmpty) in
-      let premise = (mkEmpty,
-		     mk_unfolded_struct_ i_var rec_field n_var,
-		     mk_rec_field i_var n_var,
-		     mk_node i_var n_var) in
-      let without = mkPointer i_var (Arg_var (Vars.AnyVar (0, "s"))) (Arg_var (Vars.AnyVar (0, "v"))) in
-      (conclusion, [[premise]], "abduce_node_next", (without, []), [])
-    else
-      let conclusion = (mkEmpty, mkEmpty, mk_field_pointer t i i_var n_var, mkEmpty) in
-      let premise = (mkEmpty,
-		     mk_unfolded_struct_ i_var i n_var,
-		     mk_field_pointer t i i_var n_var,
-		     mk_node i_var n2_var) in
-      let without = mkPointer i_var (Arg_var (Vars.AnyVar (0, "s"))) (Arg_var (Vars.AnyVar (0, "v"))) in
-      (conclusion, [[premise]], "abduce_node_field_"^(string_of_int i), (without, []), []) in
-
-  let abduce_node_rules =
-    let rules_array = Array.mapi mk_abduce_node_rule (struct_element_types t) in
-    Array.to_list rules_array in
-
-  let abduct_logic = { empty_logic with seq_rules = symex_rules@abduce_node_rules; } in
-  (symex_logic, abduct_logic)
+  let y_var = Arg_var (Vars.AnyVar (0, "y")) in
+  let t_var = Arg_var (Vars.AnyVar (0, "t")) in
+  let v_var = Arg_var (Vars.AnyVar (0, "v")) in
+  let struct_field_values =
+    let field_values =
+      Array.map (fun _ -> Arg_var (Vars.freshe ())) (struct_element_types t) in
+    Array.set field_values rec_field n_var;
+    mk_struct_val_of_fields t field_values in
+  let struct_pointer = mkPointer x_var (args_of_type t) struct_field_values in
+  let node = mkNode name x_var n_var in
+  let target_pointer = mkPointer y_var t_var v_var in
+  let side_condition = [PureGuard (mkPPred ("bvule", [x_var; y_var]));
+			PureGuard (mkPPred ("bvule", [Arg_op("bvadd.64", [y_var; Arg_op("sizeof", [t_var])]);
+						      Arg_op("bvadd.64", [x_var; args_sizeof t])]))] in
+  let concretise_rule =
+    mk_sequent_rule ("concretise_"^(string_of_struct t))
+      [[(mkEmpty, struct_pointer, target_pointer, mkEmpty)]]
+      (mkEmpty, node, target_pointer, mkEmpty)
+      (mkEmpty, mkEmpty)
+      side_condition in
+  let logic = { empty_logic with seq_rules = [concretise_rule] } in
+  (logic, logic)
+  
 
 (* assumes that [t] is a struct type *)
-let sllnode_logic_of_type t = match struct_name t with
-  | None ->
-    (* recursive structs are necessarily named *)
-    (empty_logic, empty_logic)
-  | Some name ->
-    (* let's find the first recursive field, which we assume is the
-       forward pointer of the linked list *)
-    let numed_types = Array.mapi (fun i tt -> (i,tt)) (struct_element_types t) in
-    let subelt_types = Array.to_list numed_types in
-    try
-      let points_to_struct typ = pointer_type t = typ in
-      let (rec_field,_) =
-	List.find (fun (i,subelt_t) -> points_to_struct subelt_t) subelt_types in
-      node_logic_of_struct t (Arg_string name) rec_field
-    with Not_found -> (empty_logic, empty_logic)
+let rollup_node_logic_of_type t name rec_field =
+  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
+  let n_var = Arg_var (Vars.AnyVar (0, "n")) in
+  let struct_field_values =
+    let field_values =
+      Array.mapi (fun i _ -> Arg_var (Vars.AnyVar (0, "v"^(string_of_int i)))) (struct_element_types t) in
+    Array.set field_values rec_field n_var;
+    mk_struct_val_of_fields t field_values in
+  let struct_pointer = mkPointer x_var (args_of_type t) struct_field_values in
+  let node = mkNode name x_var n_var in
+  let rollup_rule_known_next =
+    mk_simple_equiv_rule ("rollup_"^(string_of_struct t)) struct_pointer node in
+  let v_var = Arg_var (Vars.AnyVar (0, "v")) in
+  let struct_pointer = mkPointer x_var (args_of_type t) v_var in
+  let node = mkNode name x_var (mk_field_val_of_struct_val t v_var rec_field) in
+  let rollup_rule_compute_next =
+    mk_simple_equiv_rule ("rollup_"^(string_of_struct t)^"_compute_next") struct_pointer node in
+  let logic = { empty_logic with seq_rules = rollup_rule_known_next@rollup_rule_compute_next } in
+  (logic, logic)
 
 
 let remove_pointer_arith_same_root_same_size =
@@ -435,6 +384,22 @@ let remove_pointer_arith_same_root_same_size =
       [PureGuard eq_x_y] in
   let logic = { empty_logic with seq_rules = [rule] } in
   (logic, logic)
+
+let sll_logic_of_type logic_generator t = match struct_name t with
+  | None ->
+    (* recursive structs are necessarily named *)
+    (empty_logic, empty_logic)
+  | Some name ->
+    (* let's find the first recursive field, which we assume is the
+       forward pointer of the linked list *)
+    let numed_types = Array.mapi (fun i tt -> (i,tt)) (struct_element_types t) in
+    let subelt_types = Array.to_list numed_types in
+    try
+      let points_to_struct typ = pointer_type t = typ in
+      let (rec_field,_) =
+       List.find (fun (i,subelt_t) -> points_to_struct subelt_t) subelt_types in
+      logic_generator t (Arg_string name) rec_field
+    with Not_found -> (empty_logic, empty_logic)
 
 let nullptr_logic =
   let ptr_bitsize =
@@ -478,7 +443,10 @@ let add_logic_of_module base_logic m =
   (** pairs of rule generation functions and a filter that checks they
       are applied only to certain types *)
   let rule_generators =
-    ApplyOnce base_logic
+    (if !Lstar_config.auto_gen_list_logic then
+	[ApplyAtType (sll_logic_of_type concretise_node_logic_of_type, struct_filter)]
+     else [])
+    @ApplyOnce base_logic
     ::ApplyOnce nullptr_logic
     ::ApplyOnce sizeof_ptr_logic
     ::ApplyAtType (sizeof_logic_of_type, int_struct_filter)
@@ -487,7 +455,7 @@ let add_logic_of_module base_logic m =
     ::ApplyAtType (struct_value_logic_of_type, struct_filter)
     ::ApplyAtType (bytearray_to_struct_conversions, struct_filter)
     ::(if !Lstar_config.auto_gen_list_logic then
-	[ApplyAtType (sllnode_logic_of_type, struct_filter)]
+	[ApplyAtType (sll_logic_of_type rollup_node_logic_of_type, struct_filter)]
       else [])
     @ApplyOnce remove_pointer_arith_same_root_same_size
     ::ApplyAtType (arith_unfold_logic_of_type, struct_filter)
