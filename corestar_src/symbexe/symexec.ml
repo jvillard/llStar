@@ -362,9 +362,9 @@ let check_postcondition (heaps : formset_entry list) (sheap : formset_entry) =
 		(fun f ->
 		  if not (Sepprover.is_pure f) then
 		    Printing.pp_node (match node.cfg with None -> -1 | Some x -> x.sid);
-		    Format.fprintf Debug.logf
-		      "@{<b>WARNING@}: Potential memory leak.@\n%!@[<2>Extra heap left:@\n%a@]@\n@{<b>(end of warning)@}@\n%!"
-		      string_inner_form f;)
+		  Format.fprintf Debug.logf
+		    "@{<b>WARNING@}: Potential memory leak.@\n%!@[<2>Extra heap left:@\n%a@]@\n@{<b>(end of warning)@}@\n%!"
+		    string_inner_form f;)
 		frames;
 	    (not check_memleaks)
 	    or List.fold_left (fun b f -> b && (Sepprover.is_pure f)) true frames)
@@ -386,22 +386,24 @@ let check_postcondition (heaps : formset_entry list) (sheap : formset_entry) =
     (match !exec_type with
     | Abduct | SymExec ->
       (let et = "Cannot prove postcondition" in
-      Printing.pp_node (match node.cfg with None -> -1 | Some x -> x.sid);
-      printf "@{<b>ERROR@}: %s.@\n%!" et;
-      Sepprover.print_counter_example ();
-      printf "@{<b>(end of error)@}@\n%!";
-      Printing.pp_json_node (match node.cfg with None -> -1 | Some x -> x.sid) et (Sepprover.get_counter_example());
-      List.iter
-        (fun (heap, id) ->
-          let idd = add_error_heap_node heap in
-          ignore (add_edge_with_proof node idd ExecE
-            (Format.fprintf
-              (Format.str_formatter) "ERROR EXIT: @\n %a"
-              Sepprover.pprint_counter_example ();
-              Format.flush_str_formatter ())))
+       Printing.pp_node (match node.cfg with None -> -1 | Some x -> x.sid);
+       printf "@{<b>ERROR@}: %s.@\n%!" et;
+       Sepprover.print_counter_example ();
+       Printing.pp_json_node (match node.cfg with None -> -1 | Some x -> x.sid) et (Sepprover.get_counter_example());
+       List.iter
+         (fun (heap, id) ->
+           let idd = add_error_heap_node heap in
+           let proof_file = add_edge_with_proof node idd ExecE
+	     (Format.fprintf
+		(Format.str_formatter) "ERROR EXIT: @\n %a"
+		Sepprover.pprint_counter_example ();
+	      Format.flush_str_formatter ()) in
+	   printf "Proof file: %s@\n" proof_file;
+	 )
          heaps;
+       printf "@{<b>(end of error)@}@\n%!"
       )
-      | Check -> ());
+    | Check -> ());
     false
 
 
