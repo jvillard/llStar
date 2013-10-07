@@ -4,8 +4,8 @@ import "pointer.logic";
  *  This file defines 
  *
  *  node
- *  ls
- *  lspe
+ *  lseg
+ *  lseg_ne
  *
  ***************************************/
 
@@ -85,6 +85,11 @@ rule nl_lseg_ne_match :
   lseg_ne(?s,?z,?w) | node(?s,?x,?y) |- lseg_ne(?s,?x,?z)
 if
   node(?s,?x,?y) | |- lseg(?s,?y,?z)
+
+rule nl_lseg_ne_exact :
+  | node(?s,?x,?y) |- lseg_ne(?s,?x,?y)
+if
+  node(?s,?x,?y) | |- 
 
 rule nl_node_match :
   node(?s,?z,?w) | node(?s,?x,?y) |- lseg_ne(?s,?x,?z)

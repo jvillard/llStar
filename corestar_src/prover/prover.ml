@@ -385,9 +385,9 @@ let apply_rule_list
     (may_finish : Clogic.sequent -> bool) 
     : Clogic.sequent list 
     =
-(* Clear pretty print buffer *)
+  (* Clear pretty print buffer *)
   Buffer.clear buffer_dump;
-(*  let rules,rwm,ep = logic in *)
+  (*  let rules,rwm,ep = logic in *)
   if log log_prove then
     (List.iter (fun seq -> fprintf !proof_dump "Goal@ %a@\n@\n" Clogic.pp_sequent seq) sequents;
      fprintf !proof_dump "Start time :%f @\n" (Sys.time ()));
@@ -396,7 +396,7 @@ let apply_rule_list
       sequents_backtrack 
 	(fun seqs->apply_rule_list_inner seqs (n+1)) seqss [] in
     let sequents = map_option (simplify_sequent logic.rw_rules) sequents in 
-  (* Apply rules lots *)
+    (* Apply rules lots *)
     List.flatten 
       (List.map 
 	 (fun seq ->
@@ -404,10 +404,10 @@ let apply_rule_list
 	   if must_finish seq then 
 	     [seq]
 	   else
-	   try 
-	     search (apply_rule_list_once logic.rw_rules logic.seq_rules seq)
-	   with No_match -> 
-	   try 
+	     try 
+	       search (apply_rule_list_once logic.rw_rules logic.seq_rules seq)
+	     with No_match -> 
+	       try 
 		 if may_finish seq then 
 		   [seq]
 		 else 
@@ -418,15 +418,22 @@ let apply_rule_list
 		 with No_match ->
 		   if smt_check_contradiction seq.ts seq.assumption then []
 		   else raise (Failed_eg [seq])
-                 (* try  *)
-	         (*     let ts' = Smt.ask_the_audience seq.ts seq.assumption in *)
-	         (*     search [[ {seq with ts = ts'} ]] *)
-                 (*   with  *)
-                 (*   | Assm_Contradiction -> [] *)
-                 (*   | No_match -> raise (Failed_eg [seq]) *)
+	 (* alternatively, instead of merely asking if there is a
+	    contradiction, one can ask the SMT solver to compare every
+	    pair of terms in the current sequent. *)
+	 (* I find that too expensive. Better to make rules that call
+	    the SMT solver explicitly (using the "where" clause) when
+	    needed, combined with rewrite rules for equalities that
+	    should always be included *)
+         (* try  *)
+	 (*     let ts' = Smt.ask_the_audience seq.ts seq.assumption in *)
+	 (*     search [[ {seq with ts = ts'} ]] *)
+         (*   with  *)
+         (*   | Assm_Contradiction -> [] *)
+         (*   | No_match -> raise (Failed_eg [seq]) *)
 	 ) sequents 
-      )
-  in let res = apply_rule_list_inner sequents 0 in 
+      ) in
+  let res = apply_rule_list_inner sequents 0 in 
   if log log_prove then 
     fprintf !proof_dump "@\nEnd time :%f@." (Sys.time ());
   res
@@ -449,7 +456,6 @@ let check_frm (logic : logic) (seq : sequent) : Clogic.F.ts_formula list option 
   with 
     Failed -> fprintf !proof_dump "Frame failed\n"; None 
   | Failed_eg x -> fprintf !proof_dump "Frame failed\n"; prover_counter_example := x; None 
-
 
 let check_abduct logic seq : Clogic.AF.ts_formula list option = 
   try 

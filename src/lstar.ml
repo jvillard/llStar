@@ -157,8 +157,8 @@ let _ =
   System.set_signal_handlers ();
   let mf = {
     mark_open_tag = (function
-      | "b" -> System.terminal_red (* bad *)
-      | "g" -> System.terminal_green (* good *)
+      | "b" -> "" (* System.terminal_red *) (* bad *)
+      | "g" -> "" (* System.terminal_green *) (* good *)
       | _ -> assert false);
     mark_close_tag = (fun _ -> System.terminal_white);
     print_open_tag = (fun _ -> ());

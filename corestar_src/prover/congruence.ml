@@ -1137,9 +1137,9 @@ module PersistentCC (A : GrowablePersistentArray) : PCC =
 		    cont (try make_equal ts c con with Contradiction -> raise No_match)
 		else
                   (* Needs to be an exists, so fail*)
-		  raise No_match  
+		  raise No_match
 	    | Exists,_ 
-	    | Standard, _ -> raise No_match
+	    | Standard, _
 	    | Deleted, _ -> raise No_match
 	    end
       |	App (p1,p2) ->  
@@ -1164,7 +1164,7 @@ module PersistentCC (A : GrowablePersistentArray) : PCC =
       (* Very naive code, should do something clever like e-matching, but will do for now. *)
       let rec f n = 
 	if n = A.size ts.uselist then
-	  raise No_match
+	   raise No_match
 	else
 	    if n <> rep ts n then f (n+1)
 	    else
