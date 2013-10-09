@@ -15,7 +15,7 @@ val mkJumpEnd : Psyntax.args
 val mkJump : Psyntax.args -> Psyntax.args -> Psyntax.args
 val mkEltptr : Psyntax.args -> Psyntax.args -> Psyntax.args -> Psyntax.args
 val mkIntegerType : int -> Psyntax.args
-val mkFloatType : Psyntax.args
+val mkFloatType : string -> Psyntax.args
 val mkVoidType : Psyntax.args
 val mkLabelType : Psyntax.args
 val mkNamedType : Psyntax.args -> Psyntax.args

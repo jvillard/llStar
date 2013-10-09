@@ -28,7 +28,7 @@ let bvargs64_of_int64 sz i =
 let bvargs_of_int sz i = bvargs64_of_int64 (Int64.of_int sz) (Int64.of_int i)
 let bvargs_of_int64 sz i = bvargs64_of_int64 (Int64.of_int sz) i
 let bvargs64_of_int sz i = bvargs64_of_int64 sz (Int64.of_int i)
-let fpargs_of_float fp = Arg_op("fp_const", [Arg_string (string_of_float fp)])
+let fpargs_of_float fpt fp = Arg_op("fp_const", [Arg_string fpt; Arg_string (string_of_float fp)])
 let mkVoid = Arg_op("void", [])
 let mkStruct t elts_v = Arg_op(Smtexpression.smtconstr_of_struct t, elts_v)
 let mkNullPtr = Arg_op("NULL", [])
@@ -45,7 +45,7 @@ let mkJump jhead jtail = Arg_op ("jump", [jhead; jtail])
 let mkEltptr ptr t jchain = Arg_op ("eltptr", [ptr; t; jchain])
 
 let mkIntegerType sz = Arg_op("integer_type", [Arg_string (string_of_int sz)])
-let mkFloatType = Arg_op("float_type", [])
+let mkFloatType t = Arg_op("float_type", [Arg_string t])
 let mkVoidType = Arg_op("void_type", [])
 let mkLabelType = Arg_op("label_type", [])
 let mkNamedType name = Arg_op("named_type", [name])
@@ -68,6 +68,28 @@ let args_sizeof t =
   let size64 = Llvm_target.abi_size !lltarget t in
   bvargs_of_int64 64 size64
 
+let string_of_fptype t = match (classify_type t) with
+  | Float -> "float"
+  | Half -> "half"
+  | Double -> "double"
+  | X86fp80 -> "x86_fp80"
+  | Fp128 -> "fp128"
+  | Ppc_fp128 -> "ppc_fp128"
+  | _ -> failwith "Passed a non-float type to string_of_fptype"
+
+(** returns the number of bits in the exposant and the significand of a float type [t] *)
+(* these are defined as in the "FloatingPoints" SMT theory, eg the
+   size of significand includes the hidden bit. These values could be slightly off...*)
+let eb_sb_of_fpt t = match (classify_type t) with
+  | Half -> (5, 11)
+  | Float -> (8, 24)
+  | Double -> (11, 53)
+  | X86fp80 -> (15, 64)
+  | Fp128 -> (113, 15)
+  | Ppc_fp128 -> (64, 64)
+  | _ -> failwith "Passed a non-float type to eb_sb_of_fpt"
+
+
 let rec args_of_type t = match (classify_type t) with
   | Void -> mkVoidType
   | Float
@@ -75,7 +97,7 @@ let rec args_of_type t = match (classify_type t) with
   | Double
   | X86fp80
   | Fp128
-  | Ppc_fp128 -> mkFloatType
+  | Ppc_fp128 -> mkFloatType (string_of_fptype t)
   | Label -> mkLabelType
   | Integer ->
     let sz = integer_bitwidth t in
@@ -112,7 +134,7 @@ let rec args_zero_of_type t = match (classify_type t) with
   | Double
   | X86fp80
   | Fp128
-  | Ppc_fp128 -> fpargs_of_float 0.0
+  | Ppc_fp128 -> fpargs_of_float (string_of_fptype t) 0.0
   | Integer ->
     let sz = integer_bitwidth t in
     bvargs_of_int sz 0
@@ -147,6 +169,9 @@ let rec args_of_op opcode opval =
     let t = type_of opval in
     let sz = Llvm_target.size_in_bits !lltarget t in
     Printf.sprintf "%s.%Ld" op sz in
+  let typed_name_of_fpop op =
+    let (eb, sb) = eb_sb_of_fpt (type_of opval) in
+    Printf.sprintf "%s.%d.%d" op eb sb in
   match opcode with
   (* Standard Binary Operators *)
   | Opcode.Add -> args_of_binop (typed_name_of_bvop "bvadd")
@@ -231,18 +256,43 @@ let rec args_of_op opcode opval =
     let v1 = args_of_value (operand opval 0) in
     let v2 = args_of_value (operand opval 1) in
     Arg_op(op, [v1; v2])
-  | Opcode.FAdd
-  | Opcode.FSub
-  | Opcode.FMul
-  | Opcode.FDiv
-  | Opcode.FRem
-  | Opcode.FPToUI
-  | Opcode.FPToSI
-  | Opcode.UIToFP
-  | Opcode.SIToFP
+  | Opcode.FAdd -> args_of_binop (typed_name_of_fpop "fp.add")
+  | Opcode.FSub -> args_of_binop (typed_name_of_fpop "fp.sub")
+  | Opcode.FMul -> args_of_binop (typed_name_of_fpop "fp.mul")
+  | Opcode.FDiv -> args_of_binop (typed_name_of_fpop "fp.div")
+  | Opcode.FRem -> args_of_binop (typed_name_of_fpop "fp.rem")
+  | Opcode.FPToUI ->
+    let v = operand opval 0 in
+    let (eb, sb) = eb_sb_of_fpt (type_of v) in
+    let bv = integer_bitwidth (type_of opval) in
+    let op = Printf.sprintf "fp.to_ubv.%d.%d.%d" eb sb bv in
+    Arg_op(op, [args_of_value v])
+  | Opcode.FPToSI ->
+    let v = operand opval 0 in
+    let (eb, sb) = eb_sb_of_fpt (type_of v) in
+    let bv = integer_bitwidth (type_of opval) in
+    let op = Printf.sprintf "fp.to_sbv.%d.%d.%d" eb sb bv in
+    Arg_op(op, [args_of_value v])
+  | Opcode.UIToFP ->
+    let v = operand opval 0 in
+    let bv = integer_bitwidth (type_of v) in
+    let (eb, sb) = eb_sb_of_fpt (type_of opval) in
+    let op = Printf.sprintf "ui_to_fp.%d.%d.%d" bv eb sb in
+    Arg_op(op, [args_of_value v])
+  | Opcode.SIToFP ->
+    let v = operand opval 0 in
+    let bv = integer_bitwidth (type_of v) in
+    let (eb, sb) = eb_sb_of_fpt (type_of opval) in
+    let op = Printf.sprintf "si_to_fp.%d.%d.%d" bv eb sb in
+    Arg_op(op, [args_of_value v])
   | Opcode.FPTrunc
-  | Opcode.FPExt
-  | Opcode.FCmp
+  | Opcode.FPExt ->
+    let v = operand opval 0 in
+    let (eb_from, sb_from) = eb_sb_of_fpt (type_of v) in
+    let (eb_to, sb_to) = eb_sb_of_fpt (type_of opval) in
+    let op = Printf.sprintf "fp_to_fp.%d.%d.%d.%d" eb_from sb_from eb_to sb_to in
+    Arg_op(op, [args_of_value v])
+  | Opcode.FCmp (* huh? cannot get the comparison operation from the bindings! *)
   | Opcode.Select
   | Opcode.ExtractElement
   | Opcode.InsertElement
