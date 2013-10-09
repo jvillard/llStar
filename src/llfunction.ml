@@ -223,11 +223,20 @@ let cfg_node_of_instr specs fun_env instr =
   | Opcode.Resume -> implement_this "resume instr"
   | Opcode.LandingPad -> [mk_node Core.Nop_stmt_core]
   | Opcode.Unwind -> implement_this "unwind"
+  | Opcode.BitCast ->
+    let id = value_id instr in
+    let args_id = Arg_var (Vars.concretep_str id) in
+    let args_e = args_of_op (instr_opcode instr) instr in
+    let post = pconjunction (mkPPred ("bitcast", [args_id; args_of_type (type_of instr) ]))
+      (mkEQ (args_id, args_e)) in
+    let pre = mkEmpty in
+    let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
+    [mk_node (Core.Assignment_core ([Vars.concretep_str id],spec,[]))]
   (* the remaining opcodes are shared with constant expressions *)
   | Opcode.Add | Opcode.FAdd | Opcode.Sub | Opcode.FSub | Opcode.Mul
   | Opcode.FMul | Opcode.UDiv | Opcode.SDiv | Opcode.FDiv | Opcode.URem
   | Opcode.SRem | Opcode.FRem | Opcode.Shl | Opcode.LShr | Opcode.AShr
-  | Opcode.And | Opcode.Or | Opcode.Xor | Opcode.BitCast | Opcode.Trunc
+  | Opcode.And | Opcode.Or | Opcode.Xor | Opcode.Trunc
   | Opcode.ZExt | Opcode.SExt | Opcode.PtrToInt | Opcode.IntToPtr
   | Opcode.GetElementPtr | Opcode.FPToUI | Opcode.FPToSI | Opcode.UIToFP
   | Opcode.SIToFP | Opcode.FPTrunc | Opcode.FPExt | Opcode.ICmp

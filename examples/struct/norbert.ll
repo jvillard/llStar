@@ -6,8 +6,7 @@ define %node* @norbert(i32 %a, %node* %b) {
   %br = icmp eq i8* %p, null
   br i1 %br, label %.exit, label %.success
 .success:
-; %i = bitcast i8* %p to i32*
-  %i = getelementptr %node* %r, i32 0, i32 0
+  %i = bitcast i8* %p to i32*
   store i32 %a, i32* %i
   %n = getelementptr %node* %r, i32 0, i32 1
   store %node* %b, %node** %n
