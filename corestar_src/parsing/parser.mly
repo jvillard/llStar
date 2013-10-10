@@ -160,9 +160,14 @@ identifier:
   | IDENTIFIER { $1 }
 ;
 
+string_ne_list:
+  | STRING_CONSTANT { [$1] }
+  | STRING_CONSTANT COMMA string_ne_list {$1::$3}
+;
+
 string_list:
   | /* empty */ { [] }
-  | STRING_CONSTANT string_list {$1::$2}
+  | string_ne_list {$1}
 ;
 
 identifier_op:
@@ -387,7 +392,7 @@ rule:
       let seq_list=[[seq2]] in
       Load.NormalEntry(SeqRule(seq,seq_list,$2,wo,$7)) }
   | equiv_rule { Load.NormalEntry($1) }
-  | NODERULE COLON identifier identifier string_list SEMICOLON { Load.NormalEntry(NodeRule($3,$4,$5)) }
+  | NODERULE COLON STRING_CONSTANT L_PAREN string_list R_PAREN EQUALS identifier { Load.NormalEntry(NodeRule($3,$8,$5)) }
 ;
 
 rule_file:
