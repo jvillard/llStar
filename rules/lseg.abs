@@ -15,7 +15,7 @@ where
 
 
 abstraction ls_pto:
- lseg(?l,?x,_x) * node(?l,_x,NULL()) ~~>  lseg_ne(?l,?x,NULL()) 
+ lseg(?l,?x,_x) * sllnode(?l,_x,NULL()) ~~>  lseg_ne(?l,?x,NULL()) 
 where 
   _x notincontext;
   _x notin ?x
@@ -23,7 +23,7 @@ where
 
 
 abstraction pto_ls:
- node(?l,?x,_x) * lseg(?l,_x,NULL()) ~~> lseg_ne(?l,?x,NULL()) 
+ sllnode(?l,?x,_x) * lseg(?l,_x,NULL()) ~~> lseg_ne(?l,?x,NULL()) 
 where 
   _x notincontext;
   _x notin ?x
@@ -31,7 +31,7 @@ where
 
 
 abstraction pto_pto:
- node(?l,?x,_x) * node(?l,_x,NULL()) ~~> lseg_ne(?l,?x,NULL())
+ sllnode(?l,?x,_x) * sllnode(?l,_x,NULL()) ~~> lseg_ne(?l,?x,NULL())
 where 
   _x notincontext;
   _x notin ?x
@@ -56,13 +56,13 @@ where
   _x notin ?x
 
 abstraction lsne_pto:
- lseg_ne(?l,?x,_x) * node(?l,_x,NULL()) ~~>  lseg_ne(?l,?x,NULL()) 
+ lseg_ne(?l,?x,_x) * sllnode(?l,_x,NULL()) ~~>  lseg_ne(?l,?x,NULL()) 
 where 
   _x notincontext;
   _x notin ?x
 
 abstraction pto_lsne:
- node(?l,?x,_x) * lseg_ne(?l,_x,NULL()) ~~> lseg_ne(?l,?x,NULL()) 
+ sllnode(?l,?x,_x) * lseg_ne(?l,_x,NULL()) ~~> lseg_ne(?l,?x,NULL()) 
 where 
   _x notincontext;
   _x notin ?x
@@ -83,7 +83,7 @@ where
 
 
 abstraction ls_ls_pto:
- lseg(?l,?x,_x) * lseg(?l,_x,?y) * node(?l,?y,?z) ~~> lseg(?l,?x,?y) * node(?l,?y,?z) 
+ lseg(?l,?x,_x) * lseg(?l,_x,?y) * sllnode(?l,?y,?z) ~~> lseg(?l,?x,?y) * sllnode(?l,?y,?z) 
 where 
   _x notincontext;
   _x notin ?x;
@@ -93,7 +93,7 @@ where
 
 
 abstraction ls_pto_ls:
- lseg(?l,?x,_x) * node(?l,_x,?y) * lseg(?l,?y,?z) ~~> lseg_ne(?l,?x,?y) * lseg(?l,?y,?z)
+ lseg(?l,?x,_x) * sllnode(?l,_x,?y) * lseg(?l,?y,?z) ~~> lseg_ne(?l,?x,?y) * lseg(?l,?y,?z)
 where 
     _x notincontext;
   _x notin ?x;
@@ -104,7 +104,7 @@ where
 
 
 abstraction ls_pto_pto:
- lseg(?l,?x,_x) * node(?l,_x,?y) * node(?l,?y,?z) ~~> lseg_ne(?l,?x,?y) * node(?l,?y,?z)
+ lseg(?l,?x,_x) * sllnode(?l,_x,?y) * sllnode(?l,?y,?z) ~~> lseg_ne(?l,?x,?y) * sllnode(?l,?y,?z)
 where 
   _x notincontext;
   _x notin ?x;
@@ -113,7 +113,7 @@ where
 
 
 abstraction pto_ls_ls:
- node(?l,?x,_x) * lseg(?l,_x,?y) * lseg(?l,?y,?z) ~~> lseg_ne(?l,?x,?y)  * lseg(?l,?y,?z) 
+ sllnode(?l,?x,_x) * lseg(?l,_x,?y) * lseg(?l,?y,?z) ~~> lseg_ne(?l,?x,?y)  * lseg(?l,?y,?z) 
 where 
   _x notincontext;
   _x notin ?x;
@@ -123,7 +123,7 @@ where
 
 
 abstraction pto_ls_pto:
- node(?l,?x,_x) * lseg(?l,_x,?y) * node(?l,?y,?z) ~~> lseg_ne(?l,?x,?y)  * node(?l,?y,?z)
+ sllnode(?l,?x,_x) * lseg(?l,_x,?y) * sllnode(?l,?y,?z) ~~> lseg_ne(?l,?x,?y)  * sllnode(?l,?y,?z)
 where 
   _x notincontext;
   _x notin ?x;
@@ -133,7 +133,7 @@ where
 
 
 abstraction pto_pto_ls:
- node(?l,?x,_x) * node(?l,_x,?y) * lseg(?l,?y,?z) ~~> lseg_ne(?l,?x,?y) * lseg(?l,?y,?z) 
+ sllnode(?l,?x,_x) * sllnode(?l,_x,?y) * lseg(?l,?y,?z) ~~> lseg_ne(?l,?x,?y) * lseg(?l,?y,?z) 
 where 
   _x notincontext;
   _x notin ?x;
@@ -144,7 +144,7 @@ where
 
 
 abstraction pto_pto_pto:
- node(?l,?x,_x) * node(?l,_x,?y) * node(?l,?y,?z) ~~> lseg_ne(?l,?x,?y) * node(?l,?y,?z) 
+ sllnode(?l,?x,_x) * sllnode(?l,_x,?y) * sllnode(?l,?y,?z) ~~> lseg_ne(?l,?x,?y) * sllnode(?l,?y,?z) 
 where 
   _x notincontext;
   _x notin ?x;
@@ -155,23 +155,23 @@ where
 
 /* abstract a node into a non-empty list segment */
 abstraction node_lsne:
-  node(?l,?x,?y) ~~> lseg_ne(?l,?x,?y)
+  sllnode(?l,?x,?y) ~~> lseg_ne(?l,?x,?y)
 
 
 /*************************************
  *  Empty rules
  ***********************************
 rule node_nil2:
-node(?l,NULL(),?x) | |- 
+sllnode(?l,NULL(),?x) | |- 
 if
 
 rule node_not_nil:
-node(?l,?x,?y) | ?x!=NULL() |-
+sllnode(?l,?x,?y) | ?x!=NULL() |-
 if
 | |-
 
 rule node_not_eq:
-node(?l,?x,?y) * node(?l,?z,?w) | ?x!=?z |-
+sllnode(?l,?x,?y) * sllnode(?l,?z,?w) | ?x!=?z |-
 if
 | |-
 */

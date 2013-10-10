@@ -445,8 +445,7 @@ let add_logic_of_module node_logic base_logic m =
   (** pairs of rule generation functions and a filter that checks they
       are applied only to certain types *)
   let rule_generators =
-    ApplyAtType (gen_node_logics node_logic concretise_node_logic_of_type, struct_filter)
-    ::ApplyOnce base_logic
+    ApplyOnce base_logic
     ::ApplyOnce nullptr_logic
     ::ApplyOnce sizeof_ptr_logic
     ::ApplyAtType (sizeof_logic_of_type, int_struct_filter)
@@ -454,6 +453,7 @@ let add_logic_of_module node_logic base_logic m =
     ::ApplyAtType (unfold_logic_of_type, struct_filter)
     ::ApplyAtType (struct_value_logic_of_type, struct_filter)
     ::ApplyAtType (bytearray_to_struct_conversions, struct_filter)
+    ::ApplyAtType (gen_node_logics node_logic concretise_node_logic_of_type, struct_filter)
     ::ApplyOnce remove_pointer_arith_same_root_same_size
     ::ApplyAtType (arith_unfold_logic_of_type, struct_filter)
     ::ApplyAtType (gen_node_logics node_logic rollup_node_logic_of_type, struct_filter)

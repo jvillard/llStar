@@ -11,7 +11,7 @@ import "pointer.logic";
 
 
 rule node_not_nil:
-  node(?s,NULL(),?y) | |-
+  sllnode(?s,NULL(),?y) | |-
 if
 
 rule lseg_ne_not_nil:
@@ -25,12 +25,12 @@ if
 
 
 rule node_not_nil:
-  node(?s,?x,?y) | |- ?x!=NULL()
+  sllnode(?s,?x,?y) | |- ?x!=NULL()
 if
   | |-
 
 rule node_not_eq:
-  node(?s,?x,?y) * node(?s,?x,?w) | |-
+  sllnode(?s,?x,?y) * sllnode(?s,?x,?w) | |-
 if
 
 
@@ -39,24 +39,24 @@ if
  *************************************/
 
 rule node_equal:
-  | node(?s,?i,?n) |- node(?s,?j,?n2)
+  | sllnode(?s,?i,?n) |- sllnode(?s,?j,?n2)
 if
-  node(?s,?i,?n) | |- ?n = ?n2
+  sllnode(?s,?i,?n) | |- ?n = ?n2
 
 rule lseg_ne_unroll_node_exists:
-  | lseg_ne(?s,?i,?j) |- node(?s,?i,?n)
+  | lseg_ne(?s,?i,?j) |- sllnode(?s,?i,?n)
 if
-  | node(?s,?i,_v) * lseg(?s,_v,?j) |- node(?s,?i,?n)
+  | sllnode(?s,?i,_v) * lseg(?s,_v,?j) |- sllnode(?s,?i,?n)
 
 rule lseg_ne_unroll_first_exists :
 | lseg_ne(?s,?x,?y) |- pointer(?x,?w,?Z)
 if
-| node(?s,?x,_fooz) * lseg(?s,_fooz,?y)  |- pointer(?x,?w,?Z)
+| sllnode(?s,?x,_fooz) * lseg(?s,_fooz,?y)  |- pointer(?x,?w,?Z)
 
 rule lseg_ne_unroll_offset_exists :
 | lseg_ne(?s,?x,?y) |- pointer(bvadd.64(?x,?offset),?w,?Z)
 if
-| node(?s,?x,_fooz) * lseg(?s,_fooz,?y)  |- pointer(bvadd.64(?x,?offset),?w,?Z)
+| sllnode(?s,?x,_fooz) * lseg(?s,_fooz,?y)  |- pointer(bvadd.64(?x,?offset),?w,?Z)
 
 
 rule lseg_ne_lseg_ne_match :
@@ -65,7 +65,7 @@ if
   lseg_ne(?s,?x,?y) | |- lseg(?s,?y,?z)
 
 rule lseg_ne_node_match :
-  node(?s,?z,?w) | lseg_ne(?s,?x,?y) |- lseg_ne(?s,?x,?z)
+  sllnode(?s,?z,?w) | lseg_ne(?s,?x,?y) |- lseg_ne(?s,?x,?z)
 if
   lseg_ne(?s,?x,?y) | |- lseg(?s,?y,?z)
 
@@ -82,22 +82,22 @@ if
 
 
 rule nl_lseg_ne_match :
-  lseg_ne(?s,?z,?w) | node(?s,?x,?y) |- lseg_ne(?s,?x,?z)
+  lseg_ne(?s,?z,?w) | sllnode(?s,?x,?y) |- lseg_ne(?s,?x,?z)
 if
-  node(?s,?x,?y) | |- lseg(?s,?y,?z)
+  sllnode(?s,?x,?y) | |- lseg(?s,?y,?z)
 
 rule nl_lseg_ne_exact :
-  | node(?s,?x,?y) |- lseg_ne(?s,?x,?y)
+  | sllnode(?s,?x,?y) |- lseg_ne(?s,?x,?y)
 if
-  node(?s,?x,?y) | |- 
+  sllnode(?s,?x,?y) | |- 
 
 rule nl_node_match :
-  node(?s,?z,?w) | node(?s,?x,?y) |- lseg_ne(?s,?x,?z)
+  sllnode(?s,?z,?w) | sllnode(?s,?x,?y) |- lseg_ne(?s,?x,?z)
 if
-  node(?s,?x,?y) | |- lseg(?s,?y,?z)
+  sllnode(?s,?x,?y) | |- lseg(?s,?y,?z)
 
 rule nl_pointer_match :
-  pointer(?z,?f,?w) | node(?s,?x,?y) |- lseg_ne(?s,?x,?z)
+  pointer(?z,?f,?w) | sllnode(?s,?x,?y) |- lseg_ne(?s,?x,?z)
 if
   lseg_ne(?s,?x,?y) | |- lseg(?s,?y,?z)
 
@@ -127,7 +127,7 @@ lseg_ne(?s,?x,?t) * pointer(?x,?sz,?z) | |-
 if
 
 rule lseg_ne_node_contradiction :
-lseg_ne(?s,?x,?t) * node(?ss,?x,?z) | |- 
+lseg_ne(?s,?x,?t) * sllnode(?ss,?x,?z) | |- 
 if
 
 rule lseg_ne_lseg_ne_contr :
@@ -142,8 +142,8 @@ if
 
 /* this helps with pointer arithmetic */
 rule node_no_overflow:
-  | node(?s,?x,?n) |-
+  | sllnode(?s,?x,?n) |-
 without
   !bvugt(bvadd.64(?x, sizeof(named_type(?s))),?x)
 if
-  | !bvugt(bvadd.64(?x, sizeof(named_type(?s))),?x) * node(?s,?x,?n) |-
+  | !bvugt(bvadd.64(?x, sizeof(named_type(?s))),?x) * sllnode(?s,?x,?n) |-

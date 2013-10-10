@@ -225,7 +225,6 @@ let cfg_node_of_instr specs fun_env instr =
   | Opcode.Unwind -> implement_this "unwind"
   | Opcode.BitCast ->
     let id = value_id instr in
-    let args_id = Arg_var (Vars.concretep_str id) in
     let args_e = args_of_op (instr_opcode instr) instr in
     let post = pconjunction (mkPPred ("bitcast", [ret_arg; args_of_type (type_of instr) ]))
       (mkEQ (ret_arg, args_e)) in

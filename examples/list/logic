@@ -1,4 +1,5 @@
 import "../../rules/llvm.logic";
+import "../../rules/lseg.logic";
 
-nodedecl: listitem node "4";
-
+nodedecl: listitem sllnode "4";
+nodedecl: struct.node sllnode "1";
