@@ -1,1 +1,4 @@
 import "../../rules/llvm.logic";
+
+nodedecl: listitem node "4";
+

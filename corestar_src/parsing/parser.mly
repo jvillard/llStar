@@ -93,6 +93,7 @@ let parse_warning s =
 %token L_PAREN 
 %token LEADSTO
 %token MULT 
+%token NODERULE
 %token NOP
 %token NOT_EQUALS
 %token NOTIN
@@ -157,6 +158,11 @@ boolean:
 
 identifier:
   | IDENTIFIER { $1 }
+;
+
+string_list:
+  | /* empty */ { [] }
+  | STRING_CONSTANT string_list {$1::$2}
 ;
 
 identifier_op:
@@ -381,6 +387,7 @@ rule:
       let seq_list=[[seq2]] in
       Load.NormalEntry(SeqRule(seq,seq_list,$2,wo,$7)) }
   | equiv_rule { Load.NormalEntry($1) }
+  | NODERULE COLON identifier identifier string_list SEMICOLON { Load.NormalEntry(NodeRule($3,$4,$5)) }
 ;
 
 rule_file:

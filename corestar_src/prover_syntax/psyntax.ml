@@ -521,13 +521,13 @@ let pp_rewrite_rule f rw =
   fprintf f "@]"
 
 type equiv_rule = string * (pform) * (pform) * (pform) * (pform)
-
-
-type rules = 
-  | SeqRule of sequent_rule
+type node_rule = string * string * string list
+type rules =
+    SeqRule of sequent_rule
   | RewriteRule of rewrite_rule
   | EquivRule of equiv_rule
   | ConsDecl of string
+  | NodeRule of node_rule
 
 type question =
   |  Implication of pform * pform 
@@ -561,7 +561,7 @@ let expand_equiv_rules rules =
 	      list
 	  else
 	    list
-    | SeqRule _ | RewriteRule _ | ConsDecl _ -> x::list
+    | SeqRule _ | RewriteRule _ | ConsDecl _ | NodeRule _ -> x::list
   in
   List.fold_right equiv_rule_to_seq_rule rules []
 

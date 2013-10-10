@@ -148,11 +148,13 @@ type rewrite_rule = {
 val pp_rewrite_guard : Format.formatter -> rewrite_guard -> unit
 val pp_rewrite_rule : Format.formatter -> rewrite_rule -> unit
 type equiv_rule = string * pform * pform * pform * pform
+type node_rule = string * string * string list
 type rules =
     SeqRule of sequent_rule
   | RewriteRule of rewrite_rule
   | EquivRule of equiv_rule
   | ConsDecl of string
+  | NodeRule of node_rule
 type question =
     Implication of pform * pform
   | Inconsistency of pform

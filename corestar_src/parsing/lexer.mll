@@ -65,11 +65,12 @@ let kwd_or_else =
     "import", IMPORT;
     "Inconsistency", INCONSISTENCY;
     "label", LABEL;
+    "nodedecl", NODERULE;
     "nop", NOP;
     "notin", NOTIN;
     "notincontext", NOTINCONTEXT;
-    "pureguard", PUREGUARD;
     "or", ORTEXT;
+    "pureguard", PUREGUARD;
     "rewrite", REWRITERULE;
     "rule", RULE;
     "Specification", SPECIFICATION;

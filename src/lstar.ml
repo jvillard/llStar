@@ -114,20 +114,21 @@ let initialise_logic llmod =
   if log log_phase then
     fprintf logf "@.@[<2>Loading logic and specs@\n";
   let load_logic_rules_from_file fn =
-    let l1,l2,cn = Load_logic.load_logic fn in
-    { empty_logic with seq_rules=l1; rw_rules=l2; consdecl=cn} in
-  let logic = load_logic_rules_from_file !Lstar_config.logic_file_name in
-  let abduct_logic = load_logic_rules_from_file !Lstar_config.abductrules_file_name in
-  let abs_rules = load_logic_rules_from_file !Lstar_config.absrules_file_name in
+    let nl,l1,l2,cn = Load_logic.load_logic fn in
+    (nl, { empty_logic with seq_rules=l1; rw_rules=l2; consdecl=cn}) in
+  let (nl,logic) = load_logic_rules_from_file !Lstar_config.logic_file_name in
+  let (nla, abduct_logic) = load_logic_rules_from_file !Lstar_config.abductrules_file_name in
+  let (nabs, abs_rules) = load_logic_rules_from_file !Lstar_config.absrules_file_name in
   let spec_list = Load.import_flatten
     Cli_utils.specs_dirs            
     !Lstar_config.spec_file_name
     Logic_parser.spec_file Logic_lexer.token in
+  let node_logic = nl@nla@nabs in
   let (logic, abduct_logic) =
     if !Lstar_config.auto_gen_struct_logic then
       (if log log_phase then
 	  fprintf logf "@.@[<2>Generating logic for the module";
-       Rulegen.add_logic_of_module (logic, abduct_logic) llmod
+       Rulegen.add_logic_of_module node_logic (logic, abduct_logic) llmod
       ) else (logic, abduct_logic) in
   dump_into_file "logic_rules.txt"
     (Debug.pp_list pp_sequent_rule) logic.seq_rules;
