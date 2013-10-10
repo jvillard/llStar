@@ -59,7 +59,22 @@ let stmts_to_cfg (stmts : cfg_node list) : unit =
   List.iter (fun s -> s.succs <- []; s.preds <- []) stmts;
   List.iter al stmts;
   process stmts
+
+(*
+let simplify_cfg stmts =
+  (** removes a Nop node when it has a single predessor and a single successor *)
+  let remove_nop n =
+    match (!n.preds, !n.succs) with
+    | ([p], [s]) -> 
+    match
+  (** removes a Goto node when it has a single predessor and a single successor *)
+  List.iter 
+*)
 (* utils for building flowgraphs }}} *)
+
+
+
+
 (* {{{ pretty printing flowgraphs (to .dot) *)
 
 (* stmtsname is a list of programs and names, such that each program's

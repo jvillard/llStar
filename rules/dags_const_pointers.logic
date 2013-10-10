@@ -1,0 +1,108 @@
+/* empty dag */
+equiv dag_nil:
+  dag(?t,NULL(),?d) <=> 
+
+/* unfold dag to get root */
+rule dag_unfold:
+ | dag(?t,?x,?d) * ?x != NULL() |- pointer(?x,?sz,?w)
+if
+ |  dagnode(?t,?x,?l,?r)
+  * dagunion(dag(?t,?l,?d), dag(?t,?r,?d))
+  * mdag(?d,?x) = mnode(?l,?r)
+ |- pointer(?x,?sz,?w)
+
+/* fold back into a dag */
+rule dag_fold:
+ |  dagnode(?t,?x,?l,?r)
+  * dagunion(dag(?t,?l,?d), dag(?t,?r,?d))
+  * mdag(?d,?x) = mnode(?l,?r)
+ |- dag(?t,?x,?dd)
+if
+ dag(?t,?x,?d) | |- ?d = ?dd
+
+/* extract dags from overlapping conjunctions */
+
+rule dagl_dagr_dagl:
+ | dagunion(dag(?t,?y,?d1), ?dags)
+ |- dag(?t,?y,?d2)
+if
+   dag(?t,?y,?d1)
+ | ewand(dag(?t,?y,?d1),
+         dagunion(dag(?t,?y,?d1), ?dags))
+ |- ?d1 = ?d2
+
+rule dagl_dagr_dagr:
+ | dagunion(?dags, dag(?t,?z,?d1))
+ |- dag(?t,?z,?d2)
+if
+   dag(?t,?z,?d1)
+ | ewand(dag(?t,?z,?d1),
+         dagunion(?dags, dag(?t,?z,?d1)))
+ |- ?d1 = ?d2
+
+
+/* eliminate wands */
+
+rule dag_ewand_left:
+ |   dag(?t,?y,?d)
+   * ewand(dag(?t,?y,?dd), dagunion(?d1,?d2))
+ |-
+if
+ | dagunion(?d1, ?d2) |- ?d = ?dd
+
+rule dag_ewand_right:
+ |   dag(?t,?z,?d)
+   * ewand(dag(?t,?z,?dd), dagunion(?d1,?d2))
+ |-
+if
+ | dagunion(?d1, ?d2) |- ?d = ?dd
+
+
+/* extract root from overlapping conjunctions */
+
+rule subdag_lunfold:
+ | dagunion(dag(?t,?y,?d), ?dags)
+ |- pointer(?y,?sz,?w)
+if
+ |  dag(?t,?y,?d)
+  * ewand(dag(?t,?y,?d), dagunion(dag(?t,?y,?d), ?dags))
+ |- pointer(?y,?sz,?w)
+
+rule subdag_runfold:
+ | dagunion(?dags, dag(?t,?z,?d))
+ |- pointer(?z,?sz,?w)
+if
+ |  dag(?t,?z,?d)
+  * ewand(dag(?t,?z,?d), dagunion(?dags, dag(?t,?z,?d)))
+ |- pointer(?z,?sz,?w)
+
+
+/* eliminate wands to get deep dags */
+
+rule subdag_fold1:
+ |  dagnode(?t,?x,?l,?r)
+  * dagunion(dag(?t,?l,?d), dag(?t,?r,?d))
+  * ewand(dag(?t,?x,?d), dagunion(dag(?t,?x,?d), dag(?t,?y,?d)))
+ |- pointer(?y,?sz,?w)
+if
+ |dagunion(dag(?t,?x,?d),
+           dag(?t,?y,?d))
+ |- pointer(?y,?sz,?w)
+
+rule subdag_fold2:
+ |  dagnode(?t,?y,?l,?r)
+  * dagunion(dag(?t,?l,?d), dag(?t,?r,?d))
+  * ewand(dag(?t,?y,?d), dagunion(dag(?t,?x,?d), dag(?t,?y,?d)))
+ |- dag(?t,?x,?dd)
+if
+ |dagunion(dag(?t,?x,?d),
+           dag(?t,?y,?d))
+ |- dag(?t,?x,?dd)
+
+rule node_no_overflow:
+  | dagnode(?s,?x,?l,?r) |-
+without
+  !bvugt(bvadd.64(?x, sizeof(named_type(?s))),?x)
+if
+  | !bvugt(bvadd.64(?x, sizeof(named_type(?s))),?x) * dagnode(?s,?x,?l,?r) |-
+
