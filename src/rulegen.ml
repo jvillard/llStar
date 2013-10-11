@@ -357,6 +357,56 @@ let bytearray_to_struct_conversions t =
 
 let mkNode node_name struct_name root fields = mkSPred (node_name, (Arg_string struct_name)::root::fields)
 
+(** TODO: merge those and the corresponding functions for structure pointers *)
+let unfold_logic_of_node t struct_name node_name node_fields =
+  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
+  let w_var = Arg_var (Vars.AnyVar (0, "w")) in
+  let n_vars = List.map (fun nf -> Arg_var (Vars.AnyVar (0, "n"^(string_of_int nf)))) node_fields in
+  let mk_field_rule i subelt_type =
+    (* take a struct with value { v_1, ..., v_n } and one of its fields on the rhs and unfold it *)
+    (* apply this rule before the next as it avoids cluttering of folding of unfolding of ... of struct values *)
+    let target_pointer = mk_field_pointer t i x_var w_var in
+    let field_base_values =
+      Array.mapi (fun i _ -> 
+	if List.mem i node_fields then Arg_var (Vars.AnyVar (0, "n"^(string_of_int i)))
+	else Arg_var (Vars.freshe ())) (struct_element_types t) in
+    let node = mkNode node_name struct_name x_var n_vars in
+    mk_simple_sequent_rule (node_name^"_field_"^(string_of_int i))
+      (mk_unfolded_struct_descend_in_singletons t x_var field_base_values, target_pointer)
+      (node, target_pointer) in
+  let field_rules =
+    let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
+    Array.to_list rules_array in
+  let logic = { empty_logic with seq_rules = field_rules; } in
+  (logic, logic)
+
+let arith_unfold_logic_of_node t struct_name node_name node_fields =
+  let field_ranged_values base_val =
+    Array.mapi (fun i _ -> mk_field_val_of_struct_val_descend_in_singletons t base_val i) (struct_element_types t) in
+  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
+  let v_var = Arg_var (Vars.AnyVar (0, "v")) in
+  let y_var = Arg_var (Vars.AnyVar (0, "y")) in
+  let t_var = Arg_var (Vars.AnyVar (0, "t")) in
+  let w_var = Arg_var (Vars.AnyVar (0, "w")) in
+  (* the whole struct *)
+  let struct_pointer = mkPointer x_var (args_of_type t) v_var in
+  let mk_field_rule i subelt_type =
+    let target_pointer = mkPointer y_var t_var w_var in
+    let offset_end_of_field = bvargs_of_int64 64 (Int64.add (alloc_size64_of_field t i) (offset64_of_field t i)) in
+    mk_sequent_rule (node_name^"_inside_field_"^(string_of_int i))
+      [[(mkEmpty, mk_unfolded_struct_descend_in_singletons t x_var (field_ranged_values v_var), target_pointer, mkEmpty)]]
+      (mkEmpty, struct_pointer, target_pointer, mkEmpty)
+      (mkEmpty, mkEmpty)
+      [PureGuard (mkPPred ("bvule", [Arg_op("bvadd.64", [x_var; args_offset_of_field t i]); y_var]));
+       PureGuard (mkPPred ("bvule", [Arg_op("bvadd.64", [y_var; Arg_op("sizeof", [t_var])]);
+				     Arg_op("bvadd.64", [x_var; offset_end_of_field])]))] in
+  let field_rules =
+    let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
+    Array.to_list rules_array in
+  let logic = { empty_logic with seq_rules = field_rules; } in
+  (logic, logic)
+
+
 (* assumes that [t] is a struct type *)
 let concretise_node_logic_of_type t struct_name node_name node_fields = 
   let x_var = Arg_var (Vars.AnyVar (0, "x")) in
@@ -493,9 +543,10 @@ let add_logic_of_module node_logic base_logic m =
     ::ApplyAtType (unfold_logic_of_type, struct_filter)
     ::ApplyAtType (struct_value_logic_of_type, struct_filter)
     ::ApplyAtType (bytearray_to_struct_conversions, struct_filter)
-    ::ApplyAtType (gen_node_logics node_logic concretise_node_logic_of_type, struct_filter)
+    ::ApplyAtType (gen_node_logics node_logic unfold_logic_of_node, struct_filter)
     ::ApplyOnce remove_pointer_arith_same_root_same_size
     ::ApplyAtType (arith_unfold_logic_of_type, struct_filter)
+    ::ApplyAtType (gen_node_logics node_logic concretise_node_logic_of_type, struct_filter)
     ::ApplyAtType (gen_node_logics node_logic rollup_node_logic_of_type, struct_filter)
     ::ApplyAtType (fold_logic_of_type, struct_filter)
     ::[] in 
