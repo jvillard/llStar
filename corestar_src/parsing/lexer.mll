@@ -92,13 +92,15 @@ let  dec_digit = ['0' - '9']
 
 let  not_cr_lf = [ ^ '\010' '\013']
 
-let  alpha_char = ['a' - 'z'] | ['A' - 'Z']
+let  alpha_char = ['a' - 'z' 'A' - 'Z']
   
 let  simple_id_char = alpha_char | dec_digit | '_' | '.' | '$'
 
 let  first_id_char = alpha_char | '_' | '$'
 
-let  string_char = ['\000' - '\033'] | ['\035' - '\091'] | ['\093' - '\127']   
+(* all ascii chars except QUOTE and BACKSLASH *)
+let  string_char = ['\000' - '\127'] # ['\034' '\092']
+let  string_char_no_sharp = ['\000' - '\127'] # ['#']
 
 let  line_comment = "//" not_cr_lf*
 
@@ -109,7 +111,7 @@ let  ignored_helper = (blank | line_comment)+
 let  newline = ('\013' | '\010' | "\010\013")
 
 let  at_identifier =
-      '@' (simple_id_char | ':')*
+      '@' simple_id_char+ ':'
 
 let identifier = 
       first_id_char simple_id_char*
@@ -128,7 +130,6 @@ rule token = parse
   | ")" { R_PAREN }
   | ":" { COLON }
   | "." { DOT }
-  | "'" { QUOTE }
   | ":=" { COLON_EQUALS }
   | "=" { EQUALS }
   | "&" { AND }
@@ -153,10 +154,10 @@ rule token = parse
   | ">" { CMP_GT }
   | eof { EOF }
 
-  (* Both at_identifer and identifer should produce IDENTIFIER *)
+  (* Both at_identifier and identifier should produce IDENTIFIER *)
   | at_identifier as s { kwd_or_else (IDENTIFIER s) s }
   | identifier as s { kwd_or_else (IDENTIFIER s) s }
-
+  | '#' (string_char_no_sharp* as s) '#' { IDENTIFIER s }
   (* FIXME: What is the right lexing of string constants? *)
   | '"' (string_char* as s) '"' { STRING_CONSTANT s }
   | _ { Printf.printf "here2 %!"; failwith (error_message (Illegal_character ((Lexing.lexeme lexbuf).[0])) lexbuf)}

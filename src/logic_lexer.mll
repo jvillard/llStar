@@ -98,6 +98,7 @@ let  simple_id_char = alpha_char | dec_digit | '_' | '.' | '$' | '%'
 let  first_id_char = alpha_char | '_' | '$' | '%'
 
 let  string_char = ['\000' - '\033'] | ['\035' - '\091'] | ['\093' - '\127']   
+let  string_char_no_sharp = ['\000' - '\127'] # ['#']
 
 let  line_comment = "//" not_cr_lf*
 
@@ -155,7 +156,7 @@ rule token = parse
   (* Both at_identifer and identifer should produce IDENTIFIER *)
   | at_identifier as s { kwd_or_else (IDENTIFIER s) s }
   | identifier as s { kwd_or_else (IDENTIFIER s) s }
-
+  | '#' (string_char_no_sharp* as s) '#' { IDENTIFIER s }
   (* FIXME: What is the right lexing of string constants? *)
   | '"' (string_char* as s) '"' { STRING_CONSTANT s }
   | _ { Printf.printf "here2 %!"; failwith (error_message (Illegal_character ((Lexing.lexeme lexbuf).[0])) lexbuf)}

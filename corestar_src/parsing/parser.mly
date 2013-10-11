@@ -106,7 +106,6 @@ let parse_warning s =
 %token OROR 
 %token ORTEXT
 %token QUESTIONMARK 
-%token QUOTE
 %token R_BRACE 
 %token R_BRACKET 
 %token R_PAREN 
