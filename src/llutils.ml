@@ -1,4 +1,4 @@
-(*** Llutils: generic utility functions for LStar *)
+(*** Llutils: generic utility functions for llStar *)
 
 (* LLVM modules *)
 open Llvm
@@ -6,7 +6,7 @@ open TypeKind
 (* coreStar modules *)
 open Psyntax
 
-(*** Uncomment this when LStar segfaults: it's most likely that the
+(*** Uncomment this when llStar segfaults: it's most likely that the
      bindings are used incorrectly *)
 
 (*
@@ -167,8 +167,8 @@ let pp_spec fmt (pre,post) =
 
 (** dump things into files in the output directory *)
 let dump_into_file suffix pp_stuff stuff =
-  let fname = Filename.concat !Lstar_config.outdir
-    (!Lstar_config.bitcode_base_name ^ "." ^ suffix) in
+  let fname = Filename.concat !Llstar_config.outdir
+    (!Llstar_config.bitcode_base_name ^ "." ^ suffix) in
   let file_out = open_out fname in
   let file_fmt = Format.formatter_of_out_channel file_out in
   Format.fprintf file_fmt "@[%a@." pp_stuff stuff;

@@ -1,4 +1,4 @@
-(*** Uncomment this when LStar segfaults: it's most likely that the
+(*** Uncomment this when llStar segfaults: it's most likely that the
      bindings are used incorrectly *)
 (*
 val type_of : Llvm.llvalue -> Llvm.lltype

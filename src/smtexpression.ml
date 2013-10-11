@@ -8,7 +8,7 @@ open TypeKind
 (* coreStar modules *)
 open Smt
 open Smtsyntax
-(* LStar modules *)
+(* llStar modules *)
 open Llutils
 
 

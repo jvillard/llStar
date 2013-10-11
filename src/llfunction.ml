@@ -5,7 +5,7 @@ open Llvm
 (* coreStar modules *)
 open Psyntax
 open Cfg_core
-(* LStar modules *)
+(* llStar modules *)
 open Llexpression
 open Llutils
 

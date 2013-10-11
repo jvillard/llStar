@@ -3,7 +3,7 @@ open Format
 open Config
 open Debug
 open Psyntax
-(* LStar modules *)
+(* llStar modules *)
 open Llutils
 
 let result = ref true
@@ -11,7 +11,7 @@ let result = ref true
 let verify_function logic abduct_logic abstraction_rules specs f =
   let fid = value_id f in
   if not (Llvm.is_declaration f) then (
-    if !Lstar_config.abduction_flag then
+    if !Llstar_config.abduction_flag then
       fprintf logf "@[Abducing spec of function %s...@." fid
     else
       fprintf logf "@[Verifying function %s...@." fid;
@@ -40,7 +40,7 @@ let verify_function logic abduct_logic abstraction_rules specs f =
 	Spec.post = subst_form subst spec.Spec.post; } in
     Cfg_core.stmts_to_cfg cfg_nodes;
     Cfg_core.print_icfg_dotty [(cfg_nodes, fid)] fid;
-    if !Lstar_config.abduction_flag then
+    if !Llstar_config.abduction_flag then
       let specs = Symexec.bi_abduct fid cfg_nodes spec_to_verify
 	logic abduct_logic abstraction_rules in
       dump_into_file (fid ^ ".specs") (Debug.pp_list pp_spec) specs;
@@ -60,11 +60,11 @@ let verify_module logic abduct_logic abstruction_rules specs m =
 
 let initialise_llvm () =
   if log log_phase then
-    fprintf logf "@[<2>Loading bitcode program %s@\n" !Lstar_config.bitcode_file_name;
+    fprintf logf "@[<2>Loading bitcode program %s@\n" !Llstar_config.bitcode_file_name;
   let ic = Llvm.create_context () in
-  let imbuf = Llvm.MemoryBuffer.of_file !Lstar_config.bitcode_file_name in
+  let imbuf = Llvm.MemoryBuffer.of_file !Llstar_config.bitcode_file_name in
   let llmod = Llvm_bitreader.parse_bitcode ic imbuf in
-  if !Lstar_config.optimise_bc then (
+  if !Llstar_config.optimise_bc then (
     if log log_phase then
       fprintf logf "@[Running LLVM passes on bitcode@]@\n";
     let pm = Llvm.PassManager.create () in
@@ -79,13 +79,13 @@ let initialise_llvm () =
     Llvm_ipo.add_ipc_propagation pm;
     ignore (Llvm.PassManager.run_module llmod pm)
   );
-  let fname = Filename.concat !Config.outdir !Lstar_config.bitcode_base_name in
+  let fname = Filename.concat !Config.outdir !Llstar_config.bitcode_base_name in
   if log log_phase then
     fprintf logf "@[Analysed bitcode in %s@]@\n" fname;
   ignore (Llvm_bitwriter.write_bitcode_file llmod fname);
   let llvm_dis_pid =
-    if !Lstar_config.output_ll <> "" then (
-      let llname = Filename.concat !Config.outdir !Lstar_config.output_ll in
+    if !Llstar_config.output_ll <> "" then (
+      let llname = Filename.concat !Config.outdir !Llstar_config.output_ll in
       if log log_phase then
 	fprintf logf "@[ASCII version in %s@]@\n" llname;
       Some(Unix.create_process "llvm-dis-3.2" [|"llvm-dis-3.2";
@@ -116,16 +116,16 @@ let initialise_logic llmod =
   let load_logic_rules_from_file fn =
     let nl,l1,l2,cn = Load_logic.load_logic fn in
     (nl, { empty_logic with seq_rules=l1; rw_rules=l2; consdecl=cn}) in
-  let (nl,logic) = load_logic_rules_from_file !Lstar_config.logic_file_name in
-  let (nla, abduct_logic) = load_logic_rules_from_file !Lstar_config.abductrules_file_name in
-  let (nabs, abs_rules) = load_logic_rules_from_file !Lstar_config.absrules_file_name in
+  let (nl,logic) = load_logic_rules_from_file !Llstar_config.logic_file_name in
+  let (nla, abduct_logic) = load_logic_rules_from_file !Llstar_config.abductrules_file_name in
+  let (nabs, abs_rules) = load_logic_rules_from_file !Llstar_config.absrules_file_name in
   let spec_list = Load.import_flatten
     Cli_utils.specs_dirs            
-    !Lstar_config.spec_file_name
+    !Llstar_config.spec_file_name
     Logic_parser.spec_file Logic_lexer.token in
   let node_logic = nl@nla@nabs in
   let (logic, abduct_logic) =
-    if !Lstar_config.auto_gen_struct_logic then
+    if !Llstar_config.auto_gen_struct_logic then
       (if log log_phase then
 	  fprintf logf "@.@[<2>Generating logic for the module";
        Rulegen.add_logic_of_module node_logic (logic, abduct_logic) llmod
@@ -134,15 +134,15 @@ let initialise_logic llmod =
     (Debug.pp_list pp_sequent_rule) logic.seq_rules;
   dump_into_file "rewrite_rules.txt"
     (Debug.pp_list pp_rewrite_rule) logic.rw_rules;
-  if !Lstar_config.abduction_flag then
+  if !Llstar_config.abduction_flag then
     dump_into_file "abduct_rules.txt"
       (Debug.pp_list pp_sequent_rule) abduct_logic.seq_rules;
   if log log_phase then fprintf logf "@]@\n";
   (logic,abduct_logic,abs_rules,spec_list)
 
-(** run LStar *)
+(** run llStar *)
 let go () =
-  Lstar_config.parse_args ();
+  Llstar_config.parse_args ();
   let (wait_pid,llmod) = initialise_llvm () in
   initialise_corestar llmod;
   let (logic,abduct_logic,abs_rules,spec_list) = initialise_logic llmod in

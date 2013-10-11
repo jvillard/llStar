@@ -7,7 +7,7 @@ open TypeKind
 open ValueKind
 (* coreStar modules *)
 open Psyntax
-(* LStar modules *)
+(* llStar modules *)
 open Llutils
 
 (** return value expression constant *)

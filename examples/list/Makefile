@@ -11,13 +11,13 @@ BITCODE=$(SRC:=.bc)
 	clang -emit-llvm -g -O0 -c -o $@ $?
 
 %.test: %.bc
-	../../bin/lstar $(LSTAR_OPTIONS) $?
+	../../bin/llstar $(LSTAR_OPTIONS) $?
 
 test: $(BITCODE)
-	for i in $(BITCODE); do ../../bin/lstar $(LSTAR_OPTIONS) $$i; done
+	for i in $(BITCODE); do ../../bin/llstar $(LSTAR_OPTIONS) $$i; done
 
 # warning: will remove all .bc files, better not have one as a source!
 clean:
-	rm -rf _lstar $(BITCODE)
+	rm -rf _llstar $(BITCODE)
 
 .PHONY: test clean

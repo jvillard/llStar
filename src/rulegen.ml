@@ -9,7 +9,7 @@ open TypeKind
 (* coreStar modules *)
 open Config
 open Psyntax
-(* LStar modules *)
+(* llStar modules *)
 open Llexpression
 open Llutils
 

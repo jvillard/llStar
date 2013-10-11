@@ -12,12 +12,12 @@ TEST=$(BITCODE:.bc=.test)
 	$(LLVM_AS) -f -o $@ $?
 
 %.test: %.bc
-	../../bin/lstar $(LSTAR_OPTIONS) $?
+	../../bin/llstar $(LSTAR_OPTIONS) $?
 
 test: $(TEST)
 
 # warning: will remove all .bc files, better not have one as a source!
 clean:
-	rm -rf _lstar $(BITCODE)
+	rm -rf _llstar $(BITCODE)
 
 .PHONY: test
