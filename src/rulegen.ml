@@ -94,6 +94,36 @@ let padsize64_of_field struct_t i =
 let args_padsize_of_field struct_t i =
   bvargs_of_int64 64 (padsize64_of_field struct_t i)
 
+let is_single_struct t = match classify_type t with
+  | Struct -> (Array.length (struct_element_types t) = 1) && (padsize64_of_field t 0 = Int64.zero)
+  | _ -> false
+    
+
+let mk_struct_val_of_fields struct_t fields_values =
+  let struct_constructor = "mk_"^(string_of_struct struct_t) in
+  Arg_op (struct_constructor, Array.to_list fields_values)
+
+(** extracts the value of field [i] from value [base_val] of type [struct_t]  *)
+let mk_field_val_of_struct_val struct_t base_val i =
+  let field_pred = (string_of_struct struct_t) ^ "_fld" ^ (string_of_int i)  in
+  Arg_op (field_pred, [base_val])
+
+let rec mk_struct_val_of_fields_descend_in_singletons struct_t fields_values =
+  let mk_singletons i subelt_t =
+    if is_single_struct subelt_t then
+      mk_struct_val_of_fields_descend_in_singletons subelt_t (Array.of_list [Array.get fields_values i])
+    else Array.get fields_values i in
+  let struct_constructor = "mk_"^(string_of_struct struct_t) in
+  Arg_op (struct_constructor, Array.to_list (Array.mapi mk_singletons (struct_element_types struct_t)))
+
+let rec mk_field_val_of_struct_val_descend_in_singletons struct_t base_val i =
+  let subelt_t = Array.get (struct_element_types struct_t) i in
+  let field_pred = (string_of_struct struct_t) ^ "_fld" ^ (string_of_int i)  in
+  let v = Arg_op (field_pred, [base_val]) in
+  if is_single_struct subelt_t then
+    mk_field_val_of_struct_val_descend_in_singletons subelt_t v 0
+  else v
+
 let mk_padding_of_field struct_t i root =
   let pad64_size = padsize64_of_field struct_t i in
   if pad64_size = Int64.zero then None
@@ -106,15 +136,15 @@ let mk_padding_of_field struct_t i root =
     let args_pad_size = args_padsize_of_field struct_t i in
     Some (mkPadding pad_addr args_pad_size)
 
+let mk_field_offset struct_t i root =
+  if i = 0 then root
+  else Arg_op ("bvadd.64", [root; args_offset_of_field struct_t i])
+
 let mk_field_pointer struct_t i root value =
   (* alternative where we the address is the syntactic eltptr expression *)
   (* let addr = mkEltptr root (args_of_type struct_t) (mkJump (bvargs_of_int 64 i) mkJumpEnd) in *)
   (* mkPointer addr (args_type_field struct_t i) value *)
-  if i = 0 then
-    mkPointer root (args_type_field struct_t i) value
-  else
-    let offset = Arg_op ("bvadd.64", [root; args_offset_of_field struct_t i]) in
-    mkPointer offset (args_type_field struct_t i) value
+  mkPointer (mk_field_offset struct_t i root) (args_type_field struct_t i) value
 
 let mk_padded_field_pointer struct_t i root value =
   let field_pointer = mk_field_pointer struct_t i root value in
@@ -122,21 +152,23 @@ let mk_padded_field_pointer struct_t i root value =
     | None -> field_pointer
     | Some pad -> mkStar field_pointer pad
 
+let rec mk_unfolded_struct_descend_in_singletons struct_t root fields_values =
+  let mk_field i subelt_t =
+    let v = Array.get fields_values i in
+    if is_single_struct subelt_t then
+      let single_field_val = Array.of_list [v] in
+      mk_unfolded_struct_descend_in_singletons subelt_t (mk_field_offset struct_t i root) single_field_val
+    else
+      mk_padded_field_pointer struct_t i root v in
+  let pointers = Array.mapi mk_field (struct_element_types struct_t) in
+  Array.fold_left (fun f p -> mkStar f p) mkEmpty pointers
+
 let mk_unfolded_struct struct_t root fields_values =
   let mk_field i subelt_t =
     let v = Array.get fields_values i in
     mk_padded_field_pointer struct_t i root v in
   let pointers = Array.mapi mk_field (struct_element_types struct_t) in
   Array.fold_left (fun f p -> mkStar f p) mkEmpty pointers
-
-let mk_struct_val_of_fields struct_t fields_values =
-  let struct_constructor = "mk_"^(string_of_struct struct_t) in
-  Arg_op (struct_constructor, Array.to_list fields_values)
-
-(** extracts the value of field [i] from value [base_val] of type [struct_t]  *)
-let mk_field_val_of_struct_val struct_t base_val i =
-  let field_pred = (string_of_struct struct_t) ^ "_fld" ^ (string_of_int i)  in
-  Arg_op (field_pred, [base_val])
 
 (*** Scalar rules *)
 
@@ -215,18 +247,18 @@ let unfold_logic_of_type t =
     let target_pointer = mk_field_pointer t i x_var w_var in
     let field_base_values =
       Array.mapi (fun i _ -> Arg_var (Vars.AnyVar (0, "v"^(string_of_int i)))) (struct_element_types t) in
-    let struct_pointer = mkPointer x_var (args_of_type t) (mk_struct_val_of_fields t field_base_values) in
+    let struct_pointer = mkPointer x_var (args_of_type t) (mk_struct_val_of_fields_descend_in_singletons t field_base_values) in
     mk_simple_sequent_rule ((string_of_struct t)^"_field_"^(string_of_int i))
-      (mk_unfolded_struct t x_var field_base_values, target_pointer)
+      (mk_unfolded_struct_descend_in_singletons t x_var field_base_values, target_pointer)
       (struct_pointer, target_pointer) in
   let mk_field_rule2 i subelt_type =
     (* take a struct with value v and one of its fields on the rhs and unfold it *)
     let target_pointer = mk_field_pointer t i x_var w_var in
     let struct_pointer = mkPointer x_var (args_of_type t) v_var in
     let field_struct_derived_values =
-      Array.mapi (fun i _ -> mk_field_val_of_struct_val t v_var i) (struct_element_types t) in
+      Array.mapi (fun i _ -> mk_field_val_of_struct_val_descend_in_singletons t v_var i) (struct_element_types t) in
     mk_simple_sequent_rule ((string_of_struct t)^"_field_"^(string_of_int i))
-      (mk_unfolded_struct t x_var field_struct_derived_values, target_pointer)
+      (mk_unfolded_struct_descend_in_singletons t x_var field_struct_derived_values, target_pointer)
       (struct_pointer, target_pointer) in
   let field_rules =
     let rules_array1 = Array.mapi mk_field_rule1 (struct_element_types t) in
@@ -239,7 +271,7 @@ let unfold_logic_of_type t =
 (* assumes that [t] is a struct type *)
 let arith_unfold_logic_of_type t =
   let field_ranged_values base_val =
-    Array.mapi (fun i _ -> mk_field_val_of_struct_val t base_val i) (struct_element_types t) in
+    Array.mapi (fun i _ -> mk_field_val_of_struct_val_descend_in_singletons t base_val i) (struct_element_types t) in
   let x_var = Arg_var (Vars.AnyVar (0, "x")) in
   let v_var = Arg_var (Vars.AnyVar (0, "v")) in
   let y_var = Arg_var (Vars.AnyVar (0, "y")) in
@@ -251,7 +283,7 @@ let arith_unfold_logic_of_type t =
     let target_pointer = mkPointer y_var t_var w_var in
     let offset_end_of_field = bvargs_of_int64 64 (Int64.add (alloc_size64_of_field t i) (offset64_of_field t i)) in
     mk_sequent_rule ((string_of_struct t)^"_inside_field_"^(string_of_int i))
-      [[(mkEmpty, mk_unfolded_struct t x_var (field_ranged_values v_var), target_pointer, mkEmpty)]]
+      [[(mkEmpty, mk_unfolded_struct_descend_in_singletons t x_var (field_ranged_values v_var), target_pointer, mkEmpty)]]
       (mkEmpty, struct_pointer, target_pointer, mkEmpty)
       (mkEmpty, mkEmpty)
       [PureGuard (mkPPred ("bvule", [Arg_op("bvadd.64", [x_var; args_offset_of_field t i]); y_var]));
@@ -268,12 +300,20 @@ let fold_logic_of_type t =
   let field_values =
     Array.mapi (fun i _ -> Arg_var (Vars.AnyVar (0, "v"^(string_of_int i))))
       (struct_element_types t) in
-  let collate_field_values = mk_struct_val_of_fields t field_values in
+  let collate_field_values = mk_struct_val_of_fields_descend_in_singletons t field_values in
   let x_var = Arg_var (Vars.AnyVar (0, "x")) in
+  let unfolded_struct = mk_unfolded_struct_descend_in_singletons t x_var field_values in
   let rules =
-    mk_simple_equiv_rule ("collate_"^(string_of_struct t))
-      (mk_unfolded_struct t x_var field_values)
-      (mkPointer x_var (args_of_type t) collate_field_values) in
+    if is_single_struct t then
+      let v_var = Arg_var (Vars.AnyVar (0, "v")) in
+      let struct_pointer = mkPointer x_var (args_of_type t) v_var in
+      mk_simple_equiv_rule ("collate_"^(string_of_struct t))
+      	(struct_pointer)
+      	(unfolded_struct)
+    else
+      mk_simple_equiv_rule ("collate_"^(string_of_struct t))
+	(unfolded_struct)
+	(mkPointer x_var (args_of_type t) collate_field_values) in
   let logic = { empty_logic with seq_rules = rules; } in
   (logic, logic)
 

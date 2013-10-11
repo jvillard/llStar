@@ -27,7 +27,7 @@ let rec sexp_of_lltype t = match (classify_type t) with
     let par_types = param_types t in
     Printf.sprintf "(%s) %s"
       (sexp_of_lltype_array par_types) (sexp_of_lltype ret_type)
-  | Struct -> string_of_struct t
+  | Struct -> id_munge (string_of_struct t)
   | Array -> "Int" (* TODO: arrays *)
   | Pointer -> Printf.sprintf "(_ BitVec %Ld)" (size_in_bits !lltarget t)
   | Vector -> "Int" (* TODO: vectors *)
@@ -50,7 +50,7 @@ let rec smttype_of_lltype t = match (classify_type t) with
     let par_smttypes_array = Array.map smttype_of_lltype (param_types t) in
     let par_smttypes =  Array.to_list par_smttypes_array in
     SType_fun (par_smttypes, smttype_of_lltype ret_type)
-  | Struct -> SType_type (string_of_struct t)
+  | Struct -> SType_type (id_munge (string_of_struct t))
   | Array -> SType_int (* TODO: arrays *)
   | Pointer -> SType_bv (Int64.to_string (size_in_bits !lltarget t))
   | Vector -> SType_int (* TODO: vectors *)
