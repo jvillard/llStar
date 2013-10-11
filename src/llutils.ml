@@ -9,6 +9,10 @@ open Psyntax
 (*** Uncomment this when llStar segfaults: it's most likely that the
      bindings are used incorrectly *)
 
+let classify_value v =
+  try classify_value v
+  with _ -> print_endline "huho, got one of the data types absent from ocaml bindings!"; ValueKind.UndefValue
+
 (*
 let debug_value_call s f v =
   Format.print_flush ();

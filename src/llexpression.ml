@@ -324,14 +324,12 @@ and args_of_value v = match classify_value v with
   | BlockAddress -> Arg_op("block_addr", [args_of_value (operand v 0)])
   | ConstantAggregateZero -> args_zero_of_type (type_of v)
   | ConstantArray -> args_of_composite_value "array_const" v
-  | ConstantDataArray -> args_of_composite_value "array_const" v
   | ConstantExpr -> args_of_const_expr v
   | ConstantFP -> Arg_var (Vars.freshe ())
   | ConstantInt -> args_of_int_const v
   | ConstantPointerNull -> bvargs64_of_int (size_in_bits !lltarget (type_of v)) 0
   | ConstantStruct -> args_of_composite_value (Smtexpression.smtconstr_of_struct (type_of v)) v
   | ConstantVector -> args_of_composite_value "vector_const" v
-  | ConstantDataVector -> args_of_composite_value "vector_const" v
   | Function -> Arg_op("function", [args_of_value (operand v 0)])
   | GlobalAlias -> implement_this "value is a global alias" (* undocumented? *)
   | GlobalVariable -> Arg_var (Vars.concretep_str (value_id v))
