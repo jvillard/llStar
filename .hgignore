@@ -7,6 +7,6 @@ _build/*
 bin/*
 corestar_src.subdirs
 corestar_src
-_lstar/
+_llstar/
 *.c.bc
 *.ll.bc
