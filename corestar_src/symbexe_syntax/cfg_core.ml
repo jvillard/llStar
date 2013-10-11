@@ -38,6 +38,33 @@ let mk_node : core_statement -> cfg_node =
     incr x;
     { skind = stmt; sid = !x; succs = []; preds = [] }
 
+
+let remove_from_succs c succid = c.succs <- List.filter (fun s -> s.sid <> succid) c.succs
+let remove_from_preds c predid = c.preds <- List.filter (fun p -> p.sid <> predid) c.preds
+let add_to_succs c succ = if not (List.exists (fun s -> s.sid = succ.sid) c.succs) then c.succs <- succ::c.succs
+let add_to_preds c pred = if not (List.exists (fun p -> p.sid = pred.sid) c.preds) then c.preds <- pred::c.preds
+
+let simplify_cfg stmts =
+  (** removes a Nop node when it has a single predessor and a single successor *)
+  let remove_nop n =
+    match (n.skind, n.preds, n.succs) with
+    | (Nop_stmt_core, [p], [s]) ->
+      remove_from_succs p n.sid; add_to_succs p s; remove_from_preds s n.sid; add_to_preds s p;
+      n.preds <- []; n.succs <- []
+    | _ -> () in
+  (** removes a Goto node when it has a single predessor and a single successor *)
+  let remove_goto_label g =
+    match (g.skind, g.preds, g.succs) with
+    | (Goto_stmt_core [l], [pg], [sg]) -> (
+      match (sg.skind, sg.preds, sg.succs) with
+      | (Label_stmt_core ll, [pl], [sl]) when ll = l && pl.sid = g.sid ->
+	remove_from_succs pg g.sid; add_to_succs pg sl; remove_from_preds sl sg.sid; add_to_preds sl pg;
+	g.preds <- []; sg.succs <- []
+      | _ -> ())
+    | _ -> () in
+  List.iter remove_nop stmts;
+  List.iter remove_goto_label stmts
+
 (** Fills the [succs] and [preds] fields of [stmts] by adding edges
     corresponding to program order and to goto-s. *)
 let stmts_to_cfg (stmts : cfg_node list) : unit =
@@ -58,18 +85,10 @@ let stmts_to_cfg (stmts : cfg_node list) : unit =
     | _ -> () in
   List.iter (fun s -> s.succs <- []; s.preds <- []) stmts;
   List.iter al stmts;
-  process stmts
+  process stmts;
+  simplify_cfg stmts
 
-(*
-let simplify_cfg stmts =
-  (** removes a Nop node when it has a single predessor and a single successor *)
-  let remove_nop n =
-    match (!n.preds, !n.succs) with
-    | ([p], [s]) -> 
-    match
-  (** removes a Goto node when it has a single predessor and a single successor *)
-  List.iter 
-*)
+
 (* utils for building flowgraphs }}} *)
 
 
