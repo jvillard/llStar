@@ -332,6 +332,17 @@ let bytearray_to_struct_conversions t =
   let mk_struct_pointer root value = mkPointer root struct_type value in
   let mk_bytearray_pointer root value = mkPointer root array_type value in
 
+  (* let struct_array_rules_free_value = *)
+  (*   let free_val = argsv v_evar in *)
+  (*   let structform = mk_struct_pointer (argsv x_avar) free_val in *)
+  (*   let arrayform = mk_bytearray_pointer (argsv x_avar) free_val in *)
+  (*   let structptr = mk_struct_pointer (argsv x_avar) (argsv v_avar) in *)
+  (*   mk_sequent_rule ("bytearray_of_"^(string_of_struct t)) *)
+  (*     [[(mkEmpty, structptr, structform, mkEmpty)]] *)
+  (*     (mkEmpty, structptr, arrayform, mkEmpty) *)
+  (*     ([], []) *)
+  (*     [NotInContext (Var (VarSet.singleton v_evar))] in *)
+
   let array_field_rules =
     let array_val = argsv v_avar in
     let struct_val = mkValConversion array_type struct_type array_val in
@@ -459,6 +470,28 @@ let rollup_node_logic_of_type t struct_name node_name node_fields =
   let logic = { empty_logic with seq_rules = rollup_rule_known_next@rollup_rule_compute_next } in
   (logic, logic)
 
+(* assumes that [t] is a struct type *)
+let malloc_logic_of_node t struct_name node_name node_fields =
+  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
+  let s_var = Arg_var (Vars.AnyVar (0, "s")) in
+  let n_vars = List.map (fun nf -> Arg_var (Vars.AnyVar (0, "n"^(string_of_int nf)))) node_fields in
+  let malloced_right = mkMalloced x_var s_var in
+  let malloced_node = mkMalloced x_var (args_sizeof t) in
+  let struct_field_values =
+    let field_values =
+      Array.mapi (fun i _ ->
+	if List.mem i node_fields then Arg_var (Vars.AnyVar (0, "n"^(string_of_int i)))
+	else Arg_var (Vars.AnyVar (0, "v"^(string_of_int i)))) (struct_element_types t) in
+    mk_struct_val_of_fields t field_values in
+  let struct_pointer = mkPointer x_var (args_of_type t) struct_field_values in
+  let node = mkNode node_name struct_name x_var n_vars in
+  let rule =
+    mk_simple_sequent_rule ("malloced_"^node_name)
+      (mkStar malloced_node struct_pointer, malloced_right)
+      (node, malloced_right) in
+  let logic = { empty_logic with seq_rules = [rule] } in
+  (logic, logic)
+
 
 let remove_pointer_arith_same_root_same_size =
   let x_var = Arg_var (Vars.AnyVar (0, "x")) in
@@ -540,6 +573,7 @@ let add_logic_of_module node_logic base_logic m =
     ::ApplyOnce sizeof_ptr_logic
     ::ApplyAtType (sizeof_logic_of_type, int_struct_filter)
     ::ApplyAtType (eltptr_logic_of_type, struct_filter)
+    ::ApplyAtType (gen_node_logics node_logic malloc_logic_of_node, struct_filter)
     ::ApplyAtType (unfold_logic_of_type, struct_filter)
     ::ApplyAtType (struct_value_logic_of_type, struct_filter)
     ::ApplyAtType (bytearray_to_struct_conversions, struct_filter)

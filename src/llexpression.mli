@@ -10,6 +10,7 @@ val bvargs64_of_int64 : int64 -> int64 -> Psyntax.args
 val mkUndef : Psyntax.args -> Psyntax.args
 val mkUndef64 : int64 -> Psyntax.args
 val mkPointer : Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.form
+val mkMalloced : Psyntax.term -> Psyntax.term -> Psyntax.form
 val mkPadding : Psyntax.term -> Psyntax.term -> Psyntax.form
 val mkJumpEnd : Psyntax.args
 val mkJump : Psyntax.args -> Psyntax.args -> Psyntax.args
