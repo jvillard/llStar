@@ -6,9 +6,9 @@ equiv dag_nil:
 rule dag_unfold:
  | dag(?t,?x,?d) * ?x != NULL() |- pointer(?x,?sz,?w)
 if
- |  dagnode(?t,?x,?l,?r)
-  * dagunion(dag(?t,?l,?d), dag(?t,?r,?d))
-  * mdag(?d,?x) = mnode(?l,?r)
+ |  dagnode(?t,?x,_l,_r)
+  * dagunion(dag(?t,_l,?d), dag(?t,_r,?d))
+  * mdag(?d,?x) = mnode(_l,_r)
  |- pointer(?x,?sz,?w)
 
 /* fold back into a dag */

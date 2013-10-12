@@ -154,9 +154,9 @@ where
 
 
 /* abstract a node into a non-empty list segment */
-abstraction node_lsne:
+/*abstraction node_lsne:
   sllnode(?l,?x,?y) ~~> lseg_ne(?l,?x,?y)
-
+*/
 
 /*************************************
  *  Empty rules
