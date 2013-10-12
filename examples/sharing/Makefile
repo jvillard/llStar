@@ -1,7 +1,7 @@
 LLVM_AS=llvm-as-3.1
 
 LSTAR_OPTIONS=
-SRC=mark.c
+SRC=mark.c mark_obfuscated.c
 BITCODE=$(SRC:=.bc)
 
 %.ll.bc: %.ll

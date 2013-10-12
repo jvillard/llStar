@@ -1,11 +1,21 @@
+import "../../specs/stdlib.spec";
+
 smaug:
   {lseg("listitem",@parameter0:,bv_const("64", "0"))}
   {lseg("listitem",@parameter0:,bv_const("64", "0"))}
 
-traverse:
+list_traverse:
   {lseg("struct.node",@parameter0:,bv_const("64", "0"))}
   {lseg("struct.node",@parameter0:,bv_const("64", "0"))}
 
-append:
+list_dispose:
+  {lseg("struct.node",@parameter0:,bv_const("64", "0"))}
+  {}
+
+list_reverse:
+  {lseg("struct.node",@parameter0:,bv_const("64", "0"))}
+  {lseg("struct.node",$ret_v1,bv_const("64", "0"))}
+
+list_append:
   {lseg_ne("struct.node",@parameter0:,bv_const("64", "0")) * lseg("struct.node",@parameter1:,bv_const("64", "0"))}
   {lseg("struct.node",$ret_v1,bv_const("64", "0"))}

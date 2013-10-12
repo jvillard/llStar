@@ -1,0 +1,9 @@
+import "../../rules/llvm.logic";
+import "../../rules/lseg.logic";
+
+nodedecl: "struct.node"("1") = sllnode
+
+equiv bitcast_node_hint:
+  pointer(?x, array_type(bv_const("64", "16"), integer_type("8")), ?v)
+  * !bitcast(?x, pointer_type(named_type("struct.node")))
+  <=> pointer(?x, named_type("struct.node"),_v)

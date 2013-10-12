@@ -4,7 +4,7 @@ struct node {
 };
 
 
-struct node * append(struct node *l1, struct node *l2) {
+struct node * list_append(struct node *l1, struct node *l2) {
   struct node *cur, *prev;
 
   prev = l1;
@@ -18,14 +18,3 @@ struct node * append(struct node *l1, struct node *l2) {
   prev->next = l2;
   return l1;
 }
-
-/*
-void traverse(struct node *l) {
-  struct node *cur;
-
-  cur = l;
-
-  while (cur)
-    cur = cur->next;
-}
-*/
