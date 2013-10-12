@@ -36,10 +36,7 @@ open Psyntax
       let rec is_pure_form form =
 	let check_purity ff =
 	  (ff.Clogic.spat = Clogic.RMSet.empty) ||
-	    try
-	      ignore (Smt.smt_check_contradiction f.Clogic.F.ts ff);
-	      false
-	    with Clogic.Assm_Contradiction -> true in
+	    Smt.smt_check_contradiction f.Clogic.F.ts ff in
 	check_purity form &&
 	  let form' = {form with Clogic.disjuncts = []} in
 	  List.for_all
