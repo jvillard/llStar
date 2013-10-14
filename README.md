@@ -19,7 +19,7 @@ and development versions are hosted by bitbucket at
 
 ## Requirements and How to Get Them
 
-llStar requires OCaml, LLVM 3.2, and an SMT solver. The requirements
+llStar requires OCaml, LLVM 3.3, and an SMT solver. The requirements
 are detailed below, in reverse order of exoticism. llStar has been
 developped under Linux, but other environments might be viable.
 
@@ -49,10 +49,10 @@ different SMT solver. llStar has been tested using z3 version 4.2.
 LLVM is an open source compiler framework that uses bitcode as its
 intermediate representation, which, incidentally, is the language that
 llStar takes as input. llStar 1.0 builds and run against LLVM version
-3.2. LLVM is *not* included in the llStar distribution. The preferred
+3.3. LLVM is *not* included in the llStar distribution. The preferred
 way to get it is from your software management, or from
 
-  http://llvm.org/releases/download.html#3.2
+  http://llvm.org/releases/download.html#3.3
 
 You will need the following, all included in the standard LLVM
 distributions:
@@ -69,8 +69,8 @@ You may want to set up the "LFLAGS" and "CFLAGS" variables in the
 Makefile of llStar to adjust where the LLVM OCaml libraries are on your
 system. By default, they are set as such:
 
-    LFLAGS=-cc,g++,-I,/usr/lib/ocaml/llvm-3.2,-cclib,-lffi
-    CFLAGS=-I,/usr/lib/ocaml/llvm-3.2
+    LFLAGS=-cc,g++,-I,/usr/lib/ocaml/llvm-3.3,-cclib,-lffi
+    CFLAGS=-I,/usr/lib/ocaml/llvm-3.3
 
 ### OCaml
 

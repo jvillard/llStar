@@ -1,7 +1,7 @@
-LLVM_AS=llvm-as-3.2
+LLVM_AS=llvm-as-3.3
 
 LSTAR_OPTIONS=
-SRC=field_access.ll nested.ll corner_structs.ll norbert.ll
+SRC=field_access.ll nested.ll corner_structs.ll norbert.ll pointer_arith.c
 BITCODE=$(SRC:=.bc)
 TEST=$(BITCODE:.bc=.test)
 

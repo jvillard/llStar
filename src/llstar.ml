@@ -88,7 +88,7 @@ let initialise_llvm () =
       let llname = Filename.concat !Config.outdir !Llstar_config.output_ll in
       if log log_phase then
 	fprintf logf "@[ASCII version in %s@]@\n" llname;
-      Some(Unix.create_process "llvm-dis-3.2" [|"llvm-dis-3.2";
+      Some(Unix.create_process "llvm-dis-3.3" [|"llvm-dis-3.3";
 						"-o"; llname;
 						fname|] Unix.stdin Unix.stdout Unix.stderr)
     ) else None in

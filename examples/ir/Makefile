@@ -1,4 +1,4 @@
-LLVM_AS=llvm-as-3.2
+LLVM_AS=llvm-as-3.3
 
 LSTAR_OPTIONS=-runopts false #-log smt
 SRC=ir_test.ll floats.ll
