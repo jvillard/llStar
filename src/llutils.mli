@@ -17,6 +17,8 @@ exception MetaData of Llvm.llvalue
 val llcontext : Llvm.llcontext ref
 val lltarget : Llvm_target.DataLayout.t ref
 
+val classify_value : Llvm.llvalue -> Llvm.ValueKind.t
+
 (** gets names of named and unnamed variables *)
 val value_id : Llvm.llvalue -> string
 (** extract the location of instruction [instr] from the debug information *)
