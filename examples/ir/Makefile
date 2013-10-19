@@ -1,7 +1,7 @@
 LLVM_AS=llvm-as-3.3
 
 LSTAR_OPTIONS=-runopts false #-log smt
-SRC=ir_test.ll floats.ll
+SRC=ir_test.ll floats.ll phi.ll
 BITCODE=$(SRC:=.bc)
 
 %.ll.bc: %.ll
