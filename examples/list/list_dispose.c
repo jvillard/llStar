@@ -6,13 +6,10 @@ struct node {
 };
 
 void list_dispose(struct node *l) {
-  struct node *cur, *prev;
-
-  cur = prev = l;
-
-  while (cur) {
-    prev = cur;
-    cur = cur->next;
+  struct node *prev=l;
+  while (l) {
+    prev = l;
+    l = l->next;
     free(prev);
   }
 }

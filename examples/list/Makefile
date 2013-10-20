@@ -1,6 +1,6 @@
 LLVM_AS=llvm-as-3.3
 
-LSTAR_OPTIONS=-a ../../rules/lseg.abs -autolists
+LSTAR_OPTIONS=-a ../../rules/lseg.abs
 SRC=smaug.ll list_append.c list_dispose.c list_reverse.c list_traverse.c
 BITCODE=$(SRC:=.bc)
 
