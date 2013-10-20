@@ -9,6 +9,9 @@ equiv ival:
 */
 
 
+rewrite sizeof_array:
+  sizeof(array_type(?n,?t)) = bvmul.64(?n,sizeof(?t))
+
 /**********************************************
  * Generally useful rules about getelementptr 
  *************************************/
@@ -30,12 +33,18 @@ equiv pointer_getelementptr0:
   pointer(eltptr(?p,pointer_type(?pt),jump(bv_const("64", "0"),?j)),?t,?v)
   <=> pointer(eltptr(?p,?pt,?j),?t,?v)
 
-rewrite sizeof_array:
-  sizeof(array_type(?n,?t)) = bvmul.64(?n,sizeof(?t))
-
 /*************************************
  * Simple subtraction rules 
  *************************************/
+
+/* match malloc first
+ * usually, ?n below will be a constant and ?m a logical variable,
+   so better instantiate ?m as soon as possible */
+rule remove_malloced:
+ | malloced(?mb,?n) |- malloced(?mb,?m)
+if
+ malloced(?mb,?n) | |- ?n = ?m
+
 
 rule ptr_same_root_same_type:
  | pointer(?x,?t,?v) |- pointer(?x,?t,?w)
@@ -50,11 +59,6 @@ where
 if
  pointer_no_val(?x,?t) | |-
 */
-
-rule remove_malloced:
- | malloced(?mb,?n) |- malloced(?mb,?m)
-if
- malloced(?mb,?n) | |- ?n = ?m
 
 
 /*************************************
