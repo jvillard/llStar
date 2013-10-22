@@ -10,10 +10,6 @@ the formalism of separation logic by the user.
 llStar is distributed under a 3-clause BSD licences (see LICENSE). It
 is available from
 
-  http://www0.cs.ucl.ac.uk/staff/J.Villard/llstar/
-
-and development versions are hosted by bitbucket at
-
   https://bitbucket.org/jvillard/llstar/
 
 
@@ -23,7 +19,8 @@ llStar requires OCaml, LLVM 3.3, and an SMT solver. The requirements
 are detailed below, in reverse order of exoticism. llStar has been
 developped under Linux, but other environments might be viable.
 
-The executive summary is this: install z3, LLVM, and OCaml.
+The executive summary is this: install z3, LLVM 3.3 with ocaml
+development libraries, and OCaml.
 
 ### SMT solver
 
@@ -42,15 +39,16 @@ following environment variables.
     export JSTAR_SMT_ARGUMENTS="-in -smt2"
 
 See the coreStar documentation for more information about using a
-different SMT solver. llStar has been tested using z3 version 4.2.
+different SMT solver. llStar has been tested using z3 versions 4.2 and
+4.3.
 
 ### LLVM
 
-LLVM is an open source compiler framework that uses bitcode as its
-intermediate representation, which, incidentally, is the language that
-llStar takes as input. llStar 1.0 builds and run against LLVM version
-3.3. LLVM is *not* included in the llStar distribution. The preferred
-way to get it is from your software management, or from
+LLVM is an open source compiler framework. Its intermediate
+representation is bitcode, which is the language that llStar takes as
+input. llStar currently builds and run against LLVM version 3.3. LLVM
+is *not* included in the llStar distribution. The preferred way to get
+it is from your software management, or from
 
   http://llvm.org/releases/download.html#3.3
 
@@ -59,11 +57,15 @@ distributions:
 
 - LLVM dynamic libraries and OCaml bindings to build and run llStar
 
-- LLVM building tools to compile bitcode files into the equivalent
-  binary form that llStar takes as input
+  On Debian, for instance, they are provided by the
+  `libllvm-3.3-ocaml-dev` package.
 
-- Optionally, the Clang compiler, available from the same location,
-  to compile C (and other languages) files to bitcode
+- The Clang compiler, available from the same location, to compile
+  languages from the C family to bitcode.
+
+- The DragonEgg plugin for gcc (and gcc) to compile some of the
+  examples written in other languages (eg Fortran) and included in the
+  llStar distribution to bitcode.
 
 You may want to set up the "LFLAGS" and "CFLAGS" variables in the
 Makefile of llStar to adjust where the LLVM OCaml libraries are on your
@@ -78,15 +80,14 @@ OCaml is a functional language. You can get it from
 
   http://caml.inria.fr/download.en.html
 
-llStar has been tested against OCaml 3.12.1. I currently do not know
-which minimal version is required to compile or run llStar.
+llStar has been tested against OCaml 3.12.1.
 
 
 ## Build Instructions
 
 Simply go to the llStar directory and type make. This should produce
 the llStar binary at bin/llstar. Let me know if this does not work for
-you!
+you! (make sure you have the LLVM OCaml bindings)
 
 
 ## Usage
@@ -96,48 +97,12 @@ llStar can be invoked from the command line as follows, where
 
     ./bin/llstar [options] bitcode_module
 
-The main options you may want to specify are as follows (see the
-output of `./bin/llstar -help` for more options):
+llStar will try and locate logic files associated to the module
+automatically, based on the module's name. See the output of
+`./bin/llstar -help` for more options.
 
-- `-s <spec_file_name>` a file that contains specifications for each
-  function in the bitcode module above. Specs are given as "f:
-  {pre}{post}" where "f" is the name of the function, "pre" its
-  intended precondition, and "post" its intended postcondition. See
-  the examples included in the distribution for examples of the syntax
-  (examples/*/*.spec).
-
-- `-l <logic_file_name>` a file containing what logical rules llStar
-  should use to manipulate symbolic states. A first guess can be to
-  use the default file provided in the distribution, and located at
-  "logic/llvm.logic".
-
-- `-a <abstraction_file_name>` a file containing abstraction rules
-  that llStar uses to approximate the symbolic state when trying to
-  find loop invariants. See the "abs/" directory for examples
-  (currently, only singly-linked lists).
-
-An easy way to start is to look at the Makefiles in the examples
-included in the distribution.
-
-
-## Examples Included in the Distribution
-
-A few examples are shipped with llStar, under "examples/". Each example
-comes in its own subdirectory, that contains the spec, logic,
-abstraction, and source files, with the addition of a Makefile that
-runs llStar with the appropriate options. See each example and its
-Makefile for details.
-
-For instance, to run llStar on the Smaug example, that traverses a
-singly-linked list, simply type
-
-    cd examples/smaug
-    make
-
-Other examples include Norbert, a program that allocates a struct node
-and fills in its fields with the values passed as argument, and
-"structs", that performs complex field manipulations and pointer
-arithmetic. All the examples are successfully checked by llStar.
+An easy way to start is to look at the Makefiles of the examples (in
+`examples/*`) included in the distribution.
 
 You can run all the tests from the top level directory by doing
 
