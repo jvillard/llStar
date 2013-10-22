@@ -24,9 +24,6 @@ open Smtsyntax
 open Unix
 open Config
 
-exception SMT_error of string
-exception SMT_fatal_error
-
 (*let Config.smt_run = ref true;; *)
 let smt_fdepth = ref 0;;
 let smtout = ref Pervasives.stdin;;
@@ -280,15 +277,7 @@ let decl_sexp_of_typed_id id idt =
 
 
 (*** Main SMT IO functions *)
-
-let smt_listen () =
-  match Smtparse.main Smtlex.token !smtout_lex with
-    | Error e -> raise (SMT_error e)
-    | response -> response
-
-let smt_command
-    (cmd : string)
-    : unit =
+let smt_command cmd =
   try
     incr smtlineno;
     if log log_smt then Format.fprintf logf "@[%d: %s@." !smtlineno cmd;
@@ -296,7 +285,12 @@ let smt_command
     output_string !smtin cmd;
     output_string !smtin "\n";
     flush !smtin;
-  with End_of_file | Sys_error _ -> raise SMT_fatal_error
+  with End_of_file | Sys_error _ ->
+    Format.fprintf logf "@[SMT FATAL ERROR (EOF or system error)! Restarting SMT solver.@.";
+    if log log_smt then dump_typing_context ();
+    if log log_smt then smt_dumpstack ();
+    smt_fatal_recover();
+    raise (SMT_error "IO")
 
 let send_all_types () =
   complete_all_types ();
@@ -310,28 +304,6 @@ let smt_assert (ass : string) : unit =
   smt_command cmd;
   smt_onstack := (cmd :: List.hd !smt_onstack) :: List.tl !smt_onstack
 
-let smt_check_sat () : bool =
-    try
-      let x = Hashtbl.find smt_memo !smt_onstack in
-      if log log_smt then Format.fprintf logf "@[[Found memoised SMT call!]@.";
-      x
-    with Not_found ->
-      try
-	smt_command "(check-sat)";
-	let x = match smt_listen () with
-          | Sat -> true
-          | Unsat -> false
-          | Unknown -> if log log_smt then Format.fprintf logf
-              "@[[Warning: smt returned 'unknown' rather than 'sat']@."; true
-          | _ -> failwith "TODO" in
-	if log log_smt then Format.fprintf logf "@[  %b@." x;
-	Hashtbl.add smt_memo !smt_onstack x;
-	x
-      with End_of_file -> raise SMT_fatal_error
-
-let smt_check_unsat () : bool =
-  not (smt_check_sat ())
-
 let smt_push () : unit =
   smt_command "(push)";
   incr smt_fdepth;
@@ -342,11 +314,40 @@ let smt_pop () : unit =
   decr smt_fdepth;
   smt_onstack := List.tl !smt_onstack
 
-
 let smt_reset () : unit =
   for i = 1 to !smt_fdepth do smt_pop () done;
   assert (!smt_fdepth = 0);
   assert (!smt_onstack = [[]])
+
+let smt_listen () = match Smtparse.main Smtlex.token !smtout_lex with
+  | Error e -> 
+    Format.fprintf logf "@[SMT ERROR: %s@." e;
+    if log log_smt then dump_typing_context ();
+    if log log_smt then smt_dumpstack ();
+    print_flush();
+    smt_reset();
+    raise (SMT_error e)
+  | response -> response
+
+let smt_check_sat () : bool =
+    try
+      let x = Hashtbl.find smt_memo !smt_onstack in
+      if log log_smt then Format.fprintf logf "@[[Found memoised SMT call!]@.";
+      x
+    with Not_found ->
+      smt_command "(check-sat)";
+      let x = match smt_listen () with
+        | Sat -> true
+        | Unsat -> false
+        | Unknown -> if log log_smt then Format.fprintf logf
+            "@[[Warning: smt returned 'unknown' rather than 'sat']@."; true
+        | _ -> failwith "TODO" in
+      if log log_smt then Format.fprintf logf "@[  %b@." x;
+      Hashtbl.add smt_memo !smt_onstack x;
+      x
+
+let smt_check_unsat () : bool =
+  not (smt_check_sat ())
 
 
 (** Check whether two sexps are equal under the current assumptions *)
@@ -390,26 +391,7 @@ let finish_him evars ts asm obl =
     (* check whether the forumula is unsatisfiable *)
     let r = smt_check_unsat() in
     smt_pop(); r
-  with
-  | Type_mismatch (ta, tb) ->
-    Format.fprintf logf "@[SMT ERROR: type mismatch: %a # %a@."
-      pp_smt_type ta pp_smt_type tb;
-    if log log_smt then dump_typing_context ();
-    print_flush();
-    false
-  | SMT_error r ->
-    Format.fprintf logf "@[SMT ERROR: %s@." r;
-    if log log_smt then dump_typing_context ();
-    if log log_smt then smt_dumpstack ();
-    smt_reset();
-    print_flush();
-    false
-  | SMT_fatal_error ->
-    if log log_smt then dump_typing_context ();
-    if log log_smt then smt_dumpstack ();
-    smt_fatal_recover();
-    false
-
+  with SMT_error r -> false
 
 let ev_of_seq seq =
   let eqs = filter (fun (a,b) -> a <> b) (get_eqs_norecs seq.ts) in
@@ -470,30 +452,32 @@ let frame_sequent_smt (seq : sequent) : bool =
    ((if log log_smt then Format.fprintf logf "@[Calling SMT to get frame from@\n %a@." Clogic.pp_sequent seq);
     finish_him (ev_of_seq seq) seq.ts seq.assumption seq.obligation)))
 
-(* Update the congruence closure using the SMT solver *)
+(* Check for a contradiction in the pure part, returns true if there is one *)
 let smt_check_contradiction ts form =
   !Config.smt_run &&
-    (reset_typing_context ();
-     (* Construct equalities and ineqalities from ts *)
-     let eqs = filter (fun (a,b) -> a <> b) (get_eqs_norecs ts) in
-     let neqs = filter (fun (a,b) -> a <> b) (get_neqs_norecs ts) in
-     let ts_eq_sexp = String.concat " " (map sexp_of_eq eqs) in
-     let ts_neq_sexp = String.concat " " (map sexp_of_neq neqs) in
-     (* get types from ts *)
-     let _ = map sexp_of_args (get_args_all ts) in
-     let form_sexp = sexp_of_form ts form in
-     (* Assert the assumption *)
-     let assm_query = "(and true " ^ ts_eq_sexp ^" "^ ts_neq_sexp ^" "^ form_sexp ^ ")" in
+    try
+      reset_typing_context ();
+      (* Construct equalities and ineqalities from ts *)
+      let eqs = filter (fun (a,b) -> a <> b) (get_eqs_norecs ts) in
+      let neqs = filter (fun (a,b) -> a <> b) (get_neqs_norecs ts) in
+      let ts_eq_sexp = String.concat " " (map sexp_of_eq eqs) in
+      let ts_neq_sexp = String.concat " " (map sexp_of_neq neqs) in
+      (* get types from ts *)
+      let _ = map sexp_of_args (get_args_all ts) in
+      let form_sexp = sexp_of_form ts form in
+      (* Assert the assumption *)
+      let assm_query = "(and true " ^ ts_eq_sexp ^" "^ ts_neq_sexp ^" "^ form_sexp ^ ")" in
      
-     smt_push(); (* Push a frame to allow reuse of prover *)
-     (* declare predicates *)
-     send_all_types ();
-     smt_assert assm_query;
-     (* check for a contradiction *)
-     if log log_smt then Format.fprintf logf "@[[Checking for contradiction in conclusion]@.";
-     let b = smt_check_unsat() in
-     smt_pop();
-     b)
+      smt_push(); (* Push a frame to allow reuse of prover *)
+      (* declare predicates *)
+      send_all_types ();
+      smt_assert assm_query;
+      (* check for a contradiction *)
+      if log log_smt then Format.fprintf logf "@[[Checking for contradiction in conclusion]@.";
+      let b = smt_check_unsat() in
+      smt_pop();
+      b
+    with SMT_error r -> false
 
 
 (* Update the congruence closure using the SMT solver *)
@@ -542,24 +526,4 @@ let ask_the_audience
     smt_pop();
     (* Update the term structure using the new equalities *)
     fold_left make_list_equal ts req_equiv
-  with
-  | Type_mismatch (ta, tb) ->
-    Format.fprintf logf "@[SMT ERROR: type mismatch: %a # %a@."
-      pp_smt_type ta pp_smt_type tb;
-    if log log_smt then dump_typing_context ();
-    smt_reset();
-    print_flush();
-    raise Backtrack.No_match
-  | SMT_error r ->
-    Format.fprintf logf "@[SMT ERROR: %s@." r;
-    if log log_smt then dump_typing_context ();
-    if log log_smt then smt_dumpstack ();
-    print_flush();
-    smt_reset();
-    raise Backtrack.No_match
-  | SMT_fatal_error ->
-    if log log_smt then dump_typing_context ();
-    if log log_smt then smt_dumpstack ();
-    smt_fatal_recover();
-    raise Backtrack.No_match
-
+  with SMT_error r -> raise Backtrack.No_match

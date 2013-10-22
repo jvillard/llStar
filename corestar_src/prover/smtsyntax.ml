@@ -16,6 +16,7 @@ open List
 open Corestar_std
 open Debug
 open Psyntax
+open Config
 
 type smt_response =
   | Unsupported
@@ -23,6 +24,8 @@ type smt_response =
   | Sat
   | Unsat
   | Unknown
+
+exception SMT_error of string
 
 module Regexp = struct type t = Str.regexp let compare = compare end
 module RegexpSet = Set.Make (Regexp)
@@ -115,6 +118,12 @@ let uf_union i j =
       if refines ri rj then Hashtbl.add uf rj ri
       else Hashtbl.add uf ri rj
 
+(** next fresh index for type variables and elastic bitvectors *)
+let __typeindex = ref 0
+let fresh_type_index () =
+  __typeindex := !__typeindex +1;
+  !__typeindex -1
+
 (** pick the most precise representative of [s] *)
 let rec final_type s =
   let t = uf_find s in
@@ -123,8 +132,24 @@ let rec final_type s =
     SType_fun (List.map final_type ll, final_type r)
   | _ -> t
 
+(** typing context *)
+let typing_context : (string, smt_type) Hashtbl.t = Hashtbl.create 256
+let lookup_type id =
+  try final_type (Hashtbl.find typing_context id)
+  with Not_found ->
+    let t = SType_var (fresh_type_index ()) in    
+    Hashtbl.add typing_context id t;
+    t
+
+let reset_typing_context () =
+  Hashtbl.clear typing_context
+
+let dump_typing_context () =
+  Hashtbl.iter (fun id t -> fprintf logf "%s: %a@ " id pp_smt_type (final_type t)) typing_context
+
+
 (** unification of types *)
-and unify ta tb =
+let rec unify ta tb =
   let ta = uf_find ta in
   let tb = uf_find tb in
   if ta <> tb then
@@ -138,17 +163,16 @@ and unify ta tb =
     | (SType_int, SType_int) | (SType_bool, SType_bool) -> ()
     | (SType_fun (l1,r1), SType_fun (l2,r2)) when length l1 = length l2 ->
       iter2 unify (r1::l1) (r2::l2)
-    | _ -> raise (Type_mismatch (ta, tb))
+    | _ ->
+      Format.fprintf logf "@[SMT ERROR: Type mismatch: %a # %a@." pp_smt_type ta pp_smt_type tb;
+      if log log_smt then dump_typing_context ();
+      print_flush();
+      raise (SMT_error "type mismatch")
 
 let rec unify_list = function
   | a::b::tl -> unify a b; unify_list (b::tl)
   | _::[] | [] -> ()
 
-(** next fresh index for type variables and elastic bitvectors *)
-let __typeindex = ref 0
-let fresh_type_index () =
-  __typeindex := !__typeindex +1;
-  !__typeindex -1
 
 let rec mk_final_type s =
   match final_type s with
@@ -166,25 +190,10 @@ let rec mk_final_type s =
   | SType_fun (lt,rt) ->
     List.iter mk_final_type (rt::lt)
 
-(** typing context *)
-let typing_context : (string, smt_type) Hashtbl.t = Hashtbl.create 256
-let lookup_type id =
-  try final_type (Hashtbl.find typing_context id)
-  with Not_found ->
-    let t = SType_var (fresh_type_index ()) in    
-    Hashtbl.add typing_context id t;
-    t
-
 let complete_all_types () =
   Hashtbl.iter
     (fun id t -> mk_final_type t)
     typing_context
-
-let reset_typing_context () =
-  Hashtbl.clear typing_context
-
-let dump_typing_context () =
-  Hashtbl.iter (fun id t -> fprintf logf "%s: %a@ " id pp_smt_type (final_type t)) typing_context
 
 (*** final translation into SMT expressions *)
 
