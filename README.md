@@ -15,9 +15,10 @@ is available from
 
 ## Requirements and How to Get Them
 
-llStar requires OCaml, LLVM 3.3, and an SMT solver. The requirements
-are detailed below, in reverse order of exoticism. llStar has been
-developped under Linux, but other environments might be viable.
+llStar requires OCaml, LLVM 3.3, and the z3 SMT solver. The
+requirements are detailed below, in reverse order of exoticism. llStar
+has been developped under Linux, but other environments might be
+viable.
 
 The executive summary is this: install z3, LLVM 3.3 with ocaml
 development libraries, and OCaml.
@@ -38,9 +39,7 @@ following environment variables.
     # these options are correct for z3
     export JSTAR_SMT_ARGUMENTS="-in -smt2"
 
-See the coreStar documentation for more information about using a
-different SMT solver. llStar has been tested using z3 versions 4.2 and
-4.3.
+llStar has been tested using z3 versions 4.2 and 4.3.
 
 ### LLVM
 
@@ -48,7 +47,7 @@ LLVM is an open source compiler framework. Its intermediate
 representation is bitcode, which is the language that llStar takes as
 input. llStar currently builds and run against LLVM version 3.3. LLVM
 is *not* included in the llStar distribution. The preferred way to get
-it is from your software management, or from
+it is from your software manager, or from
 
   http://llvm.org/releases/download.html#3.3
 
@@ -87,7 +86,7 @@ llStar has been tested against OCaml 3.12.1.
 
 Simply go to the llStar directory and type make. This should produce
 the llStar binary at bin/llstar. Let me know if this does not work for
-you! (make sure you have the LLVM OCaml bindings)
+you! (make sure you have the LLVM OCaml bindings installed)
 
 
 ## Usage
