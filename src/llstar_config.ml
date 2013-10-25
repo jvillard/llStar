@@ -75,8 +75,7 @@ let set_bitcode_file_name_once s =
   if !bitcode_file_name != impossible_file_name then
     raise (Arg.Bad "More than one source file provided");
   bitcode_base_name := Filename.basename s;
-  let fname = Filename.concat (Sys.getcwd()) !bitcode_base_name in
-  set_file_name bitcode_file_name fname;
+  set_file_name bitcode_file_name s;
   let bitcode_chopped_name =
     try Filename.chop_extension !bitcode_base_name
     with Invalid_argument _ -> !bitcode_base_name in
