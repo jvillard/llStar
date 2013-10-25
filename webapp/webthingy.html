@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD XHTML 1.1//EN"
+  "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xml:lang="en" lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>{head_title}</title>
+  <!-- Style -->
+  <link rel="stylesheet" type="text/css" href="../style.css"/>
+  <link rel="shortcut icon" type="image/png" href="http://www.cs.ucl.ac.uk/favicon.ico"/>
+</head>
+<body>
+<h1>{page_title}</h1>
+<form action="llstar.web" method="get">
+  <div class="examples">
+    <select name="example">
+      {example_menu}
+    </select>
+  </div>
+  <p>
+    <input type="submit" value="Select example">
+  </p>
+</form>
+{input_section}
+{output_section}
+</body>
+</html>

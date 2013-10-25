@@ -1,0 +1,185 @@
+#!/usr/bin/python
+
+import os
+import subprocess
+import tempfile
+import cgi
+import cgitb
+
+cgitb.enable()
+form = cgi.FieldStorage()
+
+print "Content-Type: text/html"     # HTML is following
+print                               # blank line, end of headers
+
+head_title = 'llStar Web Thingy'
+page_title = 'llStar Web Thingy'
+input_section = ''
+output_section = ''
+
+# We assume that the web thingy is run from the webapp/ directory of the llStar
+# distribution, and use llStar from the same place (..)
+llstarbin = '../bin/llstar'
+workdir='llstar'
+
+sources = {
+    'code_ll': 'Your code here',
+    'specs': 'Your function specifications here',
+    'logic_rules': 'Your logic rules here',
+    'abs_rules': 'Your abstraction rules here',
+    'abduct_rules': 'abduction'
+    }
+results = {'llstar_output': ''}
+
+if ('example' in form): current_example = form['example'].value
+else: current_example = None
+
+expath = '../examples/'
+default_examples = {}
+
+
+def fileToStr(fileName):
+    '''Return a string containing the contents of the named file.'''
+    fin = open(fileName)
+    contents = fin.read()
+    fin.close()
+    return contents
+
+def strToFile(text, filename):
+    '''Write a file with the given name and the given text.'''
+    output = open(filename,'w')
+    output.write(text)
+    output.close()
+
+def find_suffixed_file(fname, suffix):
+    ''' look for a file of the form prefix.[suffix] where prefix is some
+    .-prefix of [fname].
+
+    Adapted from llStar/src/llstar_config.ml.'''
+    def try_prefix(pref):
+        (root, base) = os.path.split(pref)
+        if base == '':
+            name = os.path.join(root, suffix)
+        else:
+            name = pref + "." + suffix
+        if os.path.isfile(name):
+            return name
+        else:
+            # no file found. We'll try p.suffix if we were trying p.bla.suffix,
+            # otherwise just suffix, otherwise None
+            if base == '':
+                return None
+            else:
+                (root, ext) = os.path.splitext(pref)
+                if ext == '':
+                    (root, base) = os.path.split(pref)
+                    return try_prefix(os.path.join(root, ''))
+                else:
+                    return try_prefix(root)
+    return try_prefix(fname)
+
+def mk_example_menu(ex):
+    for dirname in sorted(os.listdir(expath)):
+        try:
+            for filename in sorted(os.listdir(os.path.join(expath, dirname))):
+                (root, ext) = os.path.splitext(filename)
+                if ext == '.ll':
+                    fqfilename = os.path.join(expath, dirname, filename)
+                    def findsuffandread(s):
+                        suffedfile = find_suffixed_file(fqfilename,s)
+                        if suffedfile:
+                            return fileToStr(suffedfile)
+                        else:
+                            return ''
+                    ex[root] = {
+                        'code_ll': fileToStr(fqfilename),
+                        'specs': findsuffandread('spec'),
+                        'logic_rules': findsuffandread('logic'),
+                        'abs_rules': findsuffandread('abs'),
+                        'abduct_rules': findsuffandread('abduct') }
+        except OSError: pass
+    menu = ''
+    for example in sorted(ex):
+        if example == current_example:
+            selected = ' selected'
+        else:
+            selected = ''
+        menu = menu + '<option value="%s"%s>%s</option>' % (example, selected, example)
+    return menu
+
+def compile_to_bitcode(fn, bcfn):
+    # TODO: check errors
+    subprocess.call(['llvm-as-3.3', '-f', '-o', bcfn, fn])
+
+def runllStar(sources, results):
+    # working directory
+    tmpdir = tempfile.mkdtemp(dir=workdir)
+    def pathify(s):
+        return os.path.join(tmpdir, s)
+    # put code, specs and logic rules into temp files
+    for s in sources:
+        fname = pathify(s)
+        f = file(fname, 'w')
+        f.write(sources[s])
+        f.close()
+    # compile source code to bitcode
+    llfile = pathify('code_ll') # make sure this matches name in dict
+    bitfile = pathify('source.bc')
+    compile_to_bitcode(llfile, bitfile)
+    # launch llStar
+    llstar_with_args = [llstarbin,
+                        '-s', pathify('specs'),
+                        '-l', pathify('logic_rules'),
+                        '-a', pathify('abs_rules'),
+                        '-abduct_file', pathify('abduct_rules'),
+                        '-outdir', pathify('llstarout'),
+                        bitfile]
+    process = subprocess.Popen(llstar_with_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    exit_code = os.waitpid(process.pid, 0)
+    (out, err) = process.communicate()
+    # unlink temp files
+    # TODO
+    # done
+    results['llstar_output'] = ' '.join(llstar_with_args) + out + err
+
+def fill_example(sources,s):
+    for src in sources:
+        sources[src] = default_examples[s][src]
+
+def get_or_empty(p):
+    try:
+        return form[p].value
+    except KeyError, e:
+        return ''
+
+def set_html_parameters(sources):
+    if not ('code_ll' in form):
+        raise KeyError('code_ll')
+    for s in sources:
+        sources[s] = get_or_empty(s)
+
+example_menu = mk_example_menu(default_examples)
+if not os.path.isdir(workdir):
+    # race condition, and potentially trying to overwrite an existing
+    # file. ok for now (don't put anything stupid in [workdir]).
+    os.mkdir(workdir)
+
+try:
+    try:
+        fill_example(sources,form["example"].value)
+    except KeyError, e:
+        #print 'no example'
+        #print e
+        # example was not selected, maybe the user wants to run the tool
+        set_html_parameters(sources)
+        runllStar(sources, results)
+        output_section = fileToStr('output.html').format(**results)
+except KeyError, e:
+    #print 'no input'
+    #print e
+    # the user didn't click on anything yet
+    fill_example(sources, 'array')
+    # here we could display something to encourage the user to run the tool
+
+input_section = fileToStr('input.html').format(**sources)
+print fileToStr('webthingy.html').format(**locals())
