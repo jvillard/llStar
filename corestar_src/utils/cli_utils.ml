@@ -15,15 +15,15 @@ let ( / ) a b = if Filename.is_relative b then Filename.concat a b else b
 
 let corestar_executable = Sys.executable_name (* This is bit of a guess. *)
 let corestar_bin_dir = Filename.dirname corestar_executable
-let corestar_home = corestar_bin_dir/Filename.parent_dir_name
+let corestar_home = corestar_bin_dir/Filename.parent_dir_name/Filename.parent_dir_name
 
 (* TODO(rgrig): Ideally [env_var] should be computed from [default]. *)
 let library_dirs env_var default = 
-  System.getenv_dirlist env_var @ [corestar_home/"library"/default]
+  System.getenv_dirlist env_var @ [corestar_home/default]
 
-let logic_dirs = library_dirs "CORESTAR_LOGIC_LIBRARY" "logic"
-let specs_dirs = library_dirs "CORESTAR_SPECS_LIBRARY" "specifications"
-let abs_dirs = library_dirs "CORESTAR_ABS_LIBRARY" "abstraction"
+let logic_dirs = library_dirs "CORESTAR_LOGIC_LIBRARY" "rules"
+let specs_dirs = library_dirs "CORESTAR_SPECS_LIBRARY" "specs"
+let abs_dirs = library_dirs "CORESTAR_ABS_LIBRARY" "rules"
 
 (* DBG
 let pd a = List.iter (fun x->Printf.printf "dir %s\n" x) a; print_newline ()
