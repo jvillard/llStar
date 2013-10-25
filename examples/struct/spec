@@ -1,4 +1,4 @@
-import "../../specs/stdlib.spec";
+import "stdlib.spec";
 
 norbert:
   {}

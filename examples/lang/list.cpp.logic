@@ -1,4 +1,4 @@
-import "../../rules/llvm.logic";
-import "../../rules/lseg.logic";
+import "llvm.logic";
+import "lseg.logic";
 
 nodedecl: "struct.node"("1") = sllnode

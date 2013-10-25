@@ -1,5 +1,4 @@
-import "../../specs/stdlib.spec";
-import "field_access.spec";
+import "stdlib.spec";
 
 malloc_free: {}{}
 malloc_use_struct_free: {}{}

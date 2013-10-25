@@ -1,4 +1,4 @@
-import "../../rules/llvm.logic";
+import "llvm.logic";
  
 equiv bitcast_node_hint:
   pointer(?x, array_type(bv_const("64", "16"), integer_type("8")), ?v)

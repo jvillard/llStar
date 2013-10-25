@@ -1,4 +1,4 @@
-import "../../specs/stdlib.spec";
+import "stdlib.spec";
 
 assert_in_bounds:
  {pointer(@parameter0:,integer_type(numeric_const("64")),_n) * !bvule(_n, @parameter1:)}

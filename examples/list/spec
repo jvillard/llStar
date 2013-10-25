@@ -1,4 +1,4 @@
-import "../../specs/stdlib.spec";
+import "stdlib.spec";
 
 smaug:
   {lseg("listitem",@parameter0:,bv_const("64", "0"))}
