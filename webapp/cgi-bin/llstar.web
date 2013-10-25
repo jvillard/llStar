@@ -1,10 +1,11 @@
 #!/usr/bin/python
 
+import cgi
+import cgitb
 import os
 import subprocess
 import tempfile
-import cgi
-import cgitb
+import time
 
 cgitb.enable()
 form = cgi.FieldStorage()
@@ -127,20 +128,24 @@ def runllStar(sources, results):
     bitfile = pathify('source.bc')
     compile_to_bitcode(llfile, bitfile)
     # launch llStar
-    llstar_with_args = [llstarbin,
+    llstar_command = [llstarbin,
                         '-s', pathify('specs'),
                         '-l', pathify('logic_rules'),
                         '-a', pathify('abs_rules'),
                         '-abduct_file', pathify('abduct_rules'),
                         '-outdir', pathify('llstarout'),
                         bitfile]
-    process = subprocess.Popen(llstar_with_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    t0 = time.time()
+    process = subprocess.Popen(llstar_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     exit_code = os.waitpid(process.pid, 0)
+    t1 = time.time()
     (out, err) = process.communicate()
     # unlink temp files
     # TODO
     # done
-    results['llstar_output'] = ' '.join(llstar_with_args) + out + err
+    results['llstar_output'] = out + err
+    results['llstar_command'] = ' '.join(llstar_command)
+    results['llstar_time'] = "%.2f" % (t1 - t0)
 
 def fill_example(sources,s):
     for src in sources:
