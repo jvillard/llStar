@@ -46,3 +46,192 @@ textarea {
      height: 100%; /*dynamic with div size*/
      resize: none;
 }
+
+.clear {             
+    clear: both;             
+}
+
+h1,h2,h3,dt {
+    font-family: Helvetica, sans-serif;
+}
+
+h2 {
+    color: darkorange;
+}
+
+dt {
+    font-weight: bold;
+}
+
+img { border: none; vertical-align: bottom; }
+
+a:link {
+    text-decoration: none;
+    color: darkorange;
+}
+a:visited {
+    text-decoration: none;
+    color: #aa4422;
+}
+
+a:link:hover, a:visited:hover {
+    color: #000;
+    background: darkorange;
+}
+
+a:active {
+    outline:none;
+}
+
+strong {
+    font-style: italic;
+    font-weight: bold;
+    color: darkorange;
+}
+
+body {
+    text-align:center;
+
+    background-image: url("background.gif");
+}
+
+#wrapper {
+    margin: 0px auto;
+    width: 750px;
+    position: relative;
+
+    text-align: left;
+}
+
+#wrapper #banner {
+    position: relative;
+}
+
+#wrapper #banner #header {
+    text-align: left;
+    font-family: Helvetica,sans-serif;
+    padding: 10px 10px 10px 15px;
+    position: relative;
+}
+
+#wrapper #banner #header h1 {
+    font-size: 50px;
+    font-weight: bolder;
+    margin: 0px;
+}
+
+#wrapper #banner #header p {
+    margin: 0px;
+    font-size: large;
+}
+
+#wrapper #banner #header abbr {
+    text-decoration: none;
+    border: 0px;
+}
+
+#wrapper #banner #header a {
+    color: #000;
+}
+
+#wrapper #banner img#llStarlogo {
+    margin: 0px; padding: 0px;
+    right: 45px;
+    bottom: 0px;
+    height: 160px;
+    position: absolute;
+}
+
+.divider {
+    border: solid 4px darkorange;
+    height: 15px;
+    background: darkorange;
+    color: #fff;
+    text-align: center;
+}
+
+#wrapper .rightbox {
+    margin: 48px -21.01ex 20px 20px;
+    float: right;
+    clear: right;
+    position: relative;
+    width: 34ex;
+}
+
+#wrapper .rightbox h2.boxtitle {
+    margin: 0px; padding: 0px 0px;
+
+    color: #fff;
+    background: darkorange;
+    font-family: Helvetica, sans-serif;
+    font-weight: bold;
+    font-size: large;
+    text-align: center;
+    text-transform: lowercase;
+    line-height: 80%;
+}
+
+#wrapper .rightbox #mugshot {
+    margin: 0px; padding: 0px;
+    text-align: center;
+    background: #56b7e2;
+}
+
+#wrapper .rightbox .contents {
+    border: solid 1px darkorange;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    padding: 4px 4px 0px 4px;
+    background: #fff;
+}
+
+#wrapper #nav ul {
+    margin: 0px; padding: 0px;
+    list-style: none;
+
+    font-family: Helvetica;
+    text-align: center;
+}
+
+a.email {
+    color: #000;
+    font-family: Typewriter, monospace;
+}
+
+#wrapper #meat {
+    background: #fff;
+    border: solid 1px darkorange;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    padding: 0px 15px 15px 15px;
+
+    text-align: left;
+}
+
+#footer {
+    margin-top: 20px;
+    font-size: small;
+    font-style: italic;
+    color: #555;
+    vertical-align: bottom;
+    position: relative;
+}
+
+#footer #salade {
+    position: absolute;
+    bottom: 0px;
+    left: 0px;
+}
+
+#footer a {
+    color: #555;
+}
+
+a.rsc_link {
+  color: darkorange;
+  text-decoration:none;  
+}
+
+.downloads {
+    font-size: small;
+}

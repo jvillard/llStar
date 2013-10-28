@@ -13,8 +13,8 @@ form = cgi.FieldStorage()
 print "Content-Type: text/html"     # HTML is following
 print                               # blank line, end of headers
 
-head_title = 'llStar Web Thingy'
-page_title = 'llStar Web Thingy'
+head_title = 'llStar-upon-Web'
+page_title = 'llStar'
 input_section = ''
 output_section = ''
 

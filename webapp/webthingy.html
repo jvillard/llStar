@@ -10,7 +10,32 @@
   <link rel="shortcut icon" type="image/png" href="http://www.cs.ucl.ac.uk/favicon.ico"/>
 </head>
 <body>
-<h1>{page_title}</h1>
+<div id="wrapper">
+
+<div id="banner">
+  <div id="header">
+    <h1>{page_title}</h1>
+    <p>Separation logic verification for bitcode</p>
+    <a href="https://bitbucket.org/jvillard/llstar/wiki/Home">
+      <img id="llStarlogo" src="../llstar.png" alt="llStar logo" />
+    </a>
+  </div>
+  <div class="divider clear"></div>
+</div>
+
+<div id="meat">
+<p>
+llStar is an automatic prover for programs written in bitcode. Bitcode
+is the intermediate representation of the LLVM compiler
+framework. llStar attempts to prove individual functions correct with
+respect to memory safety and to their specifications.
+</p>
+
+<p>
+You can try llStar using the forms below.
+</p>
+
+<p>
 <form action="llstar.web" method="get">
   <div class="examples">
     <select name="example">
@@ -21,7 +46,10 @@
     <input type="submit" value="Select example">
   </p>
 </form>
+</p>
 {input_section}
 {output_section}
+
+</div>
 </body>
 </html>
