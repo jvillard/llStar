@@ -1,4 +1,4 @@
-; ModuleID = '/home/jvillard/science/tools/llstar/bitbucket/examples/struct/_llstar/pointer_arith.c.bc'
+; ModuleID = 'pointer_arith.c'
 target datalayout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:16:32:64-S128"
 target triple = "x86_64-pc-linux-gnu"
 
@@ -11,7 +11,7 @@ define i32 @pointer_arith(i32 %a) #0 {
   %p = alloca %struct.ole*, align 8
   %b = alloca i32, align 4
   store i32 %a, i32* %2, align 4
-  %3 = call noalias i8* @malloc(i64 16) #1
+  %3 = call noalias i8* @malloc(i64 16) #2
   %4 = bitcast i8* %3 to %struct.ole*
   store %struct.ole* %4, %struct.ole** %p, align 8
   %5 = load %struct.ole** %p, align 8
@@ -24,7 +24,7 @@ define i32 @pointer_arith(i32 %a) #0 {
   br label %49
 
 ; <label>:9                                       ; preds = %0
-  %10 = call noalias i8* @malloc(i64 4) #1
+  %10 = call noalias i8* @malloc(i64 4) #2
   %11 = bitcast i8* %10 to i32*
   %12 = load %struct.ole** %p, align 8
   %13 = getelementptr inbounds %struct.ole* %12, i32 0, i32 0
@@ -38,7 +38,7 @@ define i32 @pointer_arith(i32 %a) #0 {
 ; <label>:18                                      ; preds = %9
   %19 = load %struct.ole** %p, align 8
   %20 = bitcast %struct.ole* %19 to i8*
-  call void @free(i8* %20) #1
+  call void @free(i8* %20) #2
   %21 = load i32* %2, align 4
   store i32 %21, i32* %1
   br label %49
@@ -70,10 +70,10 @@ define i32 @pointer_arith(i32 %a) #0 {
   %43 = getelementptr inbounds %struct.ole* %42, i32 0, i32 0
   %44 = load i32** %43, align 8
   %45 = bitcast i32* %44 to i8*
-  call void @free(i8* %45) #1
+  call void @free(i8* %45) #2
   %46 = load %struct.ole** %p, align 8
   %47 = bitcast %struct.ole* %46 to i8*
-  call void @free(i8* %47) #1
+  call void @free(i8* %47) #2
   %48 = load i32* %b, align 4
   store i32 %48, i32* %1
   br label %49
@@ -116,5 +116,6 @@ define i32 @main() #0 {
   ret i32 %10
 }
 
-attributes #0 = { nounwind uwtable }
-attributes #1 = { nounwind }
+attributes #0 = { nounwind uwtable "less-precise-fpmad"="false" "no-frame-pointer-elim"="true" "no-frame-pointer-elim-non-leaf"="true" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "unsafe-fp-math"="false" "use-soft-float"="false" }
+attributes #1 = { nounwind "less-precise-fpmad"="false" "no-frame-pointer-elim"="true" "no-frame-pointer-elim-non-leaf"="true" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "unsafe-fp-math"="false" "use-soft-float"="false" }
+attributes #2 = { nounwind }

@@ -1,4 +1,4 @@
-; ModuleID = '/home/jvillard/science/tools/llstar/bitbucket/examples/lang/_llstar/list_dispose.f95.bc'
+; ModuleID = 'list_dispose.f95'
 target datalayout = "e-p:64:64:64-S128-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f16:16:16-f32:32:32-f64:64:64-f128:128:128-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:16:32:64"
 target triple = "x86_64--linux-gnu"
 
@@ -13,7 +13,7 @@ entry:
   %1 = icmp eq %struct.node* %0, null
   br i1 %1, label %return, label %"4"
 
-"4":                                              ; preds = %"4", %entry
+"4":                                              ; preds = %entry, %"4"
   %2 = phi %struct.node* [ %4, %"4" ], [ %0, %entry ]
   %3 = getelementptr inbounds %struct.node* %2, i64 0, i32 1
   %4 = load %struct.node** %3, align 8
