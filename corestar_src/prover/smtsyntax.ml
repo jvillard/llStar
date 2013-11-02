@@ -305,7 +305,7 @@ let bvbinrels =
   let iet = Printf.sprintf "(ite (%s %s %s) (_ bv0 1) (_ bv1 1))" in
   [("builtin_eq", ite "="); ("builtin_neq", iet "=")]@
     List.map (fun s -> (s,ite s))
-    ["bvult" ; "bvule"; "bvugt"; "bvuge"; "bvslt"; "bvsle"; "bvglt"; "bvgle"]
+    ["bvult" ; "bvule"; "bvugt"; "bvuge"; "bvslt"; "bvsle"; "bvsgt"; "bvsge"]
 
 (** mathematical integer operations *)
 let add_native_int_ops () =
