@@ -7,6 +7,7 @@ val bvargs_of_int : int -> int -> Psyntax.args
 val bvargs_of_int64 : int -> int64 -> Psyntax.args
 val bvargs64_of_int : int64 -> int -> Psyntax.args
 val bvargs64_of_int64 : int64 -> int64 -> Psyntax.args
+val fpargs_of_float : string -> string -> string -> Psyntax.args
 val mkUndef : Psyntax.args -> Psyntax.args
 val mkUndef64 : int64 -> Psyntax.args
 val mkPointer : Psyntax.term -> Psyntax.term -> Psyntax.term -> Psyntax.form

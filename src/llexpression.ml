@@ -28,7 +28,7 @@ let bvargs64_of_int64 sz i =
 let bvargs_of_int sz i = bvargs64_of_int64 (Int64.of_int sz) (Int64.of_int i)
 let bvargs_of_int64 sz i = bvargs64_of_int64 (Int64.of_int sz) i
 let bvargs64_of_int sz i = bvargs64_of_int64 sz (Int64.of_int i)
-let fpargs_of_float fpt fp = Arg_op("fp_const", [Arg_string fpt; Arg_string (string_of_float fp)])
+let fpargs_of_float fpt exp s = Arg_op("fp_const", [Arg_string fpt; Arg_string exp; Arg_string s])
 let mkVoid = Arg_op("void", [])
 let mkStruct t elts_v = Arg_op(Smtexpression.smtconstr_of_struct t, elts_v)
 let mkNullPtr = Arg_op("NULL", [])
@@ -53,7 +53,7 @@ let mkNamedType name = Arg_op("named_type", [name])
 let mkStructType elts_t = Arg_op("struct_type", elts_t)
 let mkFunctionType args_t ret_t = Arg_op("function_type", ret_t::args_t)
 let mkPointerType elt_t = Arg_op("pointer_type", [elt_t])
-let mkVectorType elt_t = Arg_op("pointer_type", [elt_t])
+let mkVectorType elt_t = Arg_op("vector_type", [elt_t])
 let mkArrayType size elts_t = Arg_op("array_type", [size; elts_t])
 let mkMDType = Arg_op("MD_type", [])
 
@@ -135,7 +135,7 @@ let rec args_zero_of_type t = match (classify_type t) with
   | Double
   | X86fp80
   | Fp128
-  | Ppc_fp128 -> fpargs_of_float (string_of_fptype t) 0.0
+  | Ppc_fp128 -> fpargs_of_float (string_of_fptype t) "0" "0"
   | Integer ->
     let sz = integer_bitwidth t in
     bvargs_of_int sz 0
