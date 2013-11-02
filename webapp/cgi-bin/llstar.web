@@ -32,8 +32,7 @@ sources = {
     }
 results = {'llstar_output': ''}
 
-if ('example' in form): current_example = form['example'].value
-else: current_example = None
+current_example = None
 
 expath = '../examples/'
 default_examples = {}
@@ -79,7 +78,7 @@ def find_suffixed_file(fname, suffix):
                     return try_prefix(root)
     return try_prefix(fname)
 
-def mk_example_menu(ex):
+def mk_example_sources(ex):
     for dirname in sorted(os.listdir(expath)):
         try:
             for filename in sorted(os.listdir(os.path.join(expath, dirname))):
@@ -99,9 +98,11 @@ def mk_example_menu(ex):
                         'abs_rules': findsuffandread('abs'),
                         'abduct_rules': findsuffandread('abduct') }
         except OSError: pass
+
+def mk_example_menu(ex, cur_ex):
     menu = ''
     for example in sorted(ex):
-        if example == current_example:
+        if example == cur_ex:
             selected = ' selected'
         else:
             selected = ''
@@ -164,11 +165,12 @@ def set_html_parameters(sources):
     for s in sources:
         sources[s] = get_or_empty(s)
 
-example_menu = mk_example_menu(default_examples)
 if not os.path.isdir(workdir):
     # race condition, and potentially trying to overwrite an existing
     # file. ok for now (don't put anything stupid in [workdir]).
     os.mkdir(workdir)
+
+mk_example_sources(default_examples)
 
 try:
     try:
@@ -184,8 +186,11 @@ except KeyError, e:
     #print 'no input'
     #print e
     # the user didn't click on anything yet
-    fill_example(sources, 'array')
+    fill_example(sources, 'list_dispose.c.O2')
+    current_example = 'list_dispose.c.O2'
     # here we could display something to encourage the user to run the tool
 
+if ('example' in form): current_example = form['example'].value
+example_menu = mk_example_menu(default_examples, current_example)
 input_section = fileToStr('input.html').format(**sources)
 print fileToStr('webthingy.html').format(**locals())
