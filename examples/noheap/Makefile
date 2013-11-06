@@ -2,7 +2,7 @@ LLVM_AS=llvm-as-3.3
 
 LSTAR_OPTIONS=-runopts false
 SRC=skip.c 1664.c
-WEBEXAMPLES=1664.c.O0.ll skip.c.O0.ll
+WEBEXAMPLES=skip.c.O0.ll
 BITCODE=$(SRC:=.bc)
 TESTS=$(SRC:=.test)
 

@@ -1,4 +1,5 @@
 import "llvm.logic";
 import "dags_const_pointers.logic";
 
-nodedecl: "struct.node"("1", "2") = dagnode
+nodedecl: "struct.node"("1", "2")
+          = dagnode
