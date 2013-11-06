@@ -1,4 +1,3 @@
-<p>
 <form action="llstar.web#codetab" method="post">
   <div class=tabs>
     <div id=codetab>
@@ -29,17 +28,20 @@
       cols="80">{abs_rules}</textarea>
       </div>
     </div>
-    <div id=abducttab>
-      <a href="#abducttab"><label for="abduct_rules">Abduction</label></a>
-      <div>
-      <textarea name="abduct_rules" rows="20"
-      cols="80">{abduct_rules}</textarea>
-      </div>
-    </div>
+    {import_tabs}
   </div>
   <p>
-    <input type="submit" value="Send">
+    <input type="submit" value="Run llStar">
     <input type="reset">
   </p>
 </form>
-</p>
+  <form action="llstar.web#codetab" method="get">
+    <div class="examples">
+      <select name="example">
+	{example_menu}
+      </select>
+    </div>
+    <p>
+      <input type="submit" value="Select example">
+    </p>
+  </form>

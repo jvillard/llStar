@@ -3,6 +3,7 @@
 import cgi
 import cgitb
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -14,7 +15,7 @@ print "Content-Type: text/html"     # HTML is following
 print                               # blank line, end of headers
 
 head_title = 'llStar-upon-Web'
-page_title = 'llStar'
+page_title = '<span style="font-family:serif;">llStar</span>'
 input_section = ''
 output_section = ''
 
@@ -28,11 +29,13 @@ sources = {
     'specs': 'Your function specifications here',
     'logic_rules': 'Your logic rules here',
     'abs_rules': 'Your abstraction rules here',
-    'abduct_rules': 'abduction'
+    'preset_example': None,
+    'language': 'bitcode',
+    'example_menu': None,
+    'language_menu': None,
+    'import_tabs': ''
     }
 results = {'llstar_output': ''}
-
-current_example = None
 
 expath = '../examples/'
 default_examples = {}
@@ -95,8 +98,7 @@ def mk_example_sources(ex):
                         'code_ll': fileToStr(fqfilename),
                         'specs': findsuffandread('spec'),
                         'logic_rules': findsuffandread('logic'),
-                        'abs_rules': findsuffandread('abs'),
-                        'abduct_rules': findsuffandread('abduct') }
+                        'abs_rules': findsuffandread('abs') }
         except OSError: pass
 
 def mk_example_menu(ex, cur_ex):
@@ -133,7 +135,6 @@ def runllStar(sources, results):
                         '-s', pathify('specs'),
                         '-l', pathify('logic_rules'),
                         '-a', pathify('abs_rules'),
-                        '-abduct_file', pathify('abduct_rules'),
                         '-outdir', pathify('llstarout'),
                         bitfile]
     t0 = time.time()
@@ -149,9 +150,29 @@ def runllStar(sources, results):
     results['llstar_time'] = "%.2f" % (t1 - t0)
     results['llstar_output_height'] = min(100, results['llstar_output'].count('\n') + 1)
 
+imported = []
+def fill_import_tabs(text):
+    '''find import directives in [text] and returns a list of
+    dictonaries with the imported files'''
+    global imported # FIXME: ugly hack
+    imports = re.findall('import[ ]+"([^"]+)"[ ]*;', text)
+    l = []
+    for i in imports:
+        fi = None
+        for prefix in ['', '../rules', '../specs']:
+            try:
+                fi = file(os.path.join(prefix, i), 'r')
+            except IOError:
+                pass
+        if fi and not i in imported:
+            import_text = fi.read()
+            l.append({'import_id': i, 'imported_text': import_text})
+            imported.append(i)
+            l = l + fill_import_tabs(import_text)
+    return l
+
 def fill_example(sources,s):
-    for src in sources:
-        sources[src] = default_examples[s][src]
+    sources.update(default_examples[s])
 
 def get_or_empty(p):
     try:
@@ -187,10 +208,16 @@ except KeyError, e:
     #print e
     # the user didn't click on anything yet
     fill_example(sources, 'list_dispose.c.O2')
-    current_example = 'list_dispose.c.O2'
+    sources['preset_example'] = 'list_dispose.c.O2'
     # here we could display something to encourage the user to run the tool
 
-if ('example' in form): current_example = form['example'].value
-example_menu = mk_example_menu(default_examples, current_example)
+imports = fill_import_tabs(sources['specs'] + sources['logic_rules'] + sources['abs_rules'])
+l = []
+for i in imports:
+    l.append(fileToStr('import_tab.html').format(**i))
+sources['import_tabs'] = ''.join(l)
+
+if ('example' in form): sources['preset_example'] = form['example'].value
+sources['example_menu'] = mk_example_menu(default_examples, sources['preset_example'])
 input_section = fileToStr('input.html').format(**sources)
 print fileToStr('webthingy.html').format(**locals())
