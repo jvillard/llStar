@@ -1,47 +1,45 @@
-<form action="llstar.web#codetab" method="post">
-  <div class=tabs>
-    <div id=codetab>
-      <a href="#codetab"><label for="code_ll">Code</label></a>
-      <div>
-      <textarea name="code_ll" rows="20"
-      cols="80">{code_ll}</textarea>
-      </div>
+<h2>A few examples</h2>
+
+<p>
+Get started with one of the examples below.
+</p>
+
+<form action="llstar.web" method="get">
+  <select name="example">
+    {example_menu}
+  </select>
+  <input type="submit" value="Select example">
+</form>
+
+<h2>Try llStar here</h2>
+
+<form action="llstar.web" method="post">
+  <div id="input-tabs"> 
+    <ul>
+      <li><a href="#codetab">Code</a></li>
+      <li><a href="#specstab">Specs</a></li>
+      <li><a href="#logic_rulestab">Logic</a></li>
+      <li><a href="#abs_rulestab">Abstraction</a></li>
+    </ul>
+    
+    <div id="codetab">
+      <textarea name="code_ll" class="codeide" rows="40" cols="80">{code_ll}</textarea>
     </div>
-    <div id=specstab>
-      <a href="#specstab"><label for="specs">Specs</label></a>
-      <div>
-      <textarea name="specs" rows="20"
-      cols="80">{specs}</textarea>
-      </div>
+    <div id="specstab">
+      <textarea name="specs" class="codeide" rows="40" cols="80">{specs}</textarea>
     </div>
-    <div id=logicrulestab>
-      <a href="#logicrulestab"><label for="logic_rules">Logic</label></a>
-      <div>
-      <textarea name="logic_rules" rows="20"
-      cols="80">{logic_rules}</textarea>
-      </div>
+    <div id="logic_rulestab">
+      <textarea name="logic_rules" class="codeide" rows="40" cols="80">{logic_rules}</textarea>
     </div>
-    <div id=abstab>
-      <a href="#abstab"><label for="abs_rules">Abstraction</label></a>
-      <div>
-      <textarea name="abs_rules" rows="20"
-      cols="80">{abs_rules}</textarea>
-      </div>
+    <div id="abs_rulestab">
+      <textarea name="abs_rules" class="codeide" rows="40" cols="80">{abs_rules}</textarea>
     </div>
-    {import_tabs}
   </div>
   <p>
-    <input type="submit" value="Run llStar">
-    <input type="reset">
+    <label>
+      <input id="runllStar" type="submit" value="Run llStar" class="hidden">
+      <img id="runllStarimg" src="../llstar0.png" alt="Run llStar"
+	   title="Run llStar using the input above." /> 
+    </label>
   </p>
 </form>
-  <form action="llstar.web#codetab" method="get">
-    <div class="examples">
-      <select name="example">
-	{example_menu}
-      </select>
-    </div>
-    <p>
-      <input type="submit" value="Select example">
-    </p>
-  </form>

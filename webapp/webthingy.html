@@ -4,9 +4,16 @@
   "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
 <html xml:lang="en" lang="en" xmlns="http://www.w3.org/1999/xhtml">
 <head>
+  <meta http-equiv="Content-type" content="text/html;charset=UTF-8" /> 
   <title>{head_title}</title>
+  <script src="../lib/codemirror.js"></script>
+  <script src="../lib/jquery.js"></script>
+  <script src="../lib/jquery-ui.js"></script>
+  <script src="../lib/jsthingy.js"></script>
   <!-- Style -->
   <link rel="stylesheet" type="text/css" href="../style.css"/>
+  <link rel="stylesheet" type="text/css" href="../codemirror.css"/>
+  <link rel="stylesheet" type="text/css" href="../lib/jqui-theme/jquery-ui-1.10.3.custom.css"/>
   <link rel="shortcut icon" type="image/png" href="http://www.cs.ucl.ac.uk/favicon.ico"/>
 </head>
 <body>
@@ -25,8 +32,6 @@
 
 <div id="meat">
 
-<h2>Try llStar here</h2>
-
 {input_section}
 {output_section}
 
@@ -42,6 +47,8 @@ respect to memory safety and to their specifications.
 You can find out more about llStar on the <a href="http://bitbucket.org/jvillard/llstar/wiki/Home">llStar wiki</a>,
 or browse the source code on the <a href="http://bitbucket.org/jvillard/llstar/src/">bitbucket repository</a>.
 </p>
+
+</div>
 
 </div>
 </body>
