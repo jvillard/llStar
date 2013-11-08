@@ -18,30 +18,19 @@ input_tabs = ['code_ll', 'specs', 'logic_rules', 'abs_rules']
 
 head_title = 'llStar-upon-Web'
 page_title = '<span style="font-family:serif;">llStar</span>'
-input_section = ''
-output_section = ''
 
 # We assume that the web thingy is run from the webapp/ directory of the llStar
 # distribution, and use llStar from the same place (..)
 llstarbin = '../bin/llstar'
 workdir='llstar'
-
-sources = {
-    'code_ll': 'Your code here',
-    'specs': 'Your function specifications here',
-    'logic_rules': 'Your logic rules here',
-    'abs_rules': 'Your abstraction rules here',
-    'preset_example': None,
-    'language': 'bitcode',
-    'example_menu': None,
-    'language_menu': None,
-    'import_tabs': ''
-    }
-results = {'llstar_output': ''}
-
 expath = '../examples/'
-default_examples = {}
 
+# always make sure this is one of the preset examples
+default_example = 'list_dispose.c.O2'
+
+
+######################
+# Utils
 
 def fileToStr(fileName):
     '''Return a string containing the contents of the named file.'''
@@ -83,7 +72,8 @@ def find_suffixed_file(fname, suffix):
                     return try_prefix(root)
     return try_prefix(fname)
 
-def mk_example_sources(ex):
+def discover_example_list():
+    exples = {}
     for dirname in sorted(os.listdir(expath)):
         try:
             for filename in sorted(os.listdir(os.path.join(expath, dirname))):
@@ -96,12 +86,16 @@ def mk_example_sources(ex):
                             return fileToStr(suffedfile)
                         else:
                             return ''
-                    ex[root] = {
+                    exples[root] = {
                         'code_ll': fileToStr(fqfilename),
                         'specs': findsuffandread('spec'),
                         'logic_rules': findsuffandread('logic'),
                         'abs_rules': findsuffandread('abs') }
         except OSError: pass
+    return exples
+
+######################
+# Webby things
 
 def mk_example_menu(ex, cur_ex):
     menu = ''
@@ -112,44 +106,6 @@ def mk_example_menu(ex, cur_ex):
             selected = ''
         menu = menu + '<option value="%s"%s>%s</option>' % (example, selected, example)
     return menu
-
-def compile_to_bitcode(fn, bcfn):
-    # TODO: check errors
-    subprocess.call(['llvm-as-3.3', '-f', '-o', bcfn, fn])
-
-def runllStar(sources, results):
-    # working directory
-    tmpdir = tempfile.mkdtemp(dir=workdir)
-    def pathify(s):
-        return os.path.join(tmpdir, s)
-    # put code, specs and logic rules into temp files
-    for s in input_tabs:
-        fname = pathify(s)
-        strToFile(sources[s], fname)
-    # compile source code to bitcode
-    llfile = pathify('code_ll') # make sure this matches name in dict
-    bitfile = pathify('source.bc')
-    compile_to_bitcode(llfile, bitfile)
-    # launch llStar
-    llstar_command = [llstarbin,
-                        '-s', pathify('specs'),
-                        '-l', pathify('logic_rules'),
-                        '-a', pathify('abs_rules'),
-                        '-outdir', pathify('llstarout'),
-                        bitfile]
-    t0 = time.time()
-    process = subprocess.Popen(llstar_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    # TODO timeout
-    exit_code = os.waitpid(process.pid, 0)
-    t1 = time.time()
-    (out, err) = process.communicate()
-    # unlink temp files
-    # TODO
-    # done
-    results['llstar_output'] = out + err
-    results['llstar_command'] = ' '.join(llstar_command)
-    results['llstar_time'] = "%.2f" % (t1 - t0)
-    results['llstar_output_height'] = min(100, results['llstar_output'].count('\n') + 1)
 
 imported = []
 def fill_import_tabs(text):
@@ -172,53 +128,110 @@ def fill_import_tabs(text):
             l = l + fill_import_tabs(import_text)
     return l
 
-def fill_example(sources,s):
-    sources.update(default_examples[s])
-
 def get_or_empty(p):
     try:
         return form[p].value
     except KeyError, e:
         return ''
 
-def set_html_parameters(sources):
-    if not ('code_ll' in form):
-        raise KeyError('code_ll')
+def get_sources_from_http_POST():
+    srcs = {}
     for s in input_tabs:
-        sources[s] = get_or_empty(s)
+        srcs[s] = get_or_empty(s)
+    return srcs
 
-if not os.path.isdir(workdir):
-    # race condition, and potentially trying to overwrite an existing
-    # file. ok for now (don't put anything stupid in [workdir]).
-    os.mkdir(workdir)
+def user_picked_an_example():
+    '''Returns [True] if the user has clicked on a preset example'''
+    return ('example' in form)
 
-mk_example_sources(default_examples)
+def user_asked_for_llStar():
+    '''Returns [True] if the user has clicked on the "run llStar" button'''
+    return ('code_ll' in form)
 
-try:
-    try:
-        fill_example(sources,form["example"].value)
-    except KeyError, e:
+
+######################
+# Serious business
+
+def compile_to_bitcode(fn, bcfn):
+    # TODO: check errors
+    subprocess.call(['llvm-as-3.3', '-f', '-o', bcfn, fn])
+
+def run_llStar(web_inputs):
+    # working directory
+    if not os.path.isdir(workdir):
+        # race condition, and potentially trying to overwrite an existing
+        # file. ok for now (don't put anything stupid in [workdir]).
+        os.mkdir(workdir)
+    tmpdir = tempfile.mkdtemp(dir=workdir)
+    def pathify(s):
+        return os.path.join(tmpdir, s)
+    # put code, specs and logic rules into temp files
+    for s in input_tabs:
+        fname = pathify(s)
+        strToFile(web_inputs[s], fname)
+    # compile source code to bitcode
+    llfile = pathify('code_ll') # make sure this matches name in dict
+    bitfile = pathify('source.bc')
+    compile_to_bitcode(llfile, bitfile)
+    # launch llStar
+    llstar_command = [llstarbin,
+                        '-s', pathify('specs'),
+                        '-l', pathify('logic_rules'),
+                        '-a', pathify('abs_rules'),
+                        '-outdir', pathify('llstarout'),
+                        bitfile]
+    t0 = time.time()
+    process = subprocess.Popen(llstar_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # TODO timeout
+    exit_code = os.waitpid(process.pid, 0)
+    t1 = time.time()
+    (out, err) = process.communicate()
+    # unlink temp files
+    # TODO
+    # done
+    results = {}
+    results['llstar_output'] = out + err
+    results['llstar_command'] = ' '.join(llstar_command)
+    results['llstar_time'] = "%.2f" % (t1 - t0)
+    results['llstar_output_height'] = min(100, results['llstar_output'].count('\n') + 1)
+    return results
+
+def main():
+    web_inputs = {}
+    preset_examples = discover_example_list()
+    output_section = ''
+    if user_picked_an_example():
+        web_inputs.update(preset_examples[form['example'].value])
+        web_inputs['preset_example'] = form['example'].value
+    elif user_asked_for_llStar():
         #print 'no example'
         #print e
-        # example was not selected, maybe the user wants to run the tool
-        set_html_parameters(sources)
-        runllStar(sources, results)
+        web_inputs = get_sources_from_http_POST()
+        results = run_llStar(web_inputs)
         output_section = fileToStr('output.html').format(**results)
-except KeyError, e:
-    #print 'no input'
-    #print e
-    # the user didn't click on anything yet
-    fill_example(sources, 'list_dispose.c.O2')
-    sources['preset_example'] = 'list_dispose.c.O2'
-    # here we could display something to encourage the user to run the tool
+        # TODO: should give the last example picked here, if it still matches. In a cookie?
+        web_inputs['preset_example'] = default_example
+    else:
+        # looks like the user didn't click on anything yet
+        #print 'no input'
+        #print e
+        # TODO: code duplication with the first branch...
+        web_inputs.update(preset_examples[default_example])
+        web_inputs['preset_example'] = default_example
+        # here we could display something to encourage the user to run the tool
+    
+    imports = fill_import_tabs(web_inputs['specs'] + web_inputs['logic_rules'] + web_inputs['abs_rules'])
+    l = []
+    for i in imports:
+        l.append(fileToStr('import_tab.html').format(**i))
+    web_inputs['import_tabs'] = ''.join(l)
+    
+    web_inputs['example_menu'] = mk_example_menu(preset_examples, web_inputs['preset_example'])
+    input_section = fileToStr('input.html').format(**web_inputs)
+    template_vars = globals().copy()  # get global...
+    template_vars.update(locals())         # ...and local variables
+    print fileToStr('webthingy.html').format(**template_vars)
 
-imports = fill_import_tabs(sources['specs'] + sources['logic_rules'] + sources['abs_rules'])
-l = []
-for i in imports:
-    l.append(fileToStr('import_tab.html').format(**i))
-sources['import_tabs'] = ''.join(l)
 
-if ('example' in form): sources['preset_example'] = form['example'].value
-sources['example_menu'] = mk_example_menu(default_examples, sources['preset_example'])
-input_section = fileToStr('input.html').format(**sources)
-print fileToStr('webthingy.html').format(**locals())
+# let's call the main function
+main()
