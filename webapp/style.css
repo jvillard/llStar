@@ -201,3 +201,15 @@ input.hidden {
     border: none !important;
     font-size:0;
 }
+
+#runllStarimg {
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.svgoutput {
+    width: 100%;
+    height: 1000px;
+    overflow: scroll;
+}
