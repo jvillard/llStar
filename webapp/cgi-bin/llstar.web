@@ -239,8 +239,10 @@ def run_llStar(web_inputs):
     results['llstar_output_height'] = min(100, results['llstar_output'].count('\n') + 1)
     if has_timed_out:
         html_results = file_to_str('output_timeout.html').format(**results)
-    else:
+    elif out.rfind('Mama says yes') >= 0:
         html_results = file_to_str('output_success.html').format(**results)
+    else:
+        html_results = file_to_str('output_failure.html').format(**results)
     return html_results
 
     
