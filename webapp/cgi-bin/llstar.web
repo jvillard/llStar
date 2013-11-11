@@ -16,7 +16,7 @@ form = cgi.FieldStorage()
 print "Content-Type: text/html"     # HTML is following
 print                               # blank line, end of headers
 
-input_tabs = ['code_ll', 'specs', 'logic_rules', 'abs_rules']
+input_tabs = ['bitcode', 'specs', 'logic_rules', 'abs_rules']
 
 head_title = 'llStar-upon-Web'
 page_title = '<span style="font-family:serif;">llStar</span>'
@@ -92,7 +92,7 @@ def discover_example_list():
                         else:
                             return ''
                     exples[root] = {
-                        'code_ll': cgi.escape(file_to_str(fqfilename)),
+                        'bitcode': cgi.escape(file_to_str(fqfilename)),
                         'specs': cgi.escape(findsuffandread('spec')),
                         'logic_rules': cgi.escape(findsuffandread('logic')),
                         'abs_rules': cgi.escape(findsuffandread('abs')) }
@@ -151,7 +151,7 @@ def user_picked_an_example():
 
 def user_asked_for_llStar():
     '''Returns [True] if the user has clicked on the "run llStar" button'''
-    return ('code_ll' in form)
+    return ('bitcode' in form)
 
 
 ######################
@@ -204,7 +204,7 @@ def run_llStar(web_inputs):
         fname = pathify(s)
         str_to_file(web_inputs[s], fname)
     # compile source code to bitcode
-    llfile = pathify('code_ll') # make sure this matches name in dict
+    llfile = pathify('bitcode') # make sure this matches name in dict
     bitfile = pathify('source.bc')
     compile_to_bitcode(llfile, bitfile)
     # launch llStar
@@ -269,17 +269,15 @@ def main():
         web_inputs.update(preset_examples[default_example])
         web_inputs['preset_example'] = default_example
         # here we could display something to encourage the user to run the tool
-    
     imports = fill_import_tabs(web_inputs['specs'] + web_inputs['logic_rules'] + web_inputs['abs_rules'])
     l = []
     for i in imports:
         l.append(file_to_str('import_tab.html').format(**i))
     web_inputs['import_tabs'] = ''.join(l)
-    
     web_inputs['example_menu'] = mk_example_menu(preset_examples, web_inputs['preset_example'])
     input_section = file_to_str('input.html').format(**web_inputs)
     template_vars = globals().copy()  # get global...
-    template_vars.update(locals())         # ...and local variables
+    template_vars.update(locals())    # ...and local variables
     print file_to_str('webthingy.html').format(**template_vars)
 
 

@@ -18,22 +18,41 @@ Get started with one of the examples below.
 <form action="llstar.web" method="post">
   <div id="input-tabs"> 
     <ul>
-      <li><a href="#codetab">Code</a></li>
+      <li><a href="#bitcodetab">Bitcode</a></li>
       <li><a href="#specstab">Specs</a></li>
       <li><a href="#logic_rulestab">Logic</a></li>
       <li><a href="#abs_rulestab">Abstraction</a></li>
     </ul>
     
-    <div id="codetab">
-      <textarea name="code_ll" class="codeide" rows="40" cols="80">{code_ll}</textarea>
+    <div id="bitcodetab">
+      <p>
+	Enter
+	your <a href="http://llvm.org/docs/LangRef.html">bitcode program</a> here.
+      </p>
+      <textarea name="bitcode" class="codeide" rows="40" cols="80">{bitcode}</textarea>
     </div>
     <div id="specstab">
+      <p>
+	Enter
+	<a href="https://bitbucket.org/jvillard/llstar/wiki/Specification">specifications</a>
+	for functions declared and used in the program.
+      </p>
       <textarea name="specs" class="codeide" rows="40" cols="80">{specs}</textarea>
     </div>
     <div id="logic_rulestab">
+      <p>
+	Here go the
+	<a href="https://bitbucket.org/jvillard/llstar/wiki/Rules">logic rules</a>
+	used by llStar.
+      </p>
       <textarea name="logic_rules" class="codeide" rows="40" cols="80">{logic_rules}</textarea>
     </div>
     <div id="abs_rulestab">
+      <p>
+	Enter
+	<a href="https://bitbucket.org/jvillard/llstar/wiki/Abstraction rules">abstraction rules</a>
+	to be used to help discover loop invariants.
+      </p>
       <textarea name="abs_rules" class="codeide" rows="40" cols="80">{abs_rules}</textarea>
     </div>
   </div>
