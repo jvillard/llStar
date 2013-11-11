@@ -91,10 +91,10 @@ def discover_example_list():
                         else:
                             return ''
                     exples[root] = {
-                        'code_ll': file_to_str(fqfilename),
-                        'specs': findsuffandread('spec'),
-                        'logic_rules': findsuffandread('logic'),
-                        'abs_rules': findsuffandread('abs') }
+                        'code_ll': cgi.escape(file_to_str(fqfilename)),
+                        'specs': cgi.escape(findsuffandread('spec')),
+                        'logic_rules': cgi.escape(findsuffandread('logic')),
+                        'abs_rules': cgi.escape(findsuffandread('abs')) }
         except OSError: pass
     return exples
 
@@ -222,8 +222,8 @@ def run_llStar(web_inputs):
     #TODO
     # done
     results['workdir'] = tmpdir
-    results['llstar_output'] = out + err
-    results['llstar_command'] = ' '.join(llstar_command)
+    results['llstar_output'] = cgi.escape(out + err)
+    results['llstar_command'] = cgi.escape(' '.join(llstar_command))
     results['llstar_time'] = "%.2f" % exec_time
     results['llstar_output_height'] = min(100, results['llstar_output'].count('\n') + 1)
     if has_timed_out:
