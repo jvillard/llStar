@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import xml.etree.ElementTree as ET
 
 cgitb.enable()
 form = cgi.FieldStorage()
@@ -160,10 +161,20 @@ def compile_to_bitcode(fn, bcfn):
     # TODO: check errors
     subprocess.call(['llvm-as-3.3', '-f', '-o', bcfn, fn])
 
-def dotfile_to_svg(infname, outfname):
+def dotfile_to_svg(outdir, infname, outfname):
     '''Takes the file name of a valid dot file and writes SVG graphics in the [outfname]'''
     dot_command = ['dot', '-Tsvg', '-o', outfname, infname]
-    subprocess.call(dot_command)
+    subprocess.call(dot_command) # launch dot and wait for completion
+    tree = ET.ElementTree()
+    tree.parse(outfname)
+    # update links to point to the web
+    for link in tree.findall('.//{http://www.w3.org/2000/svg}a'):
+        href = link.get('{http://www.w3.org/1999/xlink}href')
+        prefix = 'file://' + outdir
+        if len(href) > len(prefix) and href[:len(prefix)] == prefix:
+            link.set('{http://www.w3.org/1999/xlink}href', '/' + outdir + href[len(prefix):])
+    tree.write(outfname, encoding='utf-8', xml_declaration=True)
+
 
 def on_process_timeout(p):
     '''To be called when the execution of process [p] times out.'''
@@ -208,7 +219,7 @@ def run_llStar(web_inputs):
     timer = threading.Timer(timeout, on_process_timeout, [process])
     timer.start()
     # communicate() is blocking
-    (out, err) = process.communicate() #FIXME: should redirect to file in case the output is very large
+    (out, err) = process.communicate()
     exit_code = process.returncode
     exec_time = time.time() - t0 # time the execution
     timer.cancel() # process returned before the timeout, stop timer
@@ -216,7 +227,7 @@ def run_llStar(web_inputs):
     results = {}
     execution_dot = os.path.join(tmpdir, 'llstarout', 'source.bc.execution_core.dot')
     execution_svg = os.path.join(tmpdir, 'llstarout', 'source.bc.execution_core.svg')
-    dotfile_to_svg(execution_dot, execution_svg)
+    dotfile_to_svg(tmpdir, execution_dot, execution_svg)
     results['execution_svg'] = execution_svg
     # unlink temp files
     #TODO
