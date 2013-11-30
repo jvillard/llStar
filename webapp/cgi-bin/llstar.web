@@ -21,11 +21,11 @@ input_tabs = ['bitcode', 'specs', 'logic_rules', 'abs_rules']
 head_title = 'llStar-upon-Web'
 page_title = '<span style="font-family:serif;">llStar</span>'
 
-# We assume that the web thingy is run from the webapp/ directory of the llStar
-# distribution, and use llStar from the same place (..)
-llstarbin = '../bin/llstar'
-workdir='llstar'
-expath = '../examples/'
+llstarpath = '/home/jvillard/science/tools/llstar/bitbucket'
+llstarbin = os.path.join(llstarpath, 'bin', 'llstar')
+expath = os.path.join(llstarpath, 'examples')
+webapppath = os.path.join(llstarpath, 'webapp')
+workdir = os.path.join(webapppath, 'llstar')
 
 # always make sure this is one of the preset examples
 default_example = 'list_dispose.c.O2'
@@ -121,7 +121,7 @@ def fill_import_tabs(text):
     l = []
     for i in imports:
         fi = None
-        for prefix in ['', '../rules', '../specs']:
+        for prefix in ['', os.path.join(llstarpath, 'rules'), os.path.join(llstarpath, 'specs')]:
             try:
                 fi = file(os.path.join(prefix, i), 'r')
             except IOError:
@@ -161,7 +161,7 @@ def compile_to_bitcode(fn, bcfn):
     # TODO: check errors
     subprocess.call(['llvm-as-3.3', '-f', '-o', bcfn, fn])
 
-def dotfile_to_svg(outdir, infname, outfname):
+def dotfile_to_svg(outdir, baseurl, infname, outfname):
     '''Takes the file name of a valid dot file and writes SVG graphics in the [outfname]'''
     dot_command = ['dot', '-Tsvg', '-o', outfname, infname]
     subprocess.call(dot_command) # launch dot and wait for completion
@@ -172,7 +172,7 @@ def dotfile_to_svg(outdir, infname, outfname):
         href = link.get('{http://www.w3.org/1999/xlink}href')
         prefix = 'file://' + outdir
         if len(href) > len(prefix) and href[:len(prefix)] == prefix:
-            link.set('{http://www.w3.org/1999/xlink}href', '/' + outdir + href[len(prefix):])
+            link.set('{http://www.w3.org/1999/xlink}href', '/' + baseurl + href[len(prefix):])
     tree.write(outfname, encoding='utf-8', xml_declaration=True)
 
 
@@ -227,8 +227,10 @@ def run_llStar(web_inputs):
     results = {}
     execution_dot = os.path.join(tmpdir, 'llstarout', 'source.bc.execution_core.dot')
     execution_svg = os.path.join(tmpdir, 'llstarout', 'source.bc.execution_core.svg')
-    dotfile_to_svg(tmpdir, execution_dot, execution_svg)
-    results['execution_svg'] = execution_svg
+    baseouturl = os.path.relpath(tmpdir, webapppath)
+    dotfile_to_svg(tmpdir, baseouturl, execution_dot, execution_svg)
+    svgurl = os.path.join(baseouturl, 'llstarout', 'source.bc.execution_core.svg')
+    results['execution_svg'] = svgurl
     # unlink temp files
     #TODO
     # done
@@ -238,11 +240,11 @@ def run_llStar(web_inputs):
     results['llstar_time'] = "%.2f" % exec_time
     results['llstar_output_height'] = min(100, results['llstar_output'].count('\n') + 1)
     if has_timed_out:
-        html_results = file_to_str('output_timeout.html').format(**results)
+        html_results = file_to_str(os.path.join(webapppath, 'output_timeout.html')).format(**results)
     elif out.rfind('Mama says yes') >= 0:
-        html_results = file_to_str('output_success.html').format(**results)
+        html_results = file_to_str(os.path.join(webapppath, 'output_success.html')).format(**results)
     else:
-        html_results = file_to_str('output_failure.html').format(**results)
+        html_results = file_to_str(os.path.join(webapppath, 'output_failure.html')).format(**results)
     return html_results
 
     
@@ -272,13 +274,13 @@ def main():
     imports = fill_import_tabs(web_inputs['specs'] + web_inputs['logic_rules'] + web_inputs['abs_rules'])
     l = []
     for i in imports:
-        l.append(file_to_str('import_tab.html').format(**i))
+        l.append(file_to_str(os.path.join(webapppath, 'import_tab.html')).format(**i))
     web_inputs['import_tabs'] = ''.join(l)
     web_inputs['example_menu'] = mk_example_menu(preset_examples, web_inputs['preset_example'])
-    input_section = file_to_str('input.html').format(**web_inputs)
+    input_section = file_to_str(os.path.join(webapppath, 'input.html')).format(**web_inputs)
     template_vars = globals().copy()  # get global...
     template_vars.update(locals())    # ...and local variables
-    print file_to_str('webthingy.html').format(**template_vars)
+    print file_to_str(os.path.join(webapppath, 'webthingy.html')).format(**template_vars)
 
 
 # let's call the main function
