@@ -97,7 +97,7 @@ let rec refines ta tb =
   | _ -> false
 
 let compatible ta tb =
-  refines ta tb or refines tb ta
+  refines ta tb || refines tb ta
 
 let rec compatible_list tla tlb =
   match (tla, tlb) with

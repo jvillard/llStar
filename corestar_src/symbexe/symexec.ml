@@ -367,7 +367,7 @@ let check_postcondition (heaps : formset_entry list) (sheap : formset_entry) =
 		    string_inner_form f;)
 		frames;
 	    (not check_memleaks)
-	    or List.fold_left (fun b f -> b && (Sepprover.is_pure f)) true frames)
+	    || List.fold_left (fun b f -> b && (Sepprover.is_pure f)) true frames)
         heaps in
     if log log_symb then
       printf "\n\nPost okay \n%!";
