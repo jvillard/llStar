@@ -45,26 +45,26 @@ let type_of_field struct_t i = Array.get (struct_element_types struct_t) i
 
 (** the physical offset inside the struct, in bytes *)
 let offset64_of_field struct_t i =
-  Llvm_target.offset_of_element !lltarget struct_t i
+  Llvm_target.DataLayout.offset_of_element struct_t i !lltarget
 
 let args_offset_of_field struct_t i =
   bvargs_of_int64 64 (offset64_of_field struct_t i)
 
 let alloc_size64_of_field struct_t i =
-  Llvm_target.abi_size !lltarget (type_of_field struct_t i)
+  Llvm_target.DataLayout.abi_size (type_of_field struct_t i) !lltarget
 
 let args_alloc_sizeof_field struct_t i =
   bvargs_of_int64 64 (alloc_size64_of_field struct_t i)
 
 let bitsize64_of_field struct_t i =
-  Llvm_target.size_in_bits !lltarget (type_of_field struct_t i)
+  Llvm_target.DataLayout.size_in_bits (type_of_field struct_t i) !lltarget
 
 let args_bitsize_of_field struct_t i =
   bvargs_of_int64 64 (bitsize64_of_field struct_t i)
 
 (** what bit number starts element [i] of [struct_t] *)
 let bitoffset64_of_field struct_t i =
-  let bitsize_of_struct = Llvm_target.size_in_bits !lltarget struct_t in
+  let bitsize_of_struct = Llvm_target.DataLayout.size_in_bits struct_t !lltarget in
   let bitoffset_of_field = bits_of_bytes (offset64_of_field struct_t i) in
   Int64.sub (Int64.sub bitsize_of_struct bitoffset_of_field) Int64.one
 
@@ -85,10 +85,10 @@ let padsize64_of_field struct_t i =
   let offset = offset64_of_field struct_t i in
   let next_offset =
     if i = Array.length (struct_element_types struct_t) - 1 then
-      Llvm_target.abi_size !lltarget struct_t
+      Llvm_target.DataLayout.abi_size struct_t !lltarget
     else offset64_of_field struct_t (i+1) in
   let total_size = Int64.sub next_offset offset in
-  let alloc_size = Llvm_target.abi_size !lltarget (type_of_field struct_t i) in
+  let alloc_size = Llvm_target.DataLayout.abi_size (type_of_field struct_t i) !lltarget in
   Int64.sub total_size alloc_size
 
 let args_padsize_of_field struct_t i =
@@ -326,7 +326,7 @@ let bytearray_to_struct_conversions t =
   let v_avar = Vars.AnyVar (0, "v") in
   let argsv z = Arg_var z in
 
-  let array_t = Llvm.array_type (Llvm.i8_type !llcontext) (Int64.to_int (Llvm_target.abi_size !lltarget t)) in
+  let array_t = Llvm.array_type (Llvm.i8_type !llcontext) (Int64.to_int (Llvm_target.DataLayout.abi_size t !lltarget)) in
   let array_type = args_of_type array_t in
   let struct_type = args_of_type t in
   let mk_struct_pointer root value = mkPointer root struct_type value in
@@ -528,7 +528,7 @@ let gen_node_logics node_logic logic_generator t = match struct_name t with
 
 let nullptr_logic =
   let ptr_bitsize =
-    Llvm_target.size_in_bits !lltarget (pointer_type (i8_type !llcontext)) in
+    Llvm_target.DataLayout.size_in_bits (pointer_type (i8_type !llcontext)) !lltarget in
   let nullptr_rw =
     { function_name = "NULL";
       arguments=[];
@@ -541,11 +541,11 @@ let nullptr_logic =
 
 let sizeof_ptr_logic =
   let ptr_bitsize =
-    Llvm_target.size_in_bits !lltarget (pointer_type (i8_type !llcontext)) in
+    Llvm_target.DataLayout.size_in_bits (pointer_type (i8_type !llcontext)) !lltarget in
   let sizeof_ptr_rw =
     { function_name = "sizeof";
       arguments=[mkPointerType (Arg_var (Vars.AnyVar (0, "t")))];
-      result=bvargs64_of_int ptr_bitsize (Llvm_target.pointer_size !lltarget);
+      result=bvargs64_of_int ptr_bitsize (Llvm_target.DataLayout.pointer_size !lltarget);
       guard={without_form=[];rewrite_where=[];if_form=[]};
       rewrite_name="sizeof_pointer_type";
       saturate=false} in

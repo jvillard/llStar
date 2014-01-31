@@ -2,7 +2,6 @@
 
 (* LLVM modules *)
 open Llvm
-open Llvm_target
 open TypeKind
 open ValueKind
 (* coreStar modules *)
@@ -66,7 +65,7 @@ let mkVoidPointerType elt_t = mkPointerType mkI8Type
 let mkValConversion t1 t2 v = Arg_op ("cast_value", [t1; t2; v])
 
 let args_sizeof t =
-  let size64 = Llvm_target.abi_size !lltarget t in
+  let size64 = Llvm_target.DataLayout.abi_size t !lltarget in
   bvargs_of_int64 64 size64
 
 let string_of_fptype t = match (classify_type t) with
@@ -97,6 +96,7 @@ let rec args_of_type t = match (classify_type t) with
   | Half
   | Double
   | X86fp80
+  | X86_mmx
   | Fp128
   | Ppc_fp128 -> mkFloatType (string_of_fptype t)
   | Label -> mkLabelType
@@ -168,7 +168,7 @@ let rec args_of_op opcode opval =
     Arg_op(bopname, [x; y]) in
   let typed_name_of_bvop op =
     let t = type_of opval in
-    let sz = Llvm_target.size_in_bits !lltarget t in
+    let sz = Llvm_target.DataLayout.size_in_bits t !lltarget in
     Printf.sprintf "%s.%Ld" op sz in
   let typed_name_of_fpop op =
     let (eb, sb) = eb_sb_of_fpt (type_of opval) in
@@ -198,8 +198,8 @@ let rec args_of_op opcode opval =
   | Opcode.IntToPtr ->
     let value = operand opval 0 in
     let v = args_of_value value in
-    let from_sz = Llvm_target.size_in_bits !lltarget (type_of value) in
-    let to_sz = Llvm_target.size_in_bits !lltarget (type_of opval) in
+    let from_sz = Llvm_target.DataLayout.size_in_bits (type_of value) !lltarget in
+    let to_sz = Llvm_target.DataLayout.size_in_bits (type_of opval) !lltarget in
     if opcode= Opcode.ZExt ||
       ((opcode= Opcode.PtrToInt || opcode= Opcode.IntToPtr)
        && Int64.compare from_sz to_sz < 0) then
@@ -302,7 +302,7 @@ let rec args_of_op opcode opval =
   | Opcode.InsertValue ->
     (* TODO: implement *)
     Arg_var (Vars.freshe ())
-  | Opcode.Unwind | Opcode.LandingPad | Opcode.Resume | Opcode.AtomicRMW
+  | Opcode.LandingPad | Opcode.Resume | Opcode.AtomicRMW
   | Opcode.AtomicCmpXchg | Opcode.Fence | Opcode.VAArg | Opcode.UserOp2
   | Opcode.UserOp1 | Opcode.Call | Opcode.PHI | Opcode.Store | Opcode.Load
   | Opcode.Alloca | Opcode.Unreachable | Opcode.Invalid2 | Opcode.Invoke
@@ -325,12 +325,14 @@ and args_of_value v = match classify_value v with
   | BlockAddress -> Arg_op("block_addr", [args_of_value (operand v 0)])
   | ConstantAggregateZero -> args_zero_of_type (type_of v)
   | ConstantArray -> args_of_composite_value "array_const" v
+  | ConstantDataArray -> args_of_composite_value "array_const" v
   | ConstantExpr -> args_of_const_expr v
   | ConstantFP -> Arg_var (Vars.freshe ())
   | ConstantInt -> args_of_int_const v
-  | ConstantPointerNull -> bvargs64_of_int (size_in_bits !lltarget (type_of v)) 0
+  | ConstantPointerNull -> bvargs64_of_int (Llvm_target.DataLayout.size_in_bits (type_of v) !lltarget) 0
   | ConstantStruct -> args_of_composite_value (Smtexpression.smtconstr_of_struct (type_of v)) v
   | ConstantVector -> args_of_composite_value "vector_const" v
+  | ConstantDataVector -> args_of_composite_value "vector_const" v
   | Function -> Arg_op("function", [args_of_value (operand v 0)])
   | GlobalAlias -> implement_this "value is a global alias" (* undocumented? *)
   | GlobalVariable -> Arg_var (Vars.concretep_str (value_id v))

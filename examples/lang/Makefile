@@ -1,4 +1,4 @@
-LLVM_AS=llvm-as-3.3
+LLVM_AS=llvm-as-3.4
 
 LSTAR_OPTIONS=-a ../../rules/lseg.abs
 SRC=list.cpp list_dispose.f95 list_iter.cpp
@@ -13,11 +13,11 @@ TESTS=$(SRC:=.test)
 	clang++ -emit-llvm -O0 -c -o $@ $?
 
 %.f95.bc: %.f95
-	gfortran-4.6 $? -S -g -o $@.ll -O1 -fplugin=/home/jvillard/softs/dragonegg-3.3.src/dragonegg.so -fplugin-arg-dragonegg-emit-ir
+	gfortran-4.6 $? -S -g -o $@.ll -O1 -fplugin=/home/jvillard/softs/dragonegg-3.4.src/dragonegg.so -fplugin-arg-dragonegg-emit-ir
 	$(LLVM_AS) -f -o $@ $@.ll
 
 %.f95.O1.ll: %.f95
-	gfortran-4.6 $? -S -o $@ -O1 -fplugin=/home/jvillard/softs/dragonegg-3.3.src/dragonegg.so -fplugin-arg-dragonegg-emit-ir
+	gfortran-4.6 $? -S -o $@ -O1 -fplugin=/home/jvillard/softs/dragonegg-3.4.src/dragonegg.so -fplugin-arg-dragonegg-emit-ir
 
 %.cpp.O0.ll: %.cpp
 	clang++ -emit-llvm -O2 -S -o $@ $?

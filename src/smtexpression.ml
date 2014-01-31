@@ -3,7 +3,7 @@
 open Format
 (* LLVM modules *)
 open Llvm
-open Llvm_target
+open Llvm_target.DataLayout
 open TypeKind
 (* coreStar modules *)
 open Smt
@@ -18,6 +18,7 @@ let rec sexp_of_lltype t = match (classify_type t) with
   | Half
   | Double
   | X86fp80
+  | X86_mmx
   | Fp128
   | Ppc_fp128
   | Label -> "Int"
@@ -29,7 +30,7 @@ let rec sexp_of_lltype t = match (classify_type t) with
       (sexp_of_lltype_array par_types) (sexp_of_lltype ret_type)
   | Struct -> id_munge (string_of_struct t)
   | Array -> "Int" (* TODO: arrays *)
-  | Pointer -> Printf.sprintf "(_ BitVec %Ld)" (size_in_bits !lltarget t)
+  | Pointer -> Printf.sprintf "(_ BitVec %Ld)" (size_in_bits t !lltarget)
   | Vector -> "Int" (* TODO: vectors *)
   | Metadata -> "Int" (* probably never get there? assert false? *)
 and sexp_of_lltype_array ta =
@@ -41,6 +42,7 @@ let rec smttype_of_lltype t = match (classify_type t) with
   | Half
   | Double
   | X86fp80
+  | X86_mmx
   | Fp128
   | Ppc_fp128
   | Label -> SType_int
@@ -52,7 +54,7 @@ let rec smttype_of_lltype t = match (classify_type t) with
     SType_fun (par_smttypes, smttype_of_lltype ret_type)
   | Struct -> SType_type (id_munge (string_of_struct t))
   | Array -> SType_int (* TODO: arrays *)
-  | Pointer -> SType_bv (Int64.to_string (size_in_bits !lltarget t))
+  | Pointer -> SType_bv (Int64.to_string (size_in_bits t !lltarget))
   | Vector -> SType_int (* TODO: vectors *)
   | Metadata -> SType_int (* probably never get there? assert false? *)
   

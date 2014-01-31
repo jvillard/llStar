@@ -9,8 +9,8 @@ SRC_DIR=src
 CORESTAR_DIR=corestar_src
 MAINS=llstar
 LIBS=llvm llvm_bitreader llvm_bitwriter llvm_ipo llvm_scalar_opts llvm_target dynlink str unix
-LFLAGS=-cc,g++,-I,/usr/lib/ocaml/llvm-3.3,-cclib,-lffi,-g
-CFLAGS=-I,/usr/lib/ocaml/llvm-3.3,-g
+LFLAGS=-cc,g++,-I,/usr/local/lib/ocaml,-cclib,-lffi,-g
+CFLAGS=-I,/usr/local/lib/ocaml,-g
 OB_FLAGS=-cflags -dtypes -lflags $(LFLAGS) -cflags $(CFLAGS)
 
 # section with stuff that shouldn't change often
@@ -26,7 +26,7 @@ bin:
 
 native byte d.byte p.native: $(CORESTAR_SUBDIRS) bin
 	$(OCAMLBUILD) $(addsuffix .$@,$(MAINS))
-	for f in $(MAINS); do ln -sf ../`readlink $$f.$@` bin/$$f; rm $$f.$@; done
+	for f in $(MAINS); do ln -sf `readlink ../$$f.$@` bin/$$f; rm $$f.$@; done
 
 all: build
 

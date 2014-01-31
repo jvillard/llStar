@@ -1,4 +1,4 @@
-LLVM_AS=llvm-as-3.3
+LLVM_AS=llvm-as-3.4
 
 LSTAR_OPTIONS=
 SRC=field_access.ll nested.ll corner_structs.ll norbert.ll pointer_arith.c

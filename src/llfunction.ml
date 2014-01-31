@@ -150,7 +150,7 @@ let cfg_node_of_instr specs fun_env instr =
     let spec = Spec.mk_spec pre post Spec.ClassMap.empty in
     [mk_node (Core.Assignment_core ([id], spec, []))]
   | Opcode.Store ->
-    (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00343 *)
+    (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l003.4 *)
     let value = operand instr 0 in
     (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00346 *)
     let ptr_v = operand instr 1 in
@@ -222,7 +222,6 @@ let cfg_node_of_instr specs fun_env instr =
   | Opcode.AtomicRMW -> implement_this "atomic RMW instr"
   | Opcode.Resume -> implement_this "resume instr"
   | Opcode.LandingPad -> [mk_node Core.Nop_stmt_core]
-  | Opcode.Unwind -> implement_this "unwind"
   | Opcode.BitCast ->
     let id = value_id instr in
     let args_e = args_of_op (instr_opcode instr) instr in

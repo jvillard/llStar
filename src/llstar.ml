@@ -88,12 +88,12 @@ let initialise_llvm () =
       let llname = Filename.concat !Config.outdir !Llstar_config.output_ll in
       if log log_phase then
 	fprintf logf "@[ASCII version in %s@]@\n" llname;
-      Some(Unix.create_process "llvm-dis-3.3" [|"llvm-dis-3.3";
+      Some(Unix.create_process "llvm-dis-3.4" [|"llvm-dis-3.4";
 						"-o"; llname;
 						fname|] Unix.stdin Unix.stdout Unix.stderr)
     ) else None in
   llcontext := Llvm.module_context llmod;
-  lltarget := Llvm_target.DataLayout.create (Llvm.data_layout llmod);
+  lltarget := Llvm_target.DataLayout.of_string (Llvm.data_layout llmod);
   if log log_phase then fprintf logf "@]";
   (llvm_dis_pid,llmod)
 

@@ -1,4 +1,4 @@
-LLVM_AS=llvm-as-3.3
+LLVM_AS=llvm-as-3.4
 
 LSTAR_OPTIONS=-runopts false
 SRC=skip.c 1664.c

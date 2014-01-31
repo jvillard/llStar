@@ -1,4 +1,4 @@
-LLVM_AS=llvm-as-3.3
+LLVM_AS=llvm-as-3.4
 
 LSTAR_OPTIONS=-a ../../rules/lseg.abs
 SRC=smaug.ll list_append.c list_dispose.c list_reverse.c list_traverse.c
