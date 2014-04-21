@@ -1,62 +1,20 @@
 open Format
 (* coreStar modules *)
+open Corestar_std
 open Config
 open Debug
-open Psyntax
+open Core
 (* llStar modules *)
 open Llutils
 
-let result = ref true
-
-let verify_function logic abduct_logic abstraction_rules specs f =
-  let fid = value_id f in
-  if not (Llvm.is_declaration f) then (
-    if !Llstar_config.abduction_flag then
-      fprintf logf "@[Abducing spec of function %s...@." fid
-    else
-      fprintf logf "@[Verifying function %s...@." fid;
-    let cfg_nodes = Llfunction.cfg_nodes_of_function specs f in
-    let spec = Logic_spec.spec_of_fun_id specs fid in
-    (* we apply 2 substitutions to the spec *)
-    (* subst 1: 
-     * replace "@parameter%i%:" logical values with the function arguments *)
-    let rec add_param_subst (i,subst) fun_param =
-      let arg = Llexpression.args_of_value fun_param in
-      let param = Vars.concretep_str ("@parameter"^(string_of_int i)^":") in
-      (i+1, add_subst param arg subst) in
-    let (_,subst) = Llvm.fold_left_params add_param_subst (0,empty) f in
-    (* subst 2: 
-     * apply the existential Hoare rule: make sure the
-       existentials in the post match those of the pre of the same
-       name. To achieve this, let's replace them by regular variables. *)
-    let pre_ev = ev_form spec.Spec.pre in
-    let subst = vs_fold
-      (fun v subst ->
-	let pvar = Arg_var (Vars.freshp_str (Vars.string_var v)) in
-	add_subst v pvar subst) pre_ev subst in
-    let spec_to_verify =
-      { spec with
-	Spec.pre = subst_form subst spec.Spec.pre;
-	Spec.post = subst_form subst spec.Spec.post; } in
-    Cfg_core.stmts_to_cfg cfg_nodes;
-    Cfg_core.print_icfg_dotty [(cfg_nodes, fid)] fid;
-    if !Llstar_config.abduction_flag then
-      let specs = Symexec.bi_abduct fid cfg_nodes spec_to_verify
-	logic abduct_logic abstraction_rules in
-      dump_into_file (fid ^ ".specs") (Debug.pp_list pp_spec) specs;
-      result := !result && (specs <> [])
-    else
-      let b = Symexec.verify fid cfg_nodes spec_to_verify logic abstraction_rules in
-      result := !result && b
-  )
-
-let verify_module logic abduct_logic abstruction_rules specs m =
-  (* iter_globals env_add_gvar m; *) (* TODO: handle global variables *)
+let verify_module q m =
+  if log log_phase then
+    fprintf logf "Translating module to coreStar.@.";
+  let q = Llfunction.question_of_llmodule q m in
   if log log_phase then
     fprintf logf "Verifying module. The mission starts now.@.";
-  let verif_fun = verify_function logic abduct_logic abstruction_rules specs in
-  Llvm.iter_functions verif_fun m;
-  fprintf logf "@.@[Mama says %s@." (if !result then "yes" else "no")
+  let result = Symexec.verify q in
+  fprintf logf "@.@[Mama says %s@." (if result then "yes" else "no")
 
 let initialise_llvm () =
   if log log_phase then
@@ -79,19 +37,20 @@ let initialise_llvm () =
     Llvm_ipo.add_ipc_propagation pm;
     ignore (Llvm.PassManager.run_module llmod pm)
   );
-  let fname = Filename.concat !Config.outdir !Llstar_config.bitcode_base_name in
+  let fname = !Llstar_config.bitcode_base_name in
   if log log_phase then
     fprintf logf "@[Analysed bitcode in %s@]@\n" fname;
   ignore (Llvm_bitwriter.write_bitcode_file llmod fname);
   let llvm_dis_pid =
     if !Llstar_config.output_ll <> "" then (
-      let llname = Filename.concat !Config.outdir !Llstar_config.output_ll in
+      let llname = !Llstar_config.output_ll in
       if log log_phase then
 	fprintf logf "@[ASCII version in %s@]@\n" llname;
       Some(Unix.create_process "llvm-dis-3.4" [|"llvm-dis-3.4";
 						"-o"; llname;
 						fname|] Unix.stdin Unix.stdout Unix.stderr)
     ) else None in
+  llmodule := Some llmod;
   llcontext := Llvm.module_context llmod;
   lltarget := Llvm_target.DataLayout.of_string (Llvm.data_layout llmod);
   if log log_phase then fprintf logf "@]";
@@ -101,70 +60,92 @@ let initialise_corestar llmod =
   if log log_phase then
     fprintf logf "@.@[<2>Setting up coreStar@\n";
   set_source_name llmod;
+  (* TODO: restore
   let signals = (if Sys.os_type="Win32" then [] else [Sys.sigint; Sys.sigquit; Sys.sigterm]) in
   List.iter
     (fun s ->  Sys.set_signal s (Sys.Signal_handle (fun x -> Symexec.pp_dotty_transition_system (); exit x)))
-    signals;
-  if !Config.smt_run then Smt.smt_init();
+    signals;*)
   (* Load abstract interpretation plugins *)
-  List.iter (fun file_name -> Plugin_manager.load_plugin file_name) !Config.abs_int_plugins;
+  (* TODO: restore
+     List.iter (fun file_name -> Plugin_manager.load_plugin file_name) !Config.abs_int_plugins; *)
   if log log_phase then fprintf logf "@]"
 
 let initialise_logic llmod =
   if log log_phase then
     fprintf logf "@.@[<2>Loading logic and specs@\n";
-  let load_logic_rules_from_file fn =
-    let nl,l1,l2,cn = Load_logic.load_logic fn in
-    (nl, { empty_logic with seq_rules=l1; rw_rules=l2; consdecl=cn}) in
-  let (nl,logic) = load_logic_rules_from_file !Llstar_config.logic_file_name in
-  let (nla, abduct_logic) = load_logic_rules_from_file !Llstar_config.abductrules_file_name in
-  let (nabs, abs_rules) = load_logic_rules_from_file !Llstar_config.absrules_file_name in
-  let spec_list = Load.import_flatten
-    Cli_utils.specs_dirs            
-    !Llstar_config.spec_file_name
-    Logic_parser.spec_file Logic_lexer.token in
-  let node_logic = nl@nla@nabs in
-  let (logic, abduct_logic) =
+  let question_of_entries question xs =
+    let add_abstraction r q =
+      let q_rules = q.Core.q_rules in
+      let abstraction = q_rules.Core.abstraction in
+      let abstraction = r :: abstraction in
+      let q_rules = { q_rules with Core.abstraction } in { q with Core.q_rules } in
+    let add_calculus r q =
+      let q_rules = q.Core.q_rules in
+      let calculus = q_rules.Core.calculus in
+      let calculus = r :: calculus in
+      let q_rules = { q_rules with Core.calculus } in { q with Core.q_rules } in
+    let f q = function
+      | ParserAst.AbstractionRule r -> add_abstraction r q
+      | ParserAst.CalculusRule r -> add_calculus r q
+      | ParserAst.Global xs -> { q with Core.q_globals = xs @ q.Core.q_globals }
+      | ParserAst.Procedure p -> { q with Core.q_procs = p :: q.Core.q_procs } in
+    List.fold_left f question xs in
+  let path = System.getenv_dirlist (System.getenv "COREPATH") in
+  let parse fn = System.parse_file Logic_parser.file Logic_lexer.token fn "core" in
+  let load_file q fn =
+    let xs = Load.load ~path parse fn in
+    question_of_entries q (List.rev xs) in
+  let q = CoreOps.empty_ast_question in
+  let q = load_file q !Llstar_config.logic_file_name in
+  let q = load_file q !Llstar_config.abductrules_file_name in
+  let q = load_file q !Llstar_config.absrules_file_name in
+  let q = load_file q !Llstar_config.spec_file_name in
+  let rules =
     if !Llstar_config.auto_gen_struct_logic then
       (if log log_phase then
 	  fprintf logf "@.@[<2>Generating logic for the module";
-       Rulegen.add_logic_of_module node_logic (logic, abduct_logic) llmod
-      ) else (logic, abduct_logic) in
-  dump_into_file "logic_rules.txt"
-    (Debug.pp_list pp_sequent_rule) logic.seq_rules;
-  dump_into_file "rewrite_rules.txt"
-    (Debug.pp_list pp_rewrite_rule) logic.rw_rules;
-  if !Llstar_config.abduction_flag then
-    dump_into_file "abduct_rules.txt"
-      (Debug.pp_list pp_sequent_rule) abduct_logic.seq_rules;
+       (* Rulegen.add_rules_of_module q.q_rules llmod *)
+       q.q_rules
+      ) else q.q_rules in
+  let q = { q with
+    q_rules = rules;
+    q_infer = !Llstar_config.abduction_flag;
+    q_name = "to be or not to be safe?" } in
+  (* TODO: restore *)
+  (* dump_into_file "logic_rules.txt" *)
+  (*   (Debug.pp_list pp_sequent_rule) logic.seq_rules; *)
+  (* dump_into_file "rewrite_rules.txt" *)
+  (*   (Debug.pp_list pp_rewrite_rule) logic.rw_rules; *)
+  (* if !Llstar_config.abduction_flag then *)
+  (*   dump_into_file "abduct_rules.txt" *)
+  (*     (Debug.pp_list pp_sequent_rule) abduct_logic.seq_rules; *)
   if log log_phase then fprintf logf "@]@\n";
-  (logic,abduct_logic,abs_rules,spec_list)
+  q
+
+let finish_execution _ =
+  prof_phase "shutdown";
+  Prover.print_stats ();
+  Smt.print_stats ();
+  prof_print_stats ();
+  printf "@}@}@?"; eprintf "@?";
+  exit 0
 
 (** run llStar *)
 let go () =
   Llstar_config.parse_args ();
   let (wait_pid,llmod) = initialise_llvm () in
   initialise_corestar llmod;
-  let (logic,abduct_logic,abs_rules,spec_list) = initialise_logic llmod in
-  verify_module logic abduct_logic abs_rules spec_list llmod;
-  Symexec.pp_dotty_transition_system ();
+  let q = initialise_logic llmod in
+  verify_module q llmod;
   Llvm.dispose_module llmod;
   match wait_pid with
   | Some(pid) -> ignore (Unix.waitpid [] pid);
   | None -> ()
 
 (** toplevel *)
-let _ =
-  System.set_signal_handlers ();
-  let mf = {
-    mark_open_tag = (function
-      | "b" -> "" (* System.terminal_red *) (* bad *)
-      | "g" -> "" (* System.terminal_green *) (* good *)
-      | _ -> assert false);
-    mark_close_tag = (fun _ -> System.terminal_white);
-    print_open_tag = (fun _ -> ());
-    print_close_tag = (fun _ -> ())} in
-  set_formatter_tag_functions mf;
-  pp_set_formatter_tag_functions err_formatter mf;
-  set_tags true; pp_set_tags err_formatter true;
-  go ()
+let () =
+  ignore (Sys.signal Sys.sigint (Sys.Signal_handle finish_execution));
+  printf "@[@{<html>@{<head>@{<css>@}@{<encoding>@}@}@{<body>"; eprintf "@[";
+  Config.verbosity := 3;
+  go ();
+  finish_execution 0

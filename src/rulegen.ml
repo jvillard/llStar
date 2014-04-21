@@ -48,19 +48,19 @@ let offset64_of_field struct_t i =
   Llvm_target.DataLayout.offset_of_element struct_t i !lltarget
 
 let args_offset_of_field struct_t i =
-  bvargs_of_int64 64 (offset64_of_field struct_t i)
+  mkBVi 64 (offset64_of_field struct_t i)
 
 let alloc_size64_of_field struct_t i =
   Llvm_target.DataLayout.abi_size (type_of_field struct_t i) !lltarget
 
 let args_alloc_sizeof_field struct_t i =
-  bvargs_of_int64 64 (alloc_size64_of_field struct_t i)
+  mkBVi 64 (alloc_size64_of_field struct_t i)
 
 let bitsize64_of_field struct_t i =
   Llvm_target.DataLayout.size_in_bits (type_of_field struct_t i) !lltarget
 
 let args_bitsize_of_field struct_t i =
-  bvargs_of_int64 64 (bitsize64_of_field struct_t i)
+  mkBVi 64 (bitsize64_of_field struct_t i)
 
 (** what bit number starts element [i] of [struct_t] *)
 let bitoffset64_of_field struct_t i =
@@ -92,7 +92,7 @@ let padsize64_of_field struct_t i =
   Int64.sub total_size alloc_size
 
 let args_padsize_of_field struct_t i =
-  bvargs_of_int64 64 (padsize64_of_field struct_t i)
+  mkBVi 64 (padsize64_of_field struct_t i)
 
 let is_single_struct t = match classify_type t with
   | Struct -> (Array.length (struct_element_types t) = 1) && (padsize64_of_field t 0 = Int64.zero)
@@ -131,7 +131,7 @@ let mk_padding_of_field struct_t i root =
     let elt_offset = offset64_of_field struct_t i in
     let pad_offset = Int64.add (alloc_size64_of_field struct_t i) elt_offset in
     let pad_addr = if pad_offset = Int64.zero then root
-      else let args_off = bvargs_of_int64 64 pad_offset in
+      else let args_off = mkBVi 64 pad_offset in
 	   Arg_op("bvadd.64", [root; args_off]) in
     let args_pad_size = args_padsize_of_field struct_t i in
     Some (mkPadding pad_addr args_pad_size)
@@ -197,7 +197,7 @@ let eltptr_logic_of_type t =
   let t_var = Arg_var (Vars.AnyVar (0, "t")) in
   let v_var = Arg_var (Vars.AnyVar (0, "v")) in
   let subelt_eltptr_rules i subelt_type =
-    let jump = mkJump (bvargs_of_int 64 i) jump_var in
+    let jump = mkJump (mkBV 64 (string_of_int i)) jump_var in
     let orig_eltptr = mkEltptr root_var args_struct_t jump in
     let new_root =
       if i = 0 then root_var
@@ -210,11 +210,6 @@ let eltptr_logic_of_type t =
     (Array.mapi subelt_eltptr_rules (struct_element_types t))) in
   let logic = { empty_logic with seq_rules = eltptr_rules; } in
   (logic, logic)
-
-(* assumes that [t] is a struct type *)
-let struct_value_logic_of_type t =
-  Smtexpression.declare_struct_type t;
-  (empty_logic, empty_logic)
 
 (** assumes that [t] is a struct type *)
 let struct_field_value_logic_of_type t =
@@ -281,7 +276,7 @@ let arith_unfold_logic_of_type t =
   let struct_pointer = mkPointer x_var (args_of_type t) v_var in
   let mk_field_rule i subelt_type =
     let target_pointer = mkPointer y_var t_var w_var in
-    let offset_end_of_field = bvargs_of_int64 64 (Int64.add (alloc_size64_of_field t i) (offset64_of_field t i)) in
+    let offset_end_of_field = mkBVi 64 (Int64.add (alloc_size64_of_field t i) (offset64_of_field t i)) in
     mk_sequent_rule ((string_of_struct t)^"_inside_field_"^(string_of_int i))
       [[(mkEmpty, mk_unfolded_struct_descend_in_singletons t x_var (field_ranged_values v_var), target_pointer, mkEmpty)]]
       (mkEmpty, struct_pointer, target_pointer, mkEmpty)
@@ -403,7 +398,7 @@ let arith_unfold_logic_of_node t struct_name node_name node_fields =
   let struct_pointer = mkPointer x_var (args_of_type t) v_var in
   let mk_field_rule i subelt_type =
     let target_pointer = mkPointer y_var t_var w_var in
-    let offset_end_of_field = bvargs_of_int64 64 (Int64.add (alloc_size64_of_field t i) (offset64_of_field t i)) in
+    let offset_end_of_field = mkBVi 64 (Int64.add (alloc_size64_of_field t i) (offset64_of_field t i)) in
     mk_sequent_rule (node_name^"_inside_field_"^(string_of_int i))
       [[(mkEmpty, mk_unfolded_struct_descend_in_singletons t x_var (field_ranged_values v_var), target_pointer, mkEmpty)]]
       (mkEmpty, struct_pointer, target_pointer, mkEmpty)
@@ -527,25 +522,23 @@ let gen_node_logics node_logic logic_generator t = match struct_name t with
       | Failure "int_of_string" -> failwith "Parse error: fields in node declarations must be integers, got something else"
 
 let nullptr_logic =
-  let ptr_bitsize =
-    Llvm_target.DataLayout.size_in_bits (pointer_type (i8_type !llcontext)) !lltarget in
+  let ptr_bitsize = (Llvm_target.DataLayout.pointer_size !lltarget) * 8 in
   let nullptr_rw =
     { function_name = "NULL";
       arguments=[];
-      result=bvargs64_of_int ptr_bitsize 0;
-      guard={without_form=[];rewrite_where=[];if_form=[]};
+      result= mkBV ptr_bitsize "0";
+      guard= {without_form=[];rewrite_where=[];if_form=[]};
       rewrite_name="nullptr";
       saturate=false} in
   let logic = { empty_logic with rw_rules = [nullptr_rw] } in
   (logic, logic)
 
 let sizeof_ptr_logic =
-  let ptr_bitsize =
-    Llvm_target.DataLayout.size_in_bits (pointer_type (i8_type !llcontext)) !lltarget in
+  let ptr_bitsize = (Llvm_target.DataLayout.pointer_size !lltarget) * 8 in
   let sizeof_ptr_rw =
     { function_name = "sizeof";
       arguments=[mkPointerType (Arg_var (Vars.AnyVar (0, "t")))];
-      result=bvargs64_of_int ptr_bitsize (Llvm_target.DataLayout.pointer_size !lltarget);
+      result= mkBV ptr_bitsize (string_of_int (Llvm_target.DataLayout.pointer_size !lltarget));
       guard={without_form=[];rewrite_where=[];if_form=[]};
       rewrite_name="sizeof_pointer_type";
       saturate=false} in
@@ -557,7 +550,7 @@ type rule_apply =
 | ApplyAtType of (lltype -> Psyntax.logic * Psyntax.logic) * (lltype -> bool)
 
 (** generates the logic and the abduction logic of module [m] *)
-let add_logic_of_module node_logic base_logic m =
+let add_rules_of_module node_logic base_logic m =
   let int_struct_filter t = match classify_type t with
     | Integer
     | Struct -> true

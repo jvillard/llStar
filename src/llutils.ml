@@ -3,15 +3,9 @@
 (* LLVM modules *)
 open Llvm
 open TypeKind
-(* coreStar modules *)
-open Psyntax
 
 (*** Uncomment this when llStar segfaults: it's most likely that the
      bindings are used incorrectly *)
-
-let classify_value v =
-  try classify_value v
-  with _ -> print_endline "huho, got one of the data types absent from ocaml bindings!"; ValueKind.UndefValue
 
 (*
 let debug_value_call s f v =
@@ -40,11 +34,6 @@ let operand v i =
 let warn s = print_endline ("WARNING: "^s)
 let implement_this s = failwith ("Not implemented: "^s)
 
-let add_logic l1 l2 =
-  { seq_rules = l1.seq_rules @ l2.seq_rules;
-    rw_rules = l1.rw_rules @ l2.rw_rules;
-    consdecl = l1.consdecl @ l2.consdecl;
-    dummy = l1.dummy; (* this doesn't seem to be used by coreStar... *) }
 
 (*** Overcoming the shortcomings of LLVM OCaml bindings *)
 
@@ -52,8 +41,12 @@ let add_logic l1 l2 =
 exception MetaData of llvalue
 
 let idMap = Hashtbl.create 1000
+let llmodule = ref None
 let llcontext = ref (global_context ())
 let lltarget = ref (Llvm_target.DataLayout.of_string "")
+
+(* must be called only after initialisation *)
+let get_llmodule () = match !llmodule with Some m -> m | None -> assert false
 
 let string_of_struct s =
   match struct_name s with
@@ -97,8 +90,10 @@ let set_source_name m =
     match get_mdstring (operand md 4), get_mdstring (operand md 3) with
     | Some dir, Some file ->
       let src_name = Filename.concat dir file in
-      Config.source_file := src_name;
-      Config.source_base_name := Filename.basename src_name
+      (* TODO: restore *)
+      (* Config.source_file := src_name; *)
+      (* Config.source_base_name := Filename.basename src_name *)
+      ()
     | _ -> ()
 
 (** extract a block's label *)
@@ -163,11 +158,6 @@ let collect_types_in_module m =
   let (typs, _) = fold_left_functions collect_types_in_function o m in
   LltypeSet.elements typs
 
-
-(*** pretty printing *)
-let pp_spec fmt (pre,post) =
-  Format.fprintf fmt "@[{%a}\n{%a}\n@."
-    Sepprover.string_inner_form pre Sepprover.string_inner_form post
 
 (** dump things into files in the output directory *)
 let dump_into_file suffix pp_stuff stuff =

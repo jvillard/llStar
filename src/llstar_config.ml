@@ -30,7 +30,7 @@ let guess_spec_and_rules_files filenameref suffix =
     let fname = if name = "" then suffix else name^"."^suffix in
     try
       set_file_name filenameref fname;
-      if Config.log Config.log_phase then
+      if Debug.log Debug.log_phase then
 	Format.fprintf Debug.logf "@[Auto-picked %s@]@\n" fname;
     with Arg.Bad _ ->
       (* no file found. We'll try name.suffix if we were trying name.bla.suffix,
@@ -99,9 +99,10 @@ let parse_args () =
   if not ((Sys.file_exists !outdir) && (Sys.is_directory !outdir)) then
     Unix.mkdir !outdir 0o755; (* perm = rwxr-xr-x *)
   (* set up a few coreStar config variables *)
-  Config.outdir := !outdir;
-  Config.source_file := !bitcode_file_name;
-  Config.source_base_name := !bitcode_base_name;
+  (* TODO: restore *)
+  (* Config.outdir := !outdir; *)
+  (* Config.source_file := !bitcode_file_name; *)
+  (* Config.source_base_name := !bitcode_base_name; *)
 
   (* try to find the logic/abs/specs/... files if they haven't been given *)
   List.iter (fun (a,suffix) -> guess_spec_and_rules_files a suffix)

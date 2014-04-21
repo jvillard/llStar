@@ -1,13 +1,14 @@
 malloc:
   {}
-  {($ret_v1 != NULL()
-    * malloced($ret_v1,@parameter0:)
-    * pointer($ret_v1,array_type(@parameter0:,integer_type("8")),_v))
-  || $ret_v1 = NULL()}
+  {(i64 $ret_v1 != NULL()
+    * malloced(i64 $ret_v1, i64 @parameter0:)
+    * $ret_v1 |-> [ i64 @parameter0: x i8 ] _v)
+  || i64 $ret_v1 = NULL()}
 
 __safe_malloc:
   {}
-  {malloced($ret_v1,@parameter0:) * pointer($ret_v1,@parameter0:,_v)}
+  {malloced(i64 $ret_v1, i64 @parameter0:)
+   * $ret_v1 |-> [ i64 @parameter0: x i8 ] _v}
 
 /*
 free:
@@ -16,13 +17,13 @@ free:
 */
 
 free:
-  {malloced(@parameter0:,?s) * pointer(@parameter0:,array_type(?s,integer_type("8")),_v)}
+  {malloced(i64 @parameter0:, i64 ?s) * @parameter0: |-> [ i64 ?s x i8] _v}
   {}
 
 __VERIFIER_assert:
-   {@parameter0: != bv_const("32", "0")}
-   {@parameter0: != bv_const("32", "0")}
+   {i32 @parameter0: != i32 0 }
+   {i32 @parameter0: != i32 0 }
 
 __VERIFIER_assume:
    {}
-   {@parameter0: != bv_const("32", "0")}
+   {i32 @parameter0: != i32 0 }

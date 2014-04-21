@@ -1,1 +1,1 @@
-import "llvm.logic";
+import "../../rules/llvm.logic";

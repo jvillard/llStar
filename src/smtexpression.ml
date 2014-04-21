@@ -36,62 +36,35 @@ let rec sexp_of_lltype t = match (classify_type t) with
 and sexp_of_lltype_array ta =
   Array.fold_left (fun s st -> s^" "^st) "" (Array.map sexp_of_lltype ta)
 
-let rec smttype_of_lltype t = match (classify_type t) with
-  | Void
-  | Float
-  | Half
-  | Double
-  | X86fp80
-  | X86_mmx
-  | Fp128
-  | Ppc_fp128
-  | Label -> SType_int
-  | Integer -> SType_bv (string_of_int (integer_bitwidth t))
-  | Function ->
-    let ret_type = return_type t in
-    let par_smttypes_array = Array.map smttype_of_lltype (param_types t) in
-    let par_smttypes =  Array.to_list par_smttypes_array in
-    SType_fun (par_smttypes, smttype_of_lltype ret_type)
-  | Struct -> SType_type (id_munge (string_of_struct t))
-  | Array -> SType_int (* TODO: arrays *)
-  | Pointer -> SType_bv (Int64.to_string (size_in_bits t !lltarget))
-  | Vector -> SType_int (* TODO: vectors *)
-  | Metadata -> SType_int (* probably never get there? assert false? *)
-  
-
 let smtname_of_struct t =
   id_munge (string_of_struct t)
 
-let smtconstr_of_struct t =
-  id_munge ("mk_"^(string_of_struct t))
+let smtconstr_of_struct s =
+  id_munge ("mk_"^s)
 
-let smtfield_of_struct t i =
-  id_munge (Printf.sprintf "%s_fld%d" (string_of_struct t) i)
+let smtfield_of_struct s i =
+  id_munge (Printf.sprintf "%s_fld%d" s i)
 
 (** builds SMT-LIB declarations for the record datatype associated to a struct *)
 let declare_struct_type t =
   let struct_name = smtname_of_struct t in
-  let struct_t = SType_type struct_name in
-  let struct_constr = smtconstr_of_struct t in
+  let struct_constr = smtconstr_of_struct (string_of_struct t) in
   let elts = struct_element_types t in
-  let field_constr i = smtfield_of_struct t i in
+  let field_constr i = smtfield_of_struct (string_of_struct t) i in
   let elt_sexps = Array.mapi (fun i t ->
     Printf.sprintf "(%s %s)" (field_constr i) (sexp_of_lltype t)) elts in
   let fields = Array.fold_left (fun s st -> s^" "^st) "" elt_sexps in
   let decl = Printf.sprintf "(declare-datatypes () ((%s (%s %s))))"
       struct_name struct_constr fields in
   smt_declare_datatype struct_name decl;
-  let elts_smt_t = Array.to_list (Array.map (fun ft -> smttype_of_lltype ft) elts) in
-  let struct_constr_t = SType_fun (elts_smt_t ,struct_t) in
   let match_native_struct f name args =
-    if id_munge name = struct_constr then (struct_constr, struct_constr_t, args)
+    if id_munge name = struct_constr then (struct_constr, args)
     else f name args in
   add_native_op match_native_struct;
   Array.iteri (fun i t ->
-    let field_t = smttype_of_lltype t in
     let fldcons = field_constr i in
     let match_native_field_op f name args =
-      if id_munge name = fldcons then (fldcons, SType_fun ([struct_t],field_t), args)
+      if id_munge name = fldcons then (fldcons, args)
       else f name args in
     add_native_op match_native_field_op)
     elts

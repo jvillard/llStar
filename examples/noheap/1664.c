@@ -2,6 +2,7 @@ int f(int a) {
   return a;
 }
 
+/*
 int main() {
   int x,y;
 
@@ -9,3 +10,4 @@ int main() {
   y = 52;
   return (x/32)*32;
 }
+*/

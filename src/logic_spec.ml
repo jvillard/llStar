@@ -1,13 +1,16 @@
-type funspec =
-    Funspec of string * Spec.spec
+open Core
+
+type funspec = Funspec of string * spec
 
 let mkEmptySpec =
-  Spec.mk_spec Psyntax.mkEmpty Psyntax.mkEmpty Spec.ClassMap.empty
+  let t = { pre = Syntax.mk_emp;
+	    post = Syntax.mk_emp;
+	    in_vars = []; out_vars = []; modifies = [] } in
+  TripleSet.singleton t
 
 (** returns the spec of function id [fid] if it is known *)
 let rec spec_of_fun_id specs fid = match specs with
-  | Funspec(i, spec)::ss when i = fid -> spec
-  | _::ss -> spec_of_fun_id ss fid
+  | Funspec(i, spec)::ss -> if i = fid then spec else spec_of_fun_id ss fid
   | [] ->
     if not !Llstar_config.abduction_flag then
       Llutils.warn ("no spec found for "^fid);

@@ -1,6 +1,6 @@
 import "llvm.logic";
  
 equiv bitcast_node_hint:
-  pointer(?x, array_type(bv_const("64", "16"), integer_type("8")), ?v)
-  * !bitcast(?x, pointer_type(named_type("node")))
-  <=> pointer(?x, named_type("node"),_v)
+  ?x |-> [ i64 16 x i8 ] ?v
+  * !bitcast(i64 ?x, type pointer_type(%node))
+  <=> ?x |-> %node _v

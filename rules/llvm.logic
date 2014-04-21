@@ -1,2 +1,1 @@
-import "eq.logic";
 import "pointer.logic";

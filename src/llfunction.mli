@@ -1,1 +1,1 @@
-val cfg_nodes_of_function : Logic_spec.funspec list -> Llvm.llvalue -> Cfg_core.cfg_node list
+val question_of_llmodule : Core.ast_question -> Llvm.llmodule -> Core.ast_question

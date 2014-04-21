@@ -1,0 +1,14 @@
+true: package(str)
+true: package(unix)
+true: package(Z3)
+true: package(llvm)
+true: package(llvm.bitreader)
+true: package(llvm.bitwriter)
+true: package(llvm.ipo)
+true: package(llvm.scalar_opts)
+true: package(llvm.target)
+true: package(dynlink)
+true: debug
+true: profile
+<src>: include
+<corestar>: include

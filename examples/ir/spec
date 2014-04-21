@@ -1,26 +1,26 @@
 test_ret:
-  {}{$ret_v1 = bv_const("32", "42")}
+  {}{i32 $ret_v1 = i32 42}
 
 test_unreachable: {False}{False}
 
 test_load:
-  {pointer(x,integer_type("32"),_v)}
-  {pointer(x,integer_type("32"),_v) * $ret_v1 = _v}
+  {x |-> i32 _v}
+  {x |-> i32 _v * i32 $ret_v1 = i32 _v}
 
 test_store:
-  {pointer(x,integer_type("32"),_v)}
-  {pointer(x,integer_type("32"),y)}
+  {x |-> i32 _v}
+  {x |-> i32 y}
 
-test_alloca: {}{$ret_v1 = bv_const("32", "1")}
+test_alloca: {}{i32 $ret_v1 = i32 1}
 
 test_switch:
-  {}{bv_const("1", "1") = $ret_v1}
+  {}{i1 $ret_v1 = True}
 
 trunc_and_zext:
-  {}{$ret_v1 = @parameter0:}
+  {}{i32 $ret_v1 = i32 @parameter0:}
 
 trunc_and_sext:
-  {}{$ret_v1 = @parameter0:}
+  {}{i32 $ret_v1 = i32 @parameter0:}
 
 ptr_to_int_to_ptr:
-  {}{$ret_v1 = concat.24.8(bv_const("24", "0"),@parameter0:)}
+  {}{i32 $ret_v1 = concat(i24 0, i8 @parameter0:)}
