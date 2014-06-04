@@ -50,7 +50,7 @@ if
 ;
 
 rule nobacktrack ptr_same_root_same_type:
- bool ?f | bool ?l * pointer(i64 ?x,lltype ?t,llmem ?v) |- pointer(i64 ?y,lltype ?t,llmem ?w) * bool ?r
+ bool ?f | bool ?l * pointer(i64 ?x,lltype ?t,llmem ?v) |- pointer(i64 ?x,lltype ?t,llmem ?w) * bool ?r
 if
  bool ?f * pointer(i64 ?x,lltype ?t,llmem ?v) | bool ?l |- llmem ?w = llmem ?v * bool ?r
 ;

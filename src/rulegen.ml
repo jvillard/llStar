@@ -37,13 +37,15 @@ let mk_simple_sequent lhs rhs =
     | [post_lhs] |- [post_rhs]
 *)
 let mk_simple_sequent_rule name p f (pre_lhs,pre_rhs) (post_lhs, post_rhs) =
-  { schema_name = name
-  ; pure_check = []
-  ; fresh_in_expr = []
-  ; goal_pattern = mk_simple_sequent post_lhs post_rhs
-  ; subgoal_pattern = [mk_simple_sequent pre_lhs pre_rhs]
-  ; rule_priority = p
-  ; rule_flags = f }
+  let r =
+    { seq_name = name
+    ; seq_pure_check = []
+    ; seq_fresh_in_expr = []
+    ; seq_goal_pattern = mk_simple_sequent post_lhs post_rhs
+    ; seq_subgoal_pattern = [mk_simple_sequent pre_lhs pre_rhs]
+    ; seq_priority = p
+    ; seq_flags = f } in
+  Sequent_rule r
 
 (*** helper functions to define predicates for structs *)
 
@@ -163,19 +165,15 @@ let mk_unfolded_struct struct_t root mk_field =
 (*** Scalar rules *)
 
 (* TODO: restore (needs rewrite rules) *)
-(* (\* assumes that [t] is an int or struct type *\) *)
-(* let sizeof_logic_of_type t = *)
-(*   let expr_t = expr_of_lltype t in *)
-(*   let expr_size = expr_of_sizeof t in *)
-(*   let rewrite_rule = *)
-(*     { function_name = "sizeof"; *)
-(*       arguments=[expr_t]; *)
-(*       result=expr_size; *)
-(*       guard={without_form=[];rewrite_where=[];if_form=[]}; *)
-(*       rewrite_name="sizeof_"^(string_of_lltype t); *)
-(*       saturate=false} in *)
-(*   let logic = { empty_logic with rw_rules = [rewrite_rule]; } in *)
-(*   (logic, logic) *)
+(* assumes that [t] is an int or struct type *)
+let sizeof_logic_of_type t =
+  let expr_sizeof = mk_sizeof (expr_of_lltype t) in
+  let expr_size = expr_of_sizeof t in
+  let r =
+    { rw_name = "sizeof_"^(string_of_lltype t)
+    ; rw_from_pattern = expr_sizeof
+    ; rw_to_pattern = expr_size } in
+  [Rewrite_rule r]
 
 (* TODO: make this a rewrite rule *)
 let read_as_type t =
@@ -274,20 +272,20 @@ let arith_unfold_logic_of_type t =
     let x_plus_i = Z3.BitVector.mk_add z3_ctx x_var (expr_offset_of_field t i) in
     let y_plus_sz = Z3.BitVector.mk_add z3_ctx y_var (mk_sizeof t_var) in
     let x_plus_end = Z3.BitVector.mk_add z3_ctx x_var offset_end_of_field in
-    { schema_name = (string_of_struct t)^"_inside_field_"^(string_of_int i)
-    ; pure_check =
+    { seq_name = (string_of_struct t)^"_inside_field_"^(string_of_int i)
+    ; seq_pure_check =
         [Z3.BitVector.mk_ule z3_ctx x_plus_i y_var;
          Z3.BitVector.mk_ule z3_ctx y_plus_sz x_plus_end]
-    ; fresh_in_expr = []
-    ; goal_pattern = mk_simple_sequent struct_pointer target_pointer
-    ; subgoal_pattern =
+    ; seq_fresh_in_expr = []
+    ; seq_goal_pattern = mk_simple_sequent struct_pointer target_pointer
+    ; seq_subgoal_pattern =
         [mk_simple_sequent
             (mk_unfolded_struct_descend_in_singletons t x_var (field_ranged_values (as_sort (struct_sort t) v_var)))
             target_pointer]
-    ; rule_priority = default_rule_priority
-    ; rule_flags = rule_no_backtrack } in
+    ; seq_priority = default_rule_priority
+    ; seq_flags = rule_no_backtrack } in
   let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
-  Array.to_list rules_array
+  List.map (fun r -> Sequent_rule r) (Array.to_list rules_array)
 
 (* assumes that [t] is a struct type *)
 let fold_logic_of_type t =
@@ -301,8 +299,8 @@ let fold_logic_of_type t =
   let unfolded_struct = mk_unfolded_struct_descend_in_singletons t x_var mk_llmem_field in
   let struct_pointer = mk_pointer x_var (expr_of_lltype t) struct_llmem in
   mk_simple_equiv_rule ("collate_"^(string_of_struct t))
-    Calculus.default_rule_priority
-    Calculus.rule_no_backtrack
+    default_rule_priority
+    rule_no_backtrack
     struct_pointer unfolded_struct
 
 (* assumes that [t] is a struct type *)
@@ -319,8 +317,8 @@ let bytearray_to_struct_conversions t =
   let eltptr = Syntax.mk_eq y_var
     (mk_eltptr x_var (mk_pointer_type struct_type) j_var) in
   mk_simple_equiv_rule ("fold_bytearray_on_"^(string_of_struct t)^"_field_access")
-    Calculus.default_rule_priority
-    Calculus.rule_no_backtrack
+    default_rule_priority
+    rule_no_backtrack
     (Syntax.mk_star eltptr arrayform) structform
 
 let mk_node node_name struct_name root fields =
@@ -347,8 +345,8 @@ let unfold_logic_of_node t struct_name node_name node_fields =
       else as_llmem fs (Syntax.mk_fresh_lvar fs ("f"^(string_of_int i))) in
     let node = mk_node node_name struct_name x_var n_vars in
     mk_simple_sequent_rule (node_name^"_field_"^(string_of_int i))
-      Calculus.default_rule_priority
-      Calculus.rule_no_backtrack
+      default_rule_priority
+      rule_no_backtrack
       (mk_unfolded_struct_descend_in_singletons t x_var mk_field, target_pointer)
       (node, target_pointer) in
   let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
@@ -372,20 +370,20 @@ let arith_unfold_logic_of_node t struct_name node_name node_fields =
     let x_plus_i = Z3.BitVector.mk_add z3_ctx x_var (expr_offset_of_field t i) in
     let y_plus_sz = Z3.BitVector.mk_add z3_ctx y_var (mk_sizeof t_var) in
     let x_plus_end = Z3.BitVector.mk_add z3_ctx x_var offset_end_of_field in
-    { schema_name = node_name^"_inside_field_"^(string_of_int i)
-    ; pure_check =
+    { seq_name = node_name^"_inside_field_"^(string_of_int i)
+    ; seq_pure_check =
         [Z3.BitVector.mk_ule z3_ctx x_plus_i y_var;
          Z3.BitVector.mk_ule z3_ctx y_plus_sz x_plus_end]
-    ; fresh_in_expr = []
-    ; goal_pattern = mk_simple_sequent struct_pointer target_pointer
-    ; subgoal_pattern =
+    ; seq_fresh_in_expr = []
+    ; seq_goal_pattern = mk_simple_sequent struct_pointer target_pointer
+    ; seq_subgoal_pattern =
         [mk_simple_sequent
             (mk_unfolded_struct_descend_in_singletons t x_var (field_ranged_values v_var))
             target_pointer]
-    ; rule_priority = default_rule_priority
-    ; rule_flags = rule_no_backtrack } in
+    ; seq_priority = default_rule_priority
+    ; seq_flags = rule_no_backtrack } in
   let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
-  Array.to_list rules_array
+  List.map (fun r -> Sequent_rule r) (Array.to_list rules_array)
 
 (* assumes that [t] is a struct type *)
 let concretise_node_logic_of_type t struct_name node_name node_fields = 
@@ -410,15 +408,15 @@ let concretise_node_logic_of_type t struct_name node_name node_fields =
   let target_pointer = mk_pointer y_var t_var v_var in
   let y_plus_sz = Z3.BitVector.mk_add z3_ctx y_var (mk_sizeof t_var) in
   let x_plus_szof = Z3.BitVector.mk_add z3_ctx x_var (expr_of_sizeof t) in
-  [{ schema_name = "concretise_"^(string_of_struct t)
-   ; pure_check = 
+  [Sequent_rule { seq_name = "concretise_"^(string_of_struct t)
+   ; seq_pure_check = 
       [Z3.BitVector.mk_ule z3_ctx x_var y_var;
        Z3.BitVector.mk_ule z3_ctx y_plus_sz x_plus_szof]
-   ; fresh_in_expr = []
-   ; goal_pattern = mk_simple_sequent node target_pointer
-   ; subgoal_pattern = [mk_simple_sequent struct_pointer target_pointer]
-   ; rule_priority = default_rule_priority
-   ; rule_flags = rule_no_backtrack }]
+   ; seq_fresh_in_expr = []
+   ; seq_goal_pattern = mk_simple_sequent node target_pointer
+   ; seq_subgoal_pattern = [mk_simple_sequent struct_pointer target_pointer]
+   ; seq_priority = default_rule_priority
+   ; seq_flags = rule_no_backtrack }]
 
 (* assumes that [t] is a struct type *)
 let rollup_node_logic_of_type t struct_name node_name node_fields =
@@ -489,16 +487,17 @@ let remove_pointer_arith_same_root_same_size =
   let w_var = Syntax.mk_tpat llmem_sort "w" in
   let src_pointer = mk_pointer x_var t_var v_var in
   let target_pointer = mk_pointer y_var t_var w_var in
-  [{ schema_name = "remove_pointer_arith_same_root_same_size"
-   ; pure_check = [Syntax.mk_eq x_var y_var]
-   ; fresh_in_expr = []
-   ; goal_pattern = mk_simple_sequent src_pointer target_pointer
-   ; subgoal_pattern =
-      [{ frame = Syntax.mk_star src_pointer frame_pat
-       ; hypothesis = Syntax.mk_star (Syntax.mk_eq x_var y_var) lhs_frame_pat
-       ; conclusion = Syntax.mk_star (Syntax.mk_eq v_var w_var) rhs_frame_pat }]
-   ; rule_priority = default_rule_priority
-   ; rule_flags = rule_no_backtrack }]
+  [Sequent_rule
+      { seq_name = "remove_pointer_arith_same_root_same_size"
+      ; seq_pure_check = [Syntax.mk_eq x_var y_var]
+      ; seq_fresh_in_expr = []
+      ; seq_goal_pattern = mk_simple_sequent src_pointer target_pointer
+      ; seq_subgoal_pattern =
+	  [{ frame = Syntax.mk_star src_pointer frame_pat
+	   ; hypothesis = Syntax.mk_star (Syntax.mk_eq x_var y_var) lhs_frame_pat
+	   ; conclusion = Syntax.mk_star (Syntax.mk_eq v_var w_var) rhs_frame_pat }]
+      ; seq_priority = default_rule_priority
+      ; seq_flags = rule_no_backtrack }]
 
 let gen_node_logics node_decls logic_generator t = match struct_name t with
   | None ->
@@ -512,29 +511,22 @@ let gen_node_logics node_decls logic_generator t = match struct_name t with
       with Not_found -> []
 
 (* TODO: restore (needs rewrite rules) *)
-(* let nullptr_logic = *)
-(*   let ptr_bitsize = (Llvm_target.DataLayout.pointer_size !lltarget) * 8 in *)
-(*   let nullptr_rw = *)
-(*     { function_name = "NULL"; *)
-(*       arguments=[]; *)
-(*       result= mk_bv ptr_bitsize "0"; *)
-(*       guard= {without_form=[];rewrite_where=[];if_form=[]}; *)
-(*       rewrite_name="nullptr"; *)
-(*       saturate=false} in *)
-(*   let logic = { empty_logic with rw_rules = [nullptr_rw] } in *)
-(*   (logic, logic) *)
+let nullptr_logic =
+  let ptr_bitsize = (Llvm_target.DataLayout.pointer_size !lltarget) * 8 in
+  let r =
+    { rw_name = "nullptr"
+    ; rw_from_pattern = mk_null_ptr
+    ; rw_to_pattern = mk_bv ptr_bitsize "0" } in
+  [Rewrite_rule r]
 
-(* let sizeof_ptr_logic = *)
-(*   let ptr_bitsize = (Llvm_target.DataLayout.pointer_size !lltarget) * 8 in *)
-(*   let sizeof_ptr_rw = *)
-(*     { function_name = "sizeof"; *)
-(*       arguments=[mk_pointer_type (Arg_var (Vars.AnyVar (0, "t")))]; *)
-(*       result= mk_bv ptr_bitsize (string_of_int (Llvm_target.DataLayout.pointer_size !lltarget)); *)
-(*       guard={without_form=[];rewrite_where=[];if_form=[]}; *)
-(*       rewrite_name="sizeof_pointer_type"; *)
-(*       saturate=false} in *)
-(*   let logic = { empty_logic with rw_rules = [sizeof_ptr_rw] } in *)
-(*   (logic, logic) *)
+let sizeof_ptr_logic =
+  let ptr_bitsize = (Llvm_target.DataLayout.pointer_size !lltarget) * 8 in
+  let r =
+    { rw_name = "sizeof_ptr"
+    ; rw_from_pattern = mk_sizeof (mk_pointer_type (Syntax.mk_tpat lltype_sort "t"))
+    ; rw_to_pattern = mk_bv ptr_bitsize
+	(string_of_int (Llvm_target.DataLayout.pointer_size !lltarget)) } in
+  [Rewrite_rule r]
 
 type rule_apply =
 | CalculusOnce of Calculus.t
@@ -542,20 +534,20 @@ type rule_apply =
 
 (** generates the logic and the abduction logic of module [m] *)
 let add_rules_of_module node_decls base_logic m =
-  (* let int_struct_filter t = match classify_type t with *)
-  (*   | Integer *)
-  (*   | Struct -> true *)
-  (*   | _ -> false in *)
+  let int_struct_filter t = match classify_type t with
+    | Integer
+    | Struct -> true
+    | _ -> false in
   let struct_filter t = match classify_type t with
     | Struct -> true
     | _ -> false in
   (** pairs of rule generation functions and a filter that checks they
       are applied only to certain types *)
   let rule_generators =
-    (* ApplyOnce nullptr_logic *)
-    (* ::ApplyOnce sizeof_ptr_logic *)
-    (* ::ApplyAtType (sizeof_logic_of_type, int_struct_filter) *)
-    CalculusAtType (read_as_type, c1 true)
+    (* CalculusOnce nullptr_logic *)
+    CalculusOnce sizeof_ptr_logic
+    ::CalculusAtType (sizeof_logic_of_type, int_struct_filter)
+    ::CalculusAtType (read_as_type, c1 true)
     ::CalculusAtType (eltptr_logic_of_type, struct_filter)
     ::CalculusAtType (gen_node_logics node_decls malloc_logic_of_node, struct_filter)
     ::CalculusAtType (unfold_logic_of_type, struct_filter)

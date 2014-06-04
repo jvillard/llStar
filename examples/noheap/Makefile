@@ -23,7 +23,7 @@ $(TESTS): %.test: %.bc
 	@rm -rf $*.out && mkdir $*.out
 	@echo "$(LLSTAR) $?"
 	@cd $*.out;\
-	  OCAMLRUNPARAM=pb \
+	  OCAMLRUNPARAM=b \
 	    ../$(LLSTAR) ../$? > stdout 2> stderr \
 	  || echo "  $* gives exit code $$?"
 

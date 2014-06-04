@@ -52,6 +52,7 @@ let ops = [
   ("jump_end", mk_0 mk_jump_end);
   ("eltptr", mk_3 mk_eltptr);
   (* types *)
+  ("sizeof", mk_1 mk_sizeof);
   ("pointer_type", mk_1 mk_pointer_type);
   ("array_type", mk_2 mk_array_type);
   (* bitvector operations *)
@@ -309,17 +310,25 @@ spec:
 
 /* Rules */
 
-calculus_rule:
+sequent_rule:
   | RULE rule_flags IDENTIFIER rule_priority COLON sequent
     sidecondition_list
     IF sequent_list SEMICOLON
-    { { Calculus.schema_name = $3
-      ; pure_check = fst $7
-      ; fresh_in_expr = snd $7
-      ; goal_pattern = $6
-      ; subgoal_pattern = $9
-      ; rule_priority = $4
-      ; rule_flags = $2 } }
+    { { Calculus.seq_name = $3
+      ; seq_pure_check = fst $7
+      ; seq_fresh_in_expr = snd $7
+      ; seq_goal_pattern = $6
+      ; seq_subgoal_pattern = $9
+      ; seq_priority = $4
+      ; seq_flags = $2 } }
+;
+
+rewrite_rule:
+  | REWRITERULE IDENTIFIER rule_priority COLON
+      atomic_term EQUALS atomic_term SEMICOLON
+    { { Calculus.rw_name = $2
+      ; rw_from_pattern = $5
+      ; rw_to_pattern = $7 } }
 ;
 
 equiv_rule:
@@ -420,10 +429,11 @@ import_entry:
 normal_entry:
   | procedure { [ParserAst.Procedure $1] }
   | GLOBAL variable_list_ne SEMICOLON { [ParserAst.Global $2] }
-  | calculus_rule { [ParserAst.CalculusRule $1] }
+  | sequent_rule { [ParserAst.CalculusRule (Calculus.Sequent_rule $1)] }
   | equiv_rule { let (n,f,p,l,r) = $1 in
                  List.map (fun x -> ParserAst.CalculusRule x)
                    (Calculus.mk_equiv_rule n p f l r) }
+  | rewrite_rule { [ParserAst.CalculusRule (Calculus.Rewrite_rule $1)] }
   | node_decl { [ParserAst.NodeDecl $1] }
 ;
 
