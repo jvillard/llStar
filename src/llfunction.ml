@@ -53,10 +53,11 @@ let mk_br_block fun_env br_label_orig br_assume =
 
 let mk_simple_asgn pre post =
   let triple =
-    { C.pre = pre; post = post;
-      in_vars = []; out_vars = []; modifies = [] } in
+    { C.pre = pre; post = post; modifies = [] } in
   let spec = C.TripleSet.singleton triple in
-  let asgn = { C.asgn_rets = []; asgn_args = []; asgn_spec = spec } in
+  let asgn = { C.asgn_rets = []; asgn_args = [];
+	       asgn_rets_formal = []; asgn_args_formal = [];
+	       asgn_spec = spec } in
   C.Assignment_core asgn
 
 (** compile an llvm instruction within a function into a piece of CoreStar CFG *) 
@@ -79,10 +80,13 @@ let statements_of_instr retv fun_env instr =
 	Z3.Boolean.mk_eq z3_ctx retv ret_val
       else Syntax.mk_emp in
     let out = option [] (fun x -> [x]) retv in
-    let triple = { C.pre = fun_env.fun_alloca_pred; post = post;
-		   in_vars = []; out_vars = out; modifies = [] } in
+    let triple =
+      { C.pre = fun_env.fun_alloca_pred; post = post; modifies = [] } in
     let spec = C.TripleSet.singleton triple in
-    let asgn = { C.asgn_rets = out; asgn_args = []; asgn_spec = spec } in
+    let ret_list = option [] (fun x -> [x]) retv in
+    let asgn = { C.asgn_rets = out; asgn_rets_formal = ret_list;
+		 asgn_args = []; asgn_args_formal = [];
+		 asgn_spec = spec } in
     [C.Assignment_core asgn; C.End]
   | Opcode.Br ->
     if num_operands instr = 1 then
@@ -101,9 +105,9 @@ let statements_of_instr retv fun_env instr =
       let else_label_orig = label_of_bblock (block_of_value (operand instr 1)) in
       (* the boolean value whose truth we're branching upon *)
       let expr_cond = expr_of_llvalue (operand instr 0) in
-      let then_post = Z3.Boolean.mk_eq z3_ctx (mkBV 1 "1") expr_cond in
+      let then_post = Z3.Boolean.mk_eq z3_ctx (mk_bv 1 "1") expr_cond in
       let assume_then = mk_simple_asgn Syntax.mk_emp then_post in
-      let else_post = Z3.Boolean.mk_eq z3_ctx (mkBV 1 "0") expr_cond in
+      let else_post = Z3.Boolean.mk_eq z3_ctx (mk_bv 1 "0") expr_cond in
       let assume_else = mk_simple_asgn Syntax.mk_emp else_post in
       let then_label = mk_br_block fun_env then_label_orig assume_then in
       let else_label = mk_br_block fun_env else_label_orig assume_else in
@@ -146,12 +150,13 @@ let statements_of_instr retv fun_env instr =
     let id = Syntax.mk_plvar ptr_s (value_id instr) in
     let value_t = element_type ptr_t in
     let e = Syntax.mk_fresh_lvar llmem_sort "v" in
-    let heap = mkPointer id (expr_of_lltype value_t) e in
+    let heap = mk_pointer id (expr_of_lltype value_t) e in
     fun_env.fun_alloca_pred <- Syntax.mk_star fun_env.fun_alloca_pred heap;
-    let triple = { C.pre = Syntax.mk_emp; post = heap;
-		   in_vars = []; out_vars = [id]; modifies = [] } in
+    let triple = { C.pre = Syntax.mk_emp; post = heap; modifies = [] } in
     let spec = C.TripleSet.singleton triple in
-    let asgn = { C.asgn_rets = [id]; asgn_args = []; asgn_spec = spec } in
+    let asgn = { C.asgn_rets = [id]; asgn_rets_formal = [id];
+		 asgn_args = []; asgn_args_formal = [];
+		 asgn_spec = spec } in
     [C.Assignment_core asgn]
   | Opcode.Load ->
     (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00225 *)
@@ -161,14 +166,15 @@ let statements_of_instr retv fun_env instr =
     let value_s = sort_of_lltype value_t in
     let value_e = Syntax.mk_fresh_lvar value_s "v" in
     let mem_val = as_llmem value_s value_e in
-    let pointer = mkPointer ptr (expr_of_lltype value_t) mem_val in
+    let pointer = mk_pointer ptr (expr_of_lltype value_t) mem_val in
     let pre = pointer in
     let id = Syntax.mk_plvar value_s (value_id instr) in
     let post = Syntax.mk_star (Z3.Boolean.mk_eq z3_ctx value_e id) pointer in
-    let triple = { C.pre = pre; post = post;
-		   in_vars = []; out_vars = [id]; modifies = [] } in
+    let triple = { C.pre = pre; post = post; modifies = [] } in
     let spec = C.TripleSet.singleton triple in
-    let asgn = { C.asgn_rets = [id]; asgn_args = []; asgn_spec = spec } in
+    let asgn = { C.asgn_rets = [id]; asgn_rets_formal = [id];
+		 asgn_args = []; asgn_args_formal = [];
+		 asgn_spec = spec } in
     [C.Assignment_core asgn]
   | Opcode.Store ->
     (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l003.4 *)
@@ -180,8 +186,8 @@ let statements_of_instr retv fun_env instr =
     let value_s = sort_of_lltype value_t in
     let e = Syntax.mk_fresh_lvar llmem_sort "v" in
     let v = as_llmem value_s (expr_of_llvalue value) in
-    let pre = mkPointer ptr (expr_of_lltype value_t) e in
-    let post = mkPointer ptr (expr_of_lltype value_t) v in
+    let pre = mk_pointer ptr (expr_of_lltype value_t) e in
+    let post = mk_pointer ptr (expr_of_lltype value_t) v in
     [mk_simple_asgn pre post]
   (* misc instructions that cannot be used in constant expressions *)
   | Opcode.PHI ->
@@ -221,9 +227,13 @@ let statements_of_instr retv fun_env instr =
 	if i = max_param_idx then []
 	else expr_of_llvalue (operand instr i)::(params_from_idx (i+1)) in
       let params = params_from_idx 0 in
-      let value_s = sort_of_lltype (type_of instr) in
-      let id = Syntax.mk_plvar value_s (value_id instr) in
-      let call = { C.call_name = fid; call_rets = [id]; call_args = params } in
+      let value_t = type_of instr in
+      let out = match classify_type value_t with
+	| TypeKind.Void -> []
+	| _ ->
+	  let value_s = sort_of_lltype value_t in
+	  [Syntax.mk_plvar value_s (value_id instr)] in
+      let call = { C.call_name = fid; call_rets = out; call_args = params } in
       [C.Call_core call]
     with MetaData _ ->
       (* a function call with meta-data in its arguments is for debug info *)
@@ -269,10 +279,11 @@ let statements_of_instr retv fun_env instr =
     let expr_e = expr_of_op (instr_opcode instr) instr in
     let post = Z3.Boolean.mk_eq z3_ctx id expr_e in
     let pre = Syntax.mk_emp in
-    let triple = { C.pre = pre; post = post;
-		   in_vars = []; out_vars = [id]; modifies = [] } in
+    let triple = { C.pre = pre; post = post; modifies = [] } in
     let spec = C.TripleSet.singleton triple in
-    let asgn = { C.asgn_rets = [id]; asgn_args = []; asgn_spec = spec } in
+    let asgn = { C.asgn_rets = [id]; asgn_rets_formal = [id];
+		 asgn_args = []; asgn_args_formal = [];
+		 asgn_spec = spec } in
     [C.Assignment_core asgn]
 
 let rec update_cfg_with_new_phi_blocks bfwd bbwd lsrc = function
@@ -297,10 +308,11 @@ let make_phi_blocks fun_env =
 	    Syntax.mk_star f (Z3.Boolean.mk_eq z3_ctx x v))
 	  Syntax.mk_emp l in
       let rets = List.map fst l in
-      let triple = { C.pre = Syntax.mk_emp; post = equalities;
-		     in_vars = []; out_vars = rets; modifies = [] } in
+      let triple = { C.pre = Syntax.mk_emp; post = equalities; modifies = [] } in
       let spec = C.TripleSet.singleton triple in
-      let asgn = { C.asgn_rets = rets; asgn_args = []; asgn_spec = spec } in
+      let asgn = { C.asgn_rets = rets; asgn_rets_formal = rets;
+		   asgn_args = []; asgn_args_formal = [];
+		   asgn_spec = spec } in
       let branch = C.Goto_stmt_core [lab_target] in
       (lab_src, (lab,[label_node; C.Assignment_core asgn; branch])) in
     let blocks = List.map block_of_group b in

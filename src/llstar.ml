@@ -53,6 +53,7 @@ let initialise_llvm () =
   llmodule := Some llmod;
   llcontext := Llvm.module_context llmod;
   lltarget := Llvm_target.DataLayout.of_string (Llvm.data_layout llmod);
+  Llexpression.declare_struct_types_in_llmodule llmod;
   if log log_phase then fprintf logf "@]";
   (llvm_dis_pid,llmod)
 
@@ -78,34 +79,36 @@ let initialise_logic llmod =
       let q_rules = q.Core.q_rules in
       let abstraction = q_rules.Core.abstraction in
       let abstraction = r :: abstraction in
-      let q_rules = { q_rules with Core.abstraction } in { q with Core.q_rules } in
+      let q_rules = { q_rules with Core.abstraction } in
+      { q with Core.q_rules } in
     let add_calculus r q =
       let q_rules = q.Core.q_rules in
       let calculus = q_rules.Core.calculus in
       let calculus = r :: calculus in
-      let q_rules = { q_rules with Core.calculus } in { q with Core.q_rules } in
-    let f q = function
-      | ParserAst.AbstractionRule r -> add_abstraction r q
-      | ParserAst.CalculusRule r -> add_calculus r q
-      | ParserAst.Global xs -> { q with Core.q_globals = xs @ q.Core.q_globals }
-      | ParserAst.Procedure p -> { q with Core.q_procs = p :: q.Core.q_procs } in
-    List.fold_left f question xs in
+      let q_rules = { q_rules with Core.calculus } in
+      { q with Core.q_rules } in
+    let f (q,n) = function
+      | ParserAst.AbstractionRule r -> (add_abstraction r q, n)
+      | ParserAst.CalculusRule r -> (add_calculus r q, n)
+      | ParserAst.Global xs ->
+	({ q with Core.q_globals = xs @ q.Core.q_globals }, n)
+      | ParserAst.Procedure p ->
+	({ q with Core.q_procs = p :: q.Core.q_procs }, n)
+      | ParserAst.NodeDecl nd -> (q, nd::n) in
+    List.fold_left f (question,[]) xs in
   let path = System.getenv_dirlist (System.getenv "COREPATH") in
-  let parse fn = System.parse_file Logic_parser.file Logic_lexer.token fn "core" in
+  let parse fn =
+    System.parse_file Logic_parser.file Logic_lexer.token fn "core" in
   let load_file q fn =
     let xs = Load.load ~path parse fn in
     question_of_entries q (List.rev xs) in
   let q = CoreOps.empty_ast_question in
-  let q = load_file q !Llstar_config.logic_file_name in
-  let q = load_file q !Llstar_config.abductrules_file_name in
-  let q = load_file q !Llstar_config.absrules_file_name in
-  let q = load_file q !Llstar_config.spec_file_name in
+  let (q,nodes) = load_file q !Llstar_config.star_file_name in
   let rules =
     if !Llstar_config.auto_gen_struct_logic then
       (if log log_phase then
 	  fprintf logf "@.@[<2>Generating logic for the module";
-       (* Rulegen.add_rules_of_module q.q_rules llmod *)
-       q.q_rules
+       Rulegen.add_rules_of_module nodes q.q_rules llmod
       ) else q.q_rules in
   let q = { q with
     q_rules = rules;

@@ -52,33 +52,24 @@ let error_message e lb =
 let kwd_or_else = 
   let keyword_table = Hashtbl.create 53 in
   List.iter (fun (kwd, tok) -> Hashtbl.add keyword_table kwd tok) [
-    "Abduction", ABDUCTION;
+    "abduct", ABDUCT;
     "abstraction", ABSRULE;
-    "assign", ASSIGN;
-    "axioms", AXIOMS;
     "bool", BOOL;
-    "constructor", CONSTRUCTOR;    
-    "Emp", EMP;
-    "end", END;
-    "equiv", EQUIV;
+    "emp", EMP;
+    "equiv", EQUIVRULE;
     "False", FALSE;
-    "Frame", FRAME;
-    "goto", GOTO;
     "global", GLOBAL;
     "if", IF;
-    "Implication", IMPLICATION;
     "import", IMPORT;
-    "Inconsistency", INCONSISTENCY;
-    "label", LABEL;
-    "nop", NOP;
-    "notin", NOTIN;
-    "notincontext", NOTINCONTEXT;
+    "inconsistent", INCONSISTENT;
+    "nobacktrack", NO_BACKTRACK;
+    "nodedecl", NODEDECL;
     "procedure", PROCEDURE;
-    "pureguard", PUREGUARD;
+    "purecheck", PURECHECK;
+    "returns", RETURNS;
     "rewrite", REWRITERULE;
     "rule", RULE;
     "True", TRUE;
-    "where", WHERE;
     "with", WITH;
     "without", WITHOUT;
     (* LLVM stuff *)
@@ -89,7 +80,7 @@ let kwd_or_else =
     "lltype", LLTYPE;
     "llmem", LLMEM;
     "named", LLNAMED;
-    "jump", LLJUMP;
+    "lljump", LLJUMP;
 
   ];
   fun d s ->
@@ -145,47 +136,42 @@ rule token = parse
   | newline { Lexing.new_line lexbuf; token lexbuf }
   | "/*" { nest lexbuf; comment lexbuf; token lexbuf } 
   | ignored_helper  { token lexbuf }
-  | "!" { BANG }
-  | "!=" { NOT_EQUALS }
-  | "(" { L_PAREN }
-  | ")" { R_PAREN }
-  | "*" { STAR }
-  | "," { COMMA }
-  | ":" { COLON }
-  | ":=" { COLON_EQUALS }
-  | ";" { SEMICOLON }
-  | "<" { CMP_LT }
-  | "<=" { CMP_LE }
-  | "=" { EQUALS }
-  | ">" { CMP_GT }
+  | "|" { BAR }
+  | "<=>" { BIMP }  
+  | "+" { BVADD }
+  | "**" { BVMUL }
+  | "/s" { BVSDIV }
+  | ">=s" { BVSGE }
+  | ">s" { BVSGT }
+  | "<=s" { BVSLE }
+  | "<s" { BVSLT }
+  | "-" { BVSUB }
+  | "/u" { BVUDIV }
+  | ">=u" { BVUGE }
+  | ">u" { BVUGT }
+  | "<=u" { BVULE }
+  | "<u" { BVULT }
   | ">=" { CMP_GE }
-  | "?" { QUESTIONMARK }
+  | ">" { CMP_GT }
+  | "<=" { CMP_LE }
+  | "<" { CMP_LT }
+  | ":" { COLON }
+  | "," { COMMA }
+  | " x " { CROSS }
+  | "=" { EQUALS }
   | "{" { L_BRACE }
-  | "|-" { VDASH }
+  | "[" { L_BRACKET }
+  | "<{" { L_LTBRACE }
+  | "(" { L_PAREN }
+  | "!=" { NOT_EQUALS }
   | "||" { OROR }
   | "}" { R_BRACE }
-  | "[" { L_BRACKET }
-  | "]" { R_BRACKET }
-  | "<{" { L_LTBRACE }
   | "}>" { R_BRACEGT }
-  | "|->" { POINTSTO }
-  | "/" { SLASH }
-  | "**" { BVMUL }
-  | "+" { BVADD }
-  | "-" { BVSUB }
-  | "." { DOT }
-  | "<=>" { BIMP }  
-  | "/s" { BVSDIV }
-  | "/u" { BVUDIV }
-  | "<=s" { BVSLE }
-  | "<=u" { BVULE }
-  | "<s" { BVSLT }
-  | "<u" { BVULT }
-  | ">=s" { BVSGE }
-  | ">=u" { BVUGE }
-  | ">s" { BVSGT }
-  | ">u" { BVUGT }
-  | " x " { CROSS }
+  | "]" { R_BRACKET }
+  | ")" { R_PAREN }
+  | ";" { SEMICOLON }
+  | "*" { STAR }
+  | "|-" { VDASH }
   | eof { EOF }
 
   | llinteger_type as s { LLBVTYPE (int_of_string (strip_first_char s)) }

@@ -1,5 +1,6 @@
 (*** Llutils: generic utility functions for llStar *)
 
+open Corestar_std
 (* LLVM modules *)
 open Llvm
 open TypeKind
@@ -46,10 +47,12 @@ let llcontext = ref (global_context ())
 let lltarget = ref (Llvm_target.DataLayout.of_string "")
 
 (* must be called only after initialisation *)
-let get_llmodule () = match !llmodule with Some m -> m | None -> assert false
+let get_llmodule () = from_some !llmodule
 
-let string_of_struct s =
-  match struct_name s with
+let lltype_of_name s =
+  from_some (Llvm.type_by_name (get_llmodule ()) s)
+
+let string_of_struct s = match struct_name s with
   | None -> string_of_lltype s
   | Some name -> name
 
@@ -89,8 +92,8 @@ let set_source_name m =
     let md = Array.get amd 0 in
     match get_mdstring (operand md 4), get_mdstring (operand md 3) with
     | Some dir, Some file ->
-      let src_name = Filename.concat dir file in
       (* TODO: restore *)
+      (* let src_name = Filename.concat dir file in *)
       (* Config.source_file := src_name; *)
       (* Config.source_base_name := Filename.basename src_name *)
       ()
@@ -161,8 +164,7 @@ let collect_types_in_module m =
 
 (** dump things into files in the output directory *)
 let dump_into_file suffix pp_stuff stuff =
-  let fname = Filename.concat !Llstar_config.outdir
-    (!Llstar_config.bitcode_base_name ^ "." ^ suffix) in
+  let fname = !Llstar_config.bitcode_base_name ^ "." ^ suffix in
   let file_out = open_out fname in
   let file_fmt = Format.formatter_of_out_channel file_out in
   Format.fprintf file_fmt "@[%a@." pp_stuff stuff;

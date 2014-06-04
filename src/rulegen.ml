@@ -7,19 +7,28 @@ open Format
 open Llvm
 open TypeKind
 (* coreStar modules *)
-open Config
-open Psyntax
+open Corestar_std
+open Calculus
 (* llStar modules *)
 open Llexpression
 open Llutils
 
+let z3_ctx = Syntax.z3_ctx
 
-let mk_psequent matched lhs rhs abd = (matched,lhs,rhs,abd)
-let mk_sequent_rule name premises_list conclusion without wheres =
-  (conclusion, premises_list, name, without, wheres)
-let mk_equiv_rule name guard lhs rhs without =
-  List.map (function SeqRule s -> s | _ -> assert false)
-    (expand_equiv_rules [EquivRule (name, guard, lhs, rhs, without)])
+let frame_pat = Syntax.mk_bool_tpat "_frame"
+let lhs_frame_pat = Syntax.mk_bool_tpat "_lhs"
+let rhs_frame_pat = Syntax.mk_bool_tpat "_rhs"
+
+let mk_simple_equiv_rule n p f lhs rhs =
+  mk_equiv_rule n p f (Syntax.mk_star lhs lhs_frame_pat) (Syntax.mk_star rhs lhs_frame_pat)
+
+let mk_simple_sequent lhs rhs =
+  let frame_on e f =
+    if Syntax.expr_equal e Syntax.mk_emp then f
+    else Syntax.mk_star e f in
+  { frame = frame_pat;
+    hypothesis = frame_on lhs lhs_frame_pat;
+    conclusion = frame_on rhs rhs_frame_pat }
 
 (** Make a rule with a single premise, no side conditions
 
@@ -27,14 +36,14 @@ let mk_equiv_rule name guard lhs rhs without =
     --------------------------
     | [post_lhs] |- [post_rhs]
 *)
-let mk_simple_sequent_rule name (pre_lhs,pre_rhs) (post_lhs, post_rhs) =
-  let conclusion = (mkEmpty, post_lhs, post_rhs, mkEmpty) in
-  let premise = (mkEmpty, pre_lhs, pre_rhs, mkEmpty) in
-  (conclusion, [[premise]], name, ([], []), [])
-
-let mk_simple_equiv_rule name equiv_left equiv_right =
-  mk_equiv_rule name mkEmpty equiv_left equiv_right mkEmpty
-
+let mk_simple_sequent_rule name p f (pre_lhs,pre_rhs) (post_lhs, post_rhs) =
+  { schema_name = name
+  ; pure_check = []
+  ; fresh_in_expr = []
+  ; goal_pattern = mk_simple_sequent post_lhs post_rhs
+  ; subgoal_pattern = [mk_simple_sequent pre_lhs pre_rhs]
+  ; rule_priority = p
+  ; rule_flags = f }
 
 (*** helper functions to define predicates for structs *)
 
@@ -47,20 +56,20 @@ let type_of_field struct_t i = Array.get (struct_element_types struct_t) i
 let offset64_of_field struct_t i =
   Llvm_target.DataLayout.offset_of_element struct_t i !lltarget
 
-let args_offset_of_field struct_t i =
-  mkBVi 64 (offset64_of_field struct_t i)
+let expr_offset_of_field struct_t i =
+  mk_bv64 64 (offset64_of_field struct_t i)
 
 let alloc_size64_of_field struct_t i =
   Llvm_target.DataLayout.abi_size (type_of_field struct_t i) !lltarget
 
-let args_alloc_sizeof_field struct_t i =
-  mkBVi 64 (alloc_size64_of_field struct_t i)
+let expr_alloc_sizeof_field struct_t i =
+  mk_bv64 64 (alloc_size64_of_field struct_t i)
 
 let bitsize64_of_field struct_t i =
   Llvm_target.DataLayout.size_in_bits (type_of_field struct_t i) !lltarget
 
-let args_bitsize_of_field struct_t i =
-  mkBVi 64 (bitsize64_of_field struct_t i)
+let expr_bitsize_of_field struct_t i =
+  mk_bv64 64 (bitsize64_of_field struct_t i)
 
 (** what bit number starts element [i] of [struct_t] *)
 let bitoffset64_of_field struct_t i =
@@ -68,18 +77,12 @@ let bitoffset64_of_field struct_t i =
   let bitoffset_of_field = bits_of_bytes (offset64_of_field struct_t i) in
   Int64.sub (Int64.sub bitsize_of_struct bitoffset_of_field) Int64.one
 
-let string_args_bitoffset_of_field struct_t i =
-  Arg_string (Int64.to_string (bitoffset64_of_field struct_t i))
-
 (** what bit number ends element [i] of [struct_t] *)
 let bitoffset64_of_field_end struct_t i =
   Int64.add (Int64.sub (bitoffset64_of_field struct_t i) (bitsize64_of_field struct_t i)) Int64.one
 
-let string_args_bitoffset_of_field_end struct_t i =
-  Arg_string (Int64.to_string (bitoffset64_of_field_end struct_t i))
-
-let args_type_field struct_t i =
-  args_of_type (type_of_field struct_t i)
+let expr_type_field struct_t i =
+  expr_of_lltype (type_of_field struct_t i)
 
 let padsize64_of_field struct_t i =
   let offset = offset64_of_field struct_t i in
@@ -91,35 +94,23 @@ let padsize64_of_field struct_t i =
   let alloc_size = Llvm_target.DataLayout.abi_size (type_of_field struct_t i) !lltarget in
   Int64.sub total_size alloc_size
 
-let args_padsize_of_field struct_t i =
-  mkBVi 64 (padsize64_of_field struct_t i)
+let expr_padsize_of_field struct_t i =
+  mk_bv64 64 (padsize64_of_field struct_t i)
 
 let is_single_struct t = match classify_type t with
   | Struct -> (Array.length (struct_element_types t) = 1) && (padsize64_of_field t 0 = Int64.zero)
   | _ -> false
-    
 
-let mk_struct_val_of_fields struct_t fields_values =
-  let struct_constructor = "mk_"^(string_of_struct struct_t) in
-  Arg_op (struct_constructor, Array.to_list fields_values)
-
-(** extracts the value of field [i] from value [base_val] of type [struct_t]  *)
-let mk_field_val_of_struct_val struct_t base_val i =
-  let field_pred = (string_of_struct struct_t) ^ "_fld" ^ (string_of_int i)  in
-  Arg_op (field_pred, [base_val])
-
-let rec mk_struct_val_of_fields_descend_in_singletons struct_t fields_values =
+let rec mk_struct_of_fields_descend_in_singletons struct_t mk_field =
   let mk_singletons i subelt_t =
     if is_single_struct subelt_t then
-      mk_struct_val_of_fields_descend_in_singletons subelt_t (Array.of_list [Array.get fields_values i])
-    else Array.get fields_values i in
-  let struct_constructor = "mk_"^(string_of_struct struct_t) in
-  Arg_op (struct_constructor, Array.to_list (Array.mapi mk_singletons (struct_element_types struct_t)))
+      mk_struct_of_fields_descend_in_singletons subelt_t (fun _ -> mk_field i)
+    else mk_field i subelt_t in
+  mk_struct_llt struct_t (Array.to_list (Array.mapi mk_singletons (struct_element_types struct_t)))
 
 let rec mk_field_val_of_struct_val_descend_in_singletons struct_t base_val i =
   let subelt_t = Array.get (struct_element_types struct_t) i in
-  let field_pred = (string_of_struct struct_t) ^ "_fld" ^ (string_of_int i)  in
-  let v = Arg_op (field_pred, [base_val]) in
+  let v = mk_struct_field_llt struct_t i base_val in
   if is_single_struct subelt_t then
     mk_field_val_of_struct_val_descend_in_singletons subelt_t v 0
   else v
@@ -131,456 +122,456 @@ let mk_padding_of_field struct_t i root =
     let elt_offset = offset64_of_field struct_t i in
     let pad_offset = Int64.add (alloc_size64_of_field struct_t i) elt_offset in
     let pad_addr = if pad_offset = Int64.zero then root
-      else let args_off = mkBVi 64 pad_offset in
-	   Arg_op("bvadd.64", [root; args_off]) in
-    let args_pad_size = args_padsize_of_field struct_t i in
-    Some (mkPadding pad_addr args_pad_size)
+      else
+        let expr_off = mk_bv64 64 pad_offset in
+        Z3.BitVector.mk_add z3_ctx root expr_off in
+    let expr_pad_size = expr_padsize_of_field struct_t i in
+    Some (mk_padding pad_addr expr_pad_size)
 
 let mk_field_offset struct_t i root =
   if i = 0 then root
-  else Arg_op ("bvadd.64", [root; args_offset_of_field struct_t i])
+  else Z3.BitVector.mk_add z3_ctx root (expr_offset_of_field struct_t i)
 
 let mk_field_pointer struct_t i root value =
   (* alternative where we the address is the syntactic eltptr expression *)
-  (* let addr = mkEltptr root (args_of_type struct_t) (mkJump (bvargs_of_int 64 i) mkJumpEnd) in *)
-  (* mkPointer addr (args_type_field struct_t i) value *)
-  mkPointer (mk_field_offset struct_t i root) (args_type_field struct_t i) value
+  (* let addr = mkEltptr root (expr_of_lltype struct_t) (mkJump (bvexpr_of_int 64 i) mkJumpEnd) in *)
+  (* mk_pointer addr (expr_type_field struct_t i) value *)
+  mk_pointer (mk_field_offset struct_t i root) (expr_type_field struct_t i) value
 
 let mk_padded_field_pointer struct_t i root value =
   let field_pointer = mk_field_pointer struct_t i root value in
   match mk_padding_of_field struct_t i root with
     | None -> field_pointer
-    | Some pad -> mkStar field_pointer pad
+    | Some pad -> Syntax.mk_star field_pointer pad
 
-let rec mk_unfolded_struct_descend_in_singletons struct_t root fields_values =
-  let mk_field i subelt_t =
-    let v = Array.get fields_values i in
+let rec mk_unfolded_struct_descend_in_singletons struct_t root mk_field =
+  let mk_field_descend i subelt_t =
     if is_single_struct subelt_t then
-      let single_field_val = Array.of_list [v] in
-      mk_unfolded_struct_descend_in_singletons subelt_t (mk_field_offset struct_t i root) single_field_val
+      mk_unfolded_struct_descend_in_singletons subelt_t (mk_field_offset struct_t i root) (fun _ -> mk_field i)
     else
-      mk_padded_field_pointer struct_t i root v in
-  let pointers = Array.mapi mk_field (struct_element_types struct_t) in
-  Array.fold_left (fun f p -> mkStar f p) mkEmpty pointers
+      mk_padded_field_pointer struct_t i root (mk_field i subelt_t) in
+  let pointers = Array.mapi mk_field_descend (struct_element_types struct_t) in
+  Syntax.mk_big_star (Array.to_list pointers)
 
-let mk_unfolded_struct struct_t root fields_values =
-  let mk_field i subelt_t =
-    let v = Array.get fields_values i in
+let mk_unfolded_struct struct_t root mk_field =
+  let mk_field_ptr i subelt_t =
+    let v = mk_field i subelt_t in
     mk_padded_field_pointer struct_t i root v in
-  let pointers = Array.mapi mk_field (struct_element_types struct_t) in
-  Array.fold_left (fun f p -> mkStar f p) mkEmpty pointers
+  let pointers = Array.mapi mk_field_ptr (struct_element_types struct_t) in
+  Syntax.mk_big_star (Array.to_list pointers)
 
 (*** Scalar rules *)
 
-(* assumes that [t] is an int or struct type *)
-let sizeof_logic_of_type t =
-  let args_t = args_of_type t in
-  let args_size = args_sizeof t in
-  let rewrite_rule =
-    { function_name = "sizeof";
-      arguments=[args_t];
-      result=args_size;
-      guard={without_form=[];rewrite_where=[];if_form=[]};
-      rewrite_name="sizeof_"^(string_of_lltype t);
-      saturate=false} in
-  let logic = { empty_logic with rw_rules = [rewrite_rule]; } in
-  (logic, logic)
+(* TODO: restore (needs rewrite rules) *)
+(* (\* assumes that [t] is an int or struct type *\) *)
+(* let sizeof_logic_of_type t = *)
+(*   let expr_t = expr_of_lltype t in *)
+(*   let expr_size = expr_of_sizeof t in *)
+(*   let rewrite_rule = *)
+(*     { function_name = "sizeof"; *)
+(*       arguments=[expr_t]; *)
+(*       result=expr_size; *)
+(*       guard={without_form=[];rewrite_where=[];if_form=[]}; *)
+(*       rewrite_name="sizeof_"^(string_of_lltype t); *)
+(*       saturate=false} in *)
+(*   let logic = { empty_logic with rw_rules = [rewrite_rule]; } in *)
+(*   (logic, logic) *)
 
+(* TODO: make this a rewrite rule *)
+let read_as_type t =
+  let s = sort_of_lltype t in
+  let x = Syntax.mk_tpat s "x" in
+  let y = Syntax.mk_tpat s "y" in
+  let as_x = as_llmem s x in
+  let as_y = as_llmem s y in
+  mk_simple_equiv_rule ("read_"^(string_of_lltype t))
+    default_rule_priority
+    rule_no_backtrack
+    (Syntax.mk_eq as_x as_y)
+    (Syntax.mk_eq x y)
 
 (*** Structure rules *)
 
 (* assumes that [t] is a struct type *)
 let eltptr_logic_of_type t =
-  let args_struct_t = args_of_type t in
-  let root_var = Arg_var (Vars.AnyVar (0, "x")) in
-  let jump_var = Arg_var (Vars.AnyVar (0, "j")) in
-  let t_var = Arg_var (Vars.AnyVar (0, "t")) in
-  let v_var = Arg_var (Vars.AnyVar (0, "v")) in
+  let expr_struct_t = expr_of_lltype t in
+  let root_var = Syntax.mk_tpat pointer_sort "x" in
+  let jump_var = Syntax.mk_tpat jump_sort "j" in
+  let t_var = Syntax.mk_tpat lltype_sort "t" in
+  let v_var = Syntax.mk_tpat llmem_sort "v" in
   let subelt_eltptr_rules i subelt_type =
-    let jump = mkJump (mkBV 64 (string_of_int i)) jump_var in
-    let orig_eltptr = mkEltptr root_var args_struct_t jump in
+    let jump = mk_jump (mk_bv 64 (string_of_int i)) jump_var in
+    let orig_eltptr = mk_eltptr root_var expr_struct_t jump in
     let new_root =
       if i = 0 then root_var
-      else Arg_op ("bvadd.64", [root_var; args_offset_of_field t i]) in
-    let result = mkEltptr new_root (args_of_type subelt_type) jump_var in
+      else Z3.BitVector.mk_add z3_ctx root_var (expr_offset_of_field t i) in
+    let result = mk_eltptr new_root (expr_of_lltype subelt_type) jump_var in
     mk_simple_equiv_rule ("eltptr_"^(string_of_struct t)^(string_of_int i))
-      (mkPointer orig_eltptr t_var v_var)
-      (mkPointer result t_var v_var) in
-  let eltptr_rules = List.flatten (Array.to_list
-    (Array.mapi subelt_eltptr_rules (struct_element_types t))) in
-  let logic = { empty_logic with seq_rules = eltptr_rules; } in
-  (logic, logic)
-
-(** assumes that [t] is a struct type *)
-let struct_field_value_logic_of_type t =
-  (* the name of the predicate indicating a value of type [t] *)
-  let val_field_pred_name i = (string_of_struct t) ^ "_field" ^ (string_of_int i)  in
-  let root = Arg_var (Vars.AnyVar (0, "x")) in
-  let value_rule i =
-    { function_name = val_field_pred_name i;
-      arguments = [root];
-      result = mk_field_val_of_struct_val t root i;
-      guard={without_form=[];rewrite_where=[];if_form=[]};
-      rewrite_name=val_field_pred_name i;
-      saturate=false} in
-  let logic = { empty_logic with
-    rw_rules = Array.to_list (Array.mapi (fun i _ -> value_rule i) (struct_element_types t)); } in
-  (logic, logic)
-
+      default_rule_priority
+      rule_no_backtrack
+      (mk_pointer orig_eltptr t_var v_var)
+      (mk_pointer result t_var v_var) in
+  List.flatten (Array.to_list
+                  (Array.mapi subelt_eltptr_rules (struct_element_types t)))
 
 (** unfolds a struct pointer on the lhs when the pointer on the rhs is exactly one of the fields of [t] *)
 (* this is not enough for nested structs or devious pointer casting, but it is
     efficient to try that first as it will be a common case *)
 (* assumes that [t] is a struct type *)
 let unfold_logic_of_type t =
-  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
-  let v_var = Arg_var (Vars.AnyVar (0, "v")) in
-  let w_var = Arg_var (Vars.AnyVar (0, "w")) in
+  let x_var = Syntax.mk_tpat pointer_sort "x" in
+  let v_var = Syntax.mk_tpat llmem_sort "v" in
+  let w_var = Syntax.mk_tpat llmem_sort "w" in
   let mk_field_rule1 i subelt_type =
     (* take a struct with value { v_1, ..., v_n } and one of its fields on the rhs and unfold it *)
     (* apply this rule before the next as it avoids cluttering of folding of unfolding of ... of struct values *)
     let target_pointer = mk_field_pointer t i x_var w_var in
-    let field_base_values =
-      Array.mapi (fun i _ -> Arg_var (Vars.AnyVar (0, "v"^(string_of_int i)))) (struct_element_types t) in
-    let struct_pointer = mkPointer x_var (args_of_type t) (mk_struct_val_of_fields_descend_in_singletons t field_base_values) in
+    let mk_field i ft = 
+      Syntax.mk_tpat (sort_of_lltype ft) ("v"^(string_of_int i)) in
+    let sval = mk_struct_of_fields_descend_in_singletons t mk_field in
+    let sval = as_llmem (struct_sort t) sval in
+    let struct_pointer = mk_pointer x_var (expr_of_lltype t) sval in
+    let mk_llmem_field i ft =
+      as_llmem (sort_of_lltype (type_of_field t i)) (mk_field i ft) in
     mk_simple_sequent_rule ((string_of_struct t)^"_field_"^(string_of_int i))
-      (mk_unfolded_struct_descend_in_singletons t x_var field_base_values, target_pointer)
+      default_rule_priority
+      rule_no_backtrack
+      (mk_unfolded_struct_descend_in_singletons t x_var mk_llmem_field, target_pointer)
       (struct_pointer, target_pointer) in
   let mk_field_rule2 i subelt_type =
     (* take a struct with value v and one of its fields on the rhs and unfold it *)
     let target_pointer = mk_field_pointer t i x_var w_var in
-    let struct_pointer = mkPointer x_var (args_of_type t) v_var in
-    let field_struct_derived_values =
-      Array.mapi (fun i _ -> mk_field_val_of_struct_val_descend_in_singletons t v_var i) (struct_element_types t) in
+    let struct_pointer = mk_pointer x_var (expr_of_lltype t) v_var in
+    let struct_val = as_sort (struct_sort t) v_var in
+    let mk_field i ft =
+        as_llmem (sort_of_lltype ft)
+          (mk_field_val_of_struct_val_descend_in_singletons t struct_val i) in
     mk_simple_sequent_rule ((string_of_struct t)^"_field_"^(string_of_int i))
-      (mk_unfolded_struct_descend_in_singletons t x_var field_struct_derived_values, target_pointer)
+      default_rule_priority
+      rule_no_backtrack
+      (mk_unfolded_struct_descend_in_singletons t x_var mk_field, target_pointer)
       (struct_pointer, target_pointer) in
-  let field_rules =
-    let rules_array1 = Array.mapi mk_field_rule1 (struct_element_types t) in
-    let rules_array2 = Array.mapi mk_field_rule2 (struct_element_types t) in
-    (Array.to_list rules_array1)@(Array.to_list rules_array2) in
-  let logic = { empty_logic with seq_rules = field_rules; } in
-  (logic, logic)
+  let rules_array1 = Array.mapi mk_field_rule1 (struct_element_types t) in
+  let rules_array2 = Array.mapi mk_field_rule2 (struct_element_types t) in
+  (Array.to_list rules_array1)@(Array.to_list rules_array2)
 
 (** unfolds a struct pointer on the lhs when the pointer on the rhs is inside of the fields of [t] *)
 (* assumes that [t] is a struct type *)
 let arith_unfold_logic_of_type t =
-  let field_ranged_values base_val =
-    Array.mapi (fun i _ -> mk_field_val_of_struct_val_descend_in_singletons t base_val i) (struct_element_types t) in
-  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
-  let v_var = Arg_var (Vars.AnyVar (0, "v")) in
-  let y_var = Arg_var (Vars.AnyVar (0, "y")) in
-  let t_var = Arg_var (Vars.AnyVar (0, "t")) in
-  let w_var = Arg_var (Vars.AnyVar (0, "w")) in
+  let field_ranged_values base_val i ft =
+    let fv = mk_field_val_of_struct_val_descend_in_singletons t base_val i in
+    as_llmem (sort_of_lltype ft) fv in
+  let x_var = Syntax.mk_tpat pointer_sort "x" in
+  let v_var = Syntax.mk_tpat llmem_sort "v" in
+  let y_var = Syntax.mk_tpat pointer_sort "y" in
+  let t_var = Syntax.mk_tpat lltype_sort "t" in
+  let w_var = Syntax.mk_tpat llmem_sort "w" in
   (* the whole struct *)
-  let struct_pointer = mkPointer x_var (args_of_type t) v_var in
+  let struct_pointer = mk_pointer x_var (expr_of_lltype t) v_var in
   let mk_field_rule i subelt_type =
-    let target_pointer = mkPointer y_var t_var w_var in
-    let offset_end_of_field = mkBVi 64 (Int64.add (alloc_size64_of_field t i) (offset64_of_field t i)) in
-    mk_sequent_rule ((string_of_struct t)^"_inside_field_"^(string_of_int i))
-      [[(mkEmpty, mk_unfolded_struct_descend_in_singletons t x_var (field_ranged_values v_var), target_pointer, mkEmpty)]]
-      (mkEmpty, struct_pointer, target_pointer, mkEmpty)
-      (mkEmpty, mkEmpty)
-      [PureGuard (mkPPred ("bvule", [Arg_op("bvadd.64", [x_var; args_offset_of_field t i]); y_var]));
-       PureGuard (mkPPred ("bvule", [Arg_op("bvadd.64", [y_var; Arg_op("sizeof", [t_var])]);
-				     Arg_op("bvadd.64", [x_var; offset_end_of_field])]))] in
-  let field_rules =
-    let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
-    Array.to_list rules_array in
-  let logic = { empty_logic with seq_rules = field_rules; } in
-  (logic, logic)
+    let target_pointer = mk_pointer y_var t_var w_var in
+    let offset_end_of_field = mk_bv64 64 (Int64.add (alloc_size64_of_field t i) (offset64_of_field t i)) in
+    let x_plus_i = Z3.BitVector.mk_add z3_ctx x_var (expr_offset_of_field t i) in
+    let y_plus_sz = Z3.BitVector.mk_add z3_ctx y_var (mk_sizeof t_var) in
+    let x_plus_end = Z3.BitVector.mk_add z3_ctx x_var offset_end_of_field in
+    { schema_name = (string_of_struct t)^"_inside_field_"^(string_of_int i)
+    ; pure_check =
+        [Z3.BitVector.mk_ule z3_ctx x_plus_i y_var;
+         Z3.BitVector.mk_ule z3_ctx y_plus_sz x_plus_end]
+    ; fresh_in_expr = []
+    ; goal_pattern = mk_simple_sequent struct_pointer target_pointer
+    ; subgoal_pattern =
+        [mk_simple_sequent
+            (mk_unfolded_struct_descend_in_singletons t x_var (field_ranged_values (as_sort (struct_sort t) v_var)))
+            target_pointer]
+    ; rule_priority = default_rule_priority
+    ; rule_flags = rule_no_backtrack } in
+  let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
+  Array.to_list rules_array
 
 (* assumes that [t] is a struct type *)
 let fold_logic_of_type t =
-  let field_values =
-    Array.mapi (fun i _ -> Arg_var (Vars.AnyVar (0, "v"^(string_of_int i))))
-      (struct_element_types t) in
-  let collate_field_values = mk_struct_val_of_fields_descend_in_singletons t field_values in
-  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
-  let unfolded_struct = mk_unfolded_struct_descend_in_singletons t x_var field_values in
-  let rules =
-    if is_single_struct t then
-      let v_var = Arg_var (Vars.AnyVar (0, "v")) in
-      let struct_pointer = mkPointer x_var (args_of_type t) v_var in
-      mk_simple_equiv_rule ("collate_"^(string_of_struct t))
-      	(struct_pointer)
-      	(unfolded_struct)
-    else
-      mk_simple_equiv_rule ("collate_"^(string_of_struct t))
-	(unfolded_struct)
-	(mkPointer x_var (args_of_type t) collate_field_values) in
-  let logic = { empty_logic with seq_rules = rules; } in
-  (logic, logic)
+  let x_var = Syntax.mk_tpat pointer_sort "x" in
+  let mk_field i ft =
+    Syntax.mk_tpat (sort_of_lltype ft) ("v"^(string_of_int i)) in
+  let collate_field_values = mk_struct_of_fields_descend_in_singletons t mk_field in
+  let mk_llmem_field i ft =
+    as_llmem (sort_of_lltype ft) (mk_field i ft) in
+  let struct_llmem = as_llmem (struct_sort t) collate_field_values in
+  let unfolded_struct = mk_unfolded_struct_descend_in_singletons t x_var mk_llmem_field in
+  let struct_pointer = mk_pointer x_var (expr_of_lltype t) struct_llmem in
+  mk_simple_equiv_rule ("collate_"^(string_of_struct t))
+    Calculus.default_rule_priority
+    Calculus.rule_no_backtrack
+    struct_pointer unfolded_struct
 
 (* assumes that [t] is a struct type *)
 let bytearray_to_struct_conversions t =
-  let x_avar = Vars.AnyVar (0, "x") in
-  let y_avar = Vars.AnyVar (0, "y") in
-  let j_avar = Vars.AnyVar (0, "j") in
-  let v_evar = Vars.EVar (0, "v") in
-  let v_avar = Vars.AnyVar (0, "v") in
-  let argsv z = Arg_var z in
+  let x_var = Syntax.mk_tpat pointer_sort "x" in
+  let v_var = Syntax.mk_tpat llmem_sort "v" in
+  let y_var = Syntax.mk_tpat pointer_sort "y" in
+  let j_var = Syntax.mk_tpat jump_sort "j" in
+  let size = mk_bv64 64 (Llvm_target.DataLayout.abi_size t !lltarget) in
+  let array_type = mk_array_type size mk_i8_type in
+  let struct_type = expr_of_lltype t in
+  let structform = mk_pointer x_var struct_type v_var in
+  let arrayform = mk_pointer x_var array_type v_var in
+  let eltptr = Syntax.mk_eq y_var
+    (mk_eltptr x_var (mk_pointer_type struct_type) j_var) in
+  mk_simple_equiv_rule ("fold_bytearray_on_"^(string_of_struct t)^"_field_access")
+    Calculus.default_rule_priority
+    Calculus.rule_no_backtrack
+    (Syntax.mk_star eltptr arrayform) structform
 
-  let array_t = Llvm.array_type (Llvm.i8_type !llcontext) (Int64.to_int (Llvm_target.DataLayout.abi_size t !lltarget)) in
-  let array_type = args_of_type array_t in
-  let struct_type = args_of_type t in
-  let mk_struct_pointer root value = mkPointer root struct_type value in
-  let mk_bytearray_pointer root value = mkPointer root array_type value in
-
-  (* let struct_array_rules_free_value = *)
-  (*   let free_val = argsv v_evar in *)
-  (*   let structform = mk_struct_pointer (argsv x_avar) free_val in *)
-  (*   let arrayform = mk_bytearray_pointer (argsv x_avar) free_val in *)
-  (*   let structptr = mk_struct_pointer (argsv x_avar) (argsv v_avar) in *)
-  (*   mk_sequent_rule ("bytearray_of_"^(string_of_struct t)) *)
-  (*     [[(mkEmpty, structptr, structform, mkEmpty)]] *)
-  (*     (mkEmpty, structptr, arrayform, mkEmpty) *)
-  (*     ([], []) *)
-  (*     [NotInContext (Var (VarSet.singleton v_evar))] in *)
-
-  let array_field_rules =
-    let array_val = argsv v_avar in
-    let struct_val = mkValConversion array_type struct_type array_val in
-    let structform = mk_struct_pointer (argsv x_avar) struct_val in
-    let arrayform = mk_bytearray_pointer (argsv x_avar) array_val in
-    let eltptr = mkEQ (argsv y_avar,
-		       mkEltptr (argsv x_avar) (mkPointerType struct_type) (argsv j_avar)) in
-    mk_simple_equiv_rule ("fold_bytearray_on_"^(string_of_struct t)^"_field_access") (mkStar eltptr arrayform) structform in
-  let array_field_rules_free_value =
-    let free_val = argsv v_evar in
-    let structform = mk_struct_pointer (argsv x_avar) free_val in
-    let arrayform = mk_bytearray_pointer (argsv x_avar) free_val in
-    let eltptr = mkEQ (argsv y_avar,
-		       mkEltptr (argsv x_avar) (mkPointerType struct_type) (argsv j_avar)) in
-    mk_sequent_rule ("fold_bytearray_on_"^(string_of_struct t)^"_field_access_free_val")
-      [[(mkEmpty, structform, mkEmpty, mkEmpty)]]
-      (mkEmpty, mkStar eltptr arrayform, mkEmpty, mkEmpty)
-      ([], [])
-      [NotInContext (Var (VarSet.singleton v_evar))] in
-  let rules = array_field_rules_free_value::array_field_rules in
-  let logic = { empty_logic with seq_rules = rules; } in
-  (logic, logic)
-
-let mkNode node_name struct_name root fields = mkSPred (node_name, (Arg_string struct_name)::root::fields)
+let mk_node node_name struct_name root fields =
+  let args_sort =
+    Syntax.string_sort::pointer_sort::(List.map Z3.Expr.get_sort fields) in
+  let node_fun =
+    Z3.FuncDecl.mk_func_decl_s z3_ctx "node" args_sort Syntax.bool_sort in
+  Z3.FuncDecl.apply node_fun (Syntax.mk_string_const struct_name::root::fields)
 
 (** TODO: merge those and the corresponding functions for structure pointers *)
 let unfold_logic_of_node t struct_name node_name node_fields =
-  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
-  let w_var = Arg_var (Vars.AnyVar (0, "w")) in
-  let n_vars = List.map (fun nf -> Arg_var (Vars.AnyVar (0, "n"^(string_of_int nf)))) node_fields in
+  let x_var = Syntax.mk_tpat pointer_sort "x" in
+  let w_var = Syntax.mk_tpat llmem_sort "w" in
+  let mk_field_var i =
+    let s = sort_of_lltype (type_of_field t i) in
+    Syntax.mk_tpat s ("f"^(string_of_int i)) in
+  let n_vars = List.map mk_field_var node_fields in
   let mk_field_rule i subelt_type =
-    (* take a struct with value { v_1, ..., v_n } and one of its fields on the rhs and unfold it *)
-    (* apply this rule before the next as it avoids cluttering of folding of unfolding of ... of struct values *)
     let target_pointer = mk_field_pointer t i x_var w_var in
-    let field_base_values =
-      Array.mapi (fun i _ -> 
-	if List.mem i node_fields then Arg_var (Vars.AnyVar (0, "n"^(string_of_int i)))
-	else Arg_var (Vars.freshe ())) (struct_element_types t) in
-    let node = mkNode node_name struct_name x_var n_vars in
+    let mk_field i ft =
+      let fs = sort_of_lltype ft in
+      if List.mem i node_fields
+      then as_llmem fs (mk_field_var i)
+      else as_llmem fs (Syntax.mk_fresh_lvar fs ("f"^(string_of_int i))) in
+    let node = mk_node node_name struct_name x_var n_vars in
     mk_simple_sequent_rule (node_name^"_field_"^(string_of_int i))
-      (mk_unfolded_struct_descend_in_singletons t x_var field_base_values, target_pointer)
+      Calculus.default_rule_priority
+      Calculus.rule_no_backtrack
+      (mk_unfolded_struct_descend_in_singletons t x_var mk_field, target_pointer)
       (node, target_pointer) in
-  let field_rules =
-    let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
-    Array.to_list rules_array in
-  let logic = { empty_logic with seq_rules = field_rules; } in
-  (logic, logic)
+  let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
+  Array.to_list rules_array
 
 let arith_unfold_logic_of_node t struct_name node_name node_fields =
-  let field_ranged_values base_val =
-    Array.mapi (fun i _ -> mk_field_val_of_struct_val_descend_in_singletons t base_val i) (struct_element_types t) in
-  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
-  let v_var = Arg_var (Vars.AnyVar (0, "v")) in
-  let y_var = Arg_var (Vars.AnyVar (0, "y")) in
-  let t_var = Arg_var (Vars.AnyVar (0, "t")) in
-  let w_var = Arg_var (Vars.AnyVar (0, "w")) in
+  let field_ranged_values base_val i ft =
+    let fv = mk_field_val_of_struct_val_descend_in_singletons t base_val i in
+    as_llmem (sort_of_lltype ft) fv in
+  let x_var = Syntax.mk_tpat pointer_sort "x" in
+  let v_var = Syntax.mk_tpat llmem_sort "v" in
+  let y_var = Syntax.mk_tpat pointer_sort "y" in
+  let t_var = Syntax.mk_tpat lltype_sort "t" in
+  let w_var = Syntax.mk_tpat llmem_sort "w" in
   (* the whole struct *)
-  let struct_pointer = mkPointer x_var (args_of_type t) v_var in
+  let struct_pointer = mk_pointer x_var (expr_of_lltype t) v_var in
   let mk_field_rule i subelt_type =
-    let target_pointer = mkPointer y_var t_var w_var in
-    let offset_end_of_field = mkBVi 64 (Int64.add (alloc_size64_of_field t i) (offset64_of_field t i)) in
-    mk_sequent_rule (node_name^"_inside_field_"^(string_of_int i))
-      [[(mkEmpty, mk_unfolded_struct_descend_in_singletons t x_var (field_ranged_values v_var), target_pointer, mkEmpty)]]
-      (mkEmpty, struct_pointer, target_pointer, mkEmpty)
-      (mkEmpty, mkEmpty)
-      [PureGuard (mkPPred ("bvule", [Arg_op("bvadd.64", [x_var; args_offset_of_field t i]); y_var]));
-       PureGuard (mkPPred ("bvule", [Arg_op("bvadd.64", [y_var; Arg_op("sizeof", [t_var])]);
-				     Arg_op("bvadd.64", [x_var; offset_end_of_field])]))] in
-  let field_rules =
-    let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
-    Array.to_list rules_array in
-  let logic = { empty_logic with seq_rules = field_rules; } in
-  (logic, logic)
-
+    let target_pointer = mk_pointer y_var t_var w_var in
+    let offset_end_of_field =
+      mk_bv64 64 (Int64.add (alloc_size64_of_field t i) (offset64_of_field t i)) in
+    let x_plus_i = Z3.BitVector.mk_add z3_ctx x_var (expr_offset_of_field t i) in
+    let y_plus_sz = Z3.BitVector.mk_add z3_ctx y_var (mk_sizeof t_var) in
+    let x_plus_end = Z3.BitVector.mk_add z3_ctx x_var offset_end_of_field in
+    { schema_name = node_name^"_inside_field_"^(string_of_int i)
+    ; pure_check =
+        [Z3.BitVector.mk_ule z3_ctx x_plus_i y_var;
+         Z3.BitVector.mk_ule z3_ctx y_plus_sz x_plus_end]
+    ; fresh_in_expr = []
+    ; goal_pattern = mk_simple_sequent struct_pointer target_pointer
+    ; subgoal_pattern =
+        [mk_simple_sequent
+            (mk_unfolded_struct_descend_in_singletons t x_var (field_ranged_values v_var))
+            target_pointer]
+    ; rule_priority = default_rule_priority
+    ; rule_flags = rule_no_backtrack } in
+  let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
+  Array.to_list rules_array
 
 (* assumes that [t] is a struct type *)
 let concretise_node_logic_of_type t struct_name node_name node_fields = 
-  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
-  let n_vars = List.map (fun nf -> Arg_var (Vars.AnyVar (0, "n"^(string_of_int nf)))) node_fields in
-  let y_var = Arg_var (Vars.AnyVar (0, "y")) in
-  let t_var = Arg_var (Vars.AnyVar (0, "t")) in
-  let v_var = Arg_var (Vars.AnyVar (0, "v")) in
+  let x_var = Syntax.mk_tpat pointer_sort "x" in
+  let y_var = Syntax.mk_tpat pointer_sort "y" in
+  let t_var = Syntax.mk_tpat lltype_sort "t" in
+  let v_var = Syntax.mk_tpat llmem_sort "v" in
+  let mk_field_var i =
+    let s = sort_of_lltype (type_of_field t i) in
+    Syntax.mk_tpat s ("f"^(string_of_int i)) in
+  let n_vars = List.map mk_field_var node_fields in
   let struct_field_values =
     let field_values =
-      Array.mapi (fun i _ ->
-	if List.mem i node_fields then Arg_var (Vars.AnyVar (0, "n"^(string_of_int i)))
-	else Arg_var (Vars.freshe ())) (struct_element_types t) in
-    mk_struct_val_of_fields t field_values in
-  let struct_pointer = mkPointer x_var (args_of_type t) struct_field_values in
-  let node = mkNode node_name struct_name x_var n_vars in
-  let target_pointer = mkPointer y_var t_var v_var in
-  let side_condition = [PureGuard (mkPPred ("bvule", [x_var; y_var]));
-			PureGuard (mkPPred ("bvule", [Arg_op("bvadd.64", [y_var; Arg_op("sizeof", [t_var])]);
-						      Arg_op("bvadd.64", [x_var; args_sizeof t])]))] in
-  let concretise_rule =
-    mk_sequent_rule ("concretise_"^(string_of_struct t))
-      [[(mkEmpty, struct_pointer, target_pointer, mkEmpty)]]
-      (mkEmpty, node, target_pointer, mkEmpty)
-      (mkEmpty, mkEmpty)
-      side_condition in
-  let logic = { empty_logic with seq_rules = [concretise_rule] } in
-  (logic, logic)
-  
+      Array.mapi (fun i ft ->
+        if List.mem i node_fields
+        then mk_field_var i
+        else Syntax.mk_fresh_lvar (sort_of_lltype ft) ("f"^(string_of_int i)))
+        (struct_element_types t) in
+    as_llmem (struct_sort t) (mk_struct_llt t (Array.to_list field_values)) in
+  let struct_pointer = mk_pointer x_var (expr_of_lltype t) struct_field_values in
+  let node = mk_node node_name struct_name x_var n_vars in
+  let target_pointer = mk_pointer y_var t_var v_var in
+  let y_plus_sz = Z3.BitVector.mk_add z3_ctx y_var (mk_sizeof t_var) in
+  let x_plus_szof = Z3.BitVector.mk_add z3_ctx x_var (expr_of_sizeof t) in
+  [{ schema_name = "concretise_"^(string_of_struct t)
+   ; pure_check = 
+      [Z3.BitVector.mk_ule z3_ctx x_var y_var;
+       Z3.BitVector.mk_ule z3_ctx y_plus_sz x_plus_szof]
+   ; fresh_in_expr = []
+   ; goal_pattern = mk_simple_sequent node target_pointer
+   ; subgoal_pattern = [mk_simple_sequent struct_pointer target_pointer]
+   ; rule_priority = default_rule_priority
+   ; rule_flags = rule_no_backtrack }]
 
 (* assumes that [t] is a struct type *)
 let rollup_node_logic_of_type t struct_name node_name node_fields =
-  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
-  let n_vars = List.map (fun nf -> Arg_var (Vars.AnyVar (0, "n"^(string_of_int nf)))) node_fields in
+  let x_var = Syntax.mk_tpat pointer_sort "x" in
+  let v_var = Syntax.mk_tpat llmem_sort "v" in
+  let mk_field_var i =
+    let s = sort_of_lltype (type_of_field t i) in
+    Syntax.mk_tpat s ("f"^(string_of_int i)) in
+  let n_vars = List.map mk_field_var node_fields in
   let struct_field_values =
     let field_values =
-      Array.mapi (fun i _ ->
-	if List.mem i node_fields then Arg_var (Vars.AnyVar (0, "n"^(string_of_int i)))
-	else Arg_var (Vars.AnyVar (0, "v"^(string_of_int i)))) (struct_element_types t) in
-    mk_struct_val_of_fields t field_values in
-  let struct_pointer = mkPointer x_var (args_of_type t) struct_field_values in
-  let node = mkNode node_name struct_name x_var n_vars in
+      Array.mapi (fun i ft ->
+        if List.mem i node_fields
+        then mk_field_var i
+        else Syntax.mk_tpat (sort_of_lltype ft) ("v"^(string_of_int i)))
+        (struct_element_types t) in
+    as_llmem (struct_sort t) (mk_struct_llt t (Array.to_list field_values)) in
+  let struct_pointer = mk_pointer x_var (expr_of_lltype t) struct_field_values in
+  let node = mk_node node_name struct_name x_var n_vars in
   let rollup_rule_known_next =
-    mk_simple_equiv_rule ("rollup_"^(string_of_struct t)) struct_pointer node in
-  let v_var = Arg_var (Vars.AnyVar (0, "v")) in
-  let struct_pointer = mkPointer x_var (args_of_type t) v_var in
-  let n_vals = List.map (fun nf -> mk_field_val_of_struct_val t v_var nf) node_fields in
-  let node = mkNode node_name struct_name x_var n_vals in
+    mk_simple_equiv_rule ("rollup_"^(string_of_struct t))
+      default_rule_priority
+      rule_no_backtrack
+      struct_pointer node in
+  let struct_pointer = mk_pointer x_var (expr_of_lltype t) v_var in
+  let n_vals = List.map (fun nf -> mk_struct_field_llt t nf v_var) node_fields in
+  let node = mk_node node_name struct_name x_var n_vals in
   let rollup_rule_compute_next =
-    mk_simple_equiv_rule ("rollup_"^(string_of_struct t)^"_compute_next") struct_pointer node in
-  let logic = { empty_logic with seq_rules = rollup_rule_known_next@rollup_rule_compute_next } in
-  (logic, logic)
+    mk_simple_equiv_rule ("rollup_"^(string_of_struct t)^"_compute_next")
+      default_rule_priority
+      rule_no_backtrack
+      struct_pointer node in
+  rollup_rule_known_next@rollup_rule_compute_next
 
 (* assumes that [t] is a struct type *)
 let malloc_logic_of_node t struct_name node_name node_fields =
-  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
-  let s_var = Arg_var (Vars.AnyVar (0, "s")) in
-  let n_vars = List.map (fun nf -> Arg_var (Vars.AnyVar (0, "n"^(string_of_int nf)))) node_fields in
-  let malloced_right = mkMalloced x_var s_var in
-  let malloced_node = mkMalloced x_var (args_sizeof t) in
+  let x_var = Syntax.mk_tpat pointer_sort "x" in
+  let s_var = Syntax.mk_tpat size_sort "s" in
+  let mk_field_var i =
+    let s = sort_of_lltype (type_of_field t i) in
+    Syntax.mk_tpat s ("f"^(string_of_int i)) in
+  let n_vars = List.map mk_field_var node_fields in
   let struct_field_values =
     let field_values =
-      Array.mapi (fun i _ ->
-	if List.mem i node_fields then Arg_var (Vars.AnyVar (0, "n"^(string_of_int i)))
-	else Arg_var (Vars.AnyVar (0, "v"^(string_of_int i)))) (struct_element_types t) in
-    mk_struct_val_of_fields t field_values in
-  let struct_pointer = mkPointer x_var (args_of_type t) struct_field_values in
-  let node = mkNode node_name struct_name x_var n_vars in
+      Array.mapi (fun i ft ->
+        if List.mem i node_fields
+        then mk_field_var i
+        else Syntax.mk_tpat (sort_of_lltype ft) ("v"^(string_of_int i)))
+        (struct_element_types t) in
+    as_llmem (struct_sort t) (mk_struct_llt t (Array.to_list field_values)) in
+  let malloced_right = mk_malloced x_var s_var in
+  let malloced_node = mk_malloced x_var (expr_of_sizeof t) in
+  let struct_pointer = mk_pointer x_var (expr_of_lltype t) struct_field_values in
+  let node = mk_node node_name struct_name x_var n_vars in
   let rule =
     mk_simple_sequent_rule ("malloced_"^node_name)
-      (mkStar malloced_node struct_pointer, malloced_right)
+      default_rule_priority
+      rule_no_backtrack
+      (Syntax.mk_star malloced_node struct_pointer, malloced_right)
       (node, malloced_right) in
-  let logic = { empty_logic with seq_rules = [rule] } in
-  (logic, logic)
-
+  [rule]
 
 let remove_pointer_arith_same_root_same_size =
-  let x_var = Arg_var (Vars.AnyVar (0, "x")) in
-  let t_var = Arg_var (Vars.AnyVar (0, "t")) in
-  let v_var = Arg_var (Vars.AnyVar (0, "v")) in
-  let y_var = Arg_var (Vars.AnyVar (0, "y")) in
-  let w_var = Arg_var (Vars.AnyVar (0, "w")) in
-  let src_pointer = mkPointer x_var t_var v_var in
-  let target_pointer = mkPointer y_var t_var w_var in
-  let eq_x_y = mkEQ(x_var, y_var) in
-  let rule =
-    mk_sequent_rule "remove_pointer_arith_same_root_same_size"
-      [[(src_pointer, eq_x_y, mkEQ(v_var, w_var), mkEmpty)]]
-      (mkEmpty, src_pointer, target_pointer, mkEmpty)
-      (mkEmpty, mkEmpty)
-      [PureGuard eq_x_y] in
-  let logic = { empty_logic with seq_rules = [rule] } in
-  (logic, logic)
+  let x_var = Syntax.mk_tpat pointer_sort "x" in
+  let t_var = Syntax.mk_tpat lltype_sort "t" in
+  let v_var = Syntax.mk_tpat llmem_sort "v" in
+  let y_var = Syntax.mk_tpat pointer_sort "y" in
+  let w_var = Syntax.mk_tpat llmem_sort "w" in
+  let src_pointer = mk_pointer x_var t_var v_var in
+  let target_pointer = mk_pointer y_var t_var w_var in
+  [{ schema_name = "remove_pointer_arith_same_root_same_size"
+   ; pure_check = [Syntax.mk_eq x_var y_var]
+   ; fresh_in_expr = []
+   ; goal_pattern = mk_simple_sequent src_pointer target_pointer
+   ; subgoal_pattern =
+      [{ frame = Syntax.mk_star src_pointer frame_pat
+       ; hypothesis = Syntax.mk_star (Syntax.mk_eq x_var y_var) lhs_frame_pat
+       ; conclusion = Syntax.mk_star (Syntax.mk_eq v_var w_var) rhs_frame_pat }]
+   ; rule_priority = default_rule_priority
+   ; rule_flags = rule_no_backtrack }]
 
-let add_logic_pair (l1,m1) (l2,m2) = (add_logic l1 l2, add_logic m1 m2)
-
-let gen_node_logics node_logic logic_generator t = match struct_name t with
+let gen_node_logics node_decls logic_generator t = match struct_name t with
   | None ->
     (* nodes are necessarily named for now *)
-    (empty_logic, empty_logic)
+    []
   | Some name ->
       try
-	let (struct_name, node_name, fields) = List.find (fun (n, _, _) -> n = name) node_logic in
-	let num_fields = List.map int_of_string fields in
-	logic_generator t struct_name node_name num_fields
-      with
-      | Not_found -> (empty_logic, empty_logic)
-      | Failure "int_of_string" -> failwith "Parse error: fields in node declarations must be integers, got something else"
+        let nd = List.find (fun nd -> nd.ParserAst.node_name = name) node_decls in
+        let num_fields = nd.ParserAst.node_fields in
+        logic_generator t name nd.ParserAst.node_name num_fields
+      with Not_found -> []
 
-let nullptr_logic =
-  let ptr_bitsize = (Llvm_target.DataLayout.pointer_size !lltarget) * 8 in
-  let nullptr_rw =
-    { function_name = "NULL";
-      arguments=[];
-      result= mkBV ptr_bitsize "0";
-      guard= {without_form=[];rewrite_where=[];if_form=[]};
-      rewrite_name="nullptr";
-      saturate=false} in
-  let logic = { empty_logic with rw_rules = [nullptr_rw] } in
-  (logic, logic)
+(* TODO: restore (needs rewrite rules) *)
+(* let nullptr_logic = *)
+(*   let ptr_bitsize = (Llvm_target.DataLayout.pointer_size !lltarget) * 8 in *)
+(*   let nullptr_rw = *)
+(*     { function_name = "NULL"; *)
+(*       arguments=[]; *)
+(*       result= mk_bv ptr_bitsize "0"; *)
+(*       guard= {without_form=[];rewrite_where=[];if_form=[]}; *)
+(*       rewrite_name="nullptr"; *)
+(*       saturate=false} in *)
+(*   let logic = { empty_logic with rw_rules = [nullptr_rw] } in *)
+(*   (logic, logic) *)
 
-let sizeof_ptr_logic =
-  let ptr_bitsize = (Llvm_target.DataLayout.pointer_size !lltarget) * 8 in
-  let sizeof_ptr_rw =
-    { function_name = "sizeof";
-      arguments=[mkPointerType (Arg_var (Vars.AnyVar (0, "t")))];
-      result= mkBV ptr_bitsize (string_of_int (Llvm_target.DataLayout.pointer_size !lltarget));
-      guard={without_form=[];rewrite_where=[];if_form=[]};
-      rewrite_name="sizeof_pointer_type";
-      saturate=false} in
-  let logic = { empty_logic with rw_rules = [sizeof_ptr_rw] } in
-  (logic, logic)
+(* let sizeof_ptr_logic = *)
+(*   let ptr_bitsize = (Llvm_target.DataLayout.pointer_size !lltarget) * 8 in *)
+(*   let sizeof_ptr_rw = *)
+(*     { function_name = "sizeof"; *)
+(*       arguments=[mk_pointer_type (Arg_var (Vars.AnyVar (0, "t")))]; *)
+(*       result= mk_bv ptr_bitsize (string_of_int (Llvm_target.DataLayout.pointer_size !lltarget)); *)
+(*       guard={without_form=[];rewrite_where=[];if_form=[]}; *)
+(*       rewrite_name="sizeof_pointer_type"; *)
+(*       saturate=false} in *)
+(*   let logic = { empty_logic with rw_rules = [sizeof_ptr_rw] } in *)
+(*   (logic, logic) *)
 
 type rule_apply =
-| ApplyOnce of (Psyntax.logic * Psyntax.logic)
-| ApplyAtType of (lltype -> Psyntax.logic * Psyntax.logic) * (lltype -> bool)
+| CalculusOnce of Calculus.t
+| CalculusAtType of (lltype -> Calculus.t) * (lltype -> bool)
 
 (** generates the logic and the abduction logic of module [m] *)
-let add_rules_of_module node_logic base_logic m =
-  let int_struct_filter t = match classify_type t with
-    | Integer
-    | Struct -> true
-    | _ -> false in
+let add_rules_of_module node_decls base_logic m =
+  (* let int_struct_filter t = match classify_type t with *)
+  (*   | Integer *)
+  (*   | Struct -> true *)
+  (*   | _ -> false in *)
   let struct_filter t = match classify_type t with
     | Struct -> true
     | _ -> false in
   (** pairs of rule generation functions and a filter that checks they
       are applied only to certain types *)
   let rule_generators =
-    ApplyOnce base_logic
-    ::ApplyOnce nullptr_logic
-    ::ApplyOnce sizeof_ptr_logic
-    ::ApplyAtType (sizeof_logic_of_type, int_struct_filter)
-    ::ApplyAtType (eltptr_logic_of_type, struct_filter)
-    ::ApplyAtType (gen_node_logics node_logic malloc_logic_of_node, struct_filter)
-    ::ApplyAtType (unfold_logic_of_type, struct_filter)
-    ::ApplyAtType (struct_value_logic_of_type, struct_filter)
-    ::ApplyAtType (bytearray_to_struct_conversions, struct_filter)
-    ::ApplyAtType (gen_node_logics node_logic unfold_logic_of_node, struct_filter)
-    ::ApplyOnce remove_pointer_arith_same_root_same_size
-    ::ApplyAtType (arith_unfold_logic_of_type, struct_filter)
-    ::ApplyAtType (gen_node_logics node_logic concretise_node_logic_of_type, struct_filter)
-    ::ApplyAtType (gen_node_logics node_logic rollup_node_logic_of_type, struct_filter)
-    ::ApplyAtType (fold_logic_of_type, struct_filter)
+    (* ApplyOnce nullptr_logic *)
+    (* ::ApplyOnce sizeof_ptr_logic *)
+    (* ::ApplyAtType (sizeof_logic_of_type, int_struct_filter) *)
+    CalculusAtType (read_as_type, c1 true)
+    ::CalculusAtType (eltptr_logic_of_type, struct_filter)
+    ::CalculusAtType (gen_node_logics node_decls malloc_logic_of_node, struct_filter)
+    ::CalculusAtType (unfold_logic_of_type, struct_filter)
+    ::CalculusAtType (bytearray_to_struct_conversions, struct_filter)
+    ::CalculusAtType (gen_node_logics node_decls unfold_logic_of_node, struct_filter)
+    ::CalculusOnce remove_pointer_arith_same_root_same_size
+    ::CalculusAtType (arith_unfold_logic_of_type, struct_filter)
+    ::CalculusAtType (gen_node_logics node_decls concretise_node_logic_of_type, struct_filter)
+    ::CalculusAtType (gen_node_logics node_decls rollup_node_logic_of_type, struct_filter)
+    ::CalculusAtType (fold_logic_of_type, struct_filter)
     ::[] in 
   let all_types = collect_types_in_module m in
+  let add_calculus log c = { log with Core.calculus = log.Core.calculus@c } in
   let apply_generator log = function
-    | ApplyOnce g -> add_logic_pair log g
-    | ApplyAtType (g, f) ->
+    | CalculusOnce g -> add_calculus log g
+    | CalculusAtType (g, f) ->
       let f_types = List.filter f all_types in
-      List.fold_left add_logic_pair log (List.map g f_types) in
-  List.fold_left apply_generator (empty_logic, empty_logic) rule_generators
+      List.fold_left add_calculus log (List.map g f_types) in
+  List.fold_left apply_generator base_logic rule_generators

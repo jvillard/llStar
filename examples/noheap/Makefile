@@ -1,10 +1,14 @@
-LLVM_AS=llvm-as-3.4
+LLSRC=$(wildcard *.ll)
+CSRC=$(wildcard *.c)
+TESTS=$(LLSRC:=.test) $(CSRC:=.test)
 
-LSTAR_OPTIONS=-runopts false
-SRC=skip.c 1664.c
+LLVM_AS=llvm-as-3.4
+CC=clang -O0
+LLSTAR=../../bin/llstar -v -v -v
+
 WEBEXAMPLES=skip.c.O0.ll
-BITCODE=$(SRC:=.bc)
-TESTS=$(SRC:=.test)
+
+all: test
 
 %.ll.bc: %.ll
 	$(LLVM_AS) -f -o $@ $?
@@ -15,15 +19,19 @@ TESTS=$(SRC:=.test)
 %.c.O0.ll: %.c
 	clang -emit-llvm -O0 -S -o $@ $?
 
-%.test: %.bc
-	../../bin/llstar $(LSTAR_OPTIONS) $?
+$(TESTS): %.test: %.bc
+	@rm -rf $*.out && mkdir $*.out
+	@echo "$(LLSTAR) $?"
+	@cd $*.out;\
+	  OCAMLRUNPARAM=pb \
+	    ../$(LLSTAR) ../$? > stdout 2> stderr \
+	  || echo "  $* gives exit code $$?"
 
 test: $(TESTS)
 
 webtests: $(WEBEXAMPLES)
 
-# warning: will remove all .bc files, better not have one as a source!
 clean:
-	rm -rf _llstar $(BITCODE) $(WEBEXAMPLES)
+	rm -rf *.out
 
-.PHONY: test
+.PHONY: all test $(TESTS) clean

@@ -4,6 +4,7 @@ MAINS=llstar
 LFLAGS=-lflags -cc,g++,-cclib,-lffi
 CFLAGS=
 OCAMLBUILD=ocamlbuild -use-ocamlfind -cflag -annot -yaccflag -v $(LFLAGS) $(CFLAGS)
+CPLN=corestar/scripts/_build/cpln.byte
 
 SHELL=/bin/bash
 
@@ -15,7 +16,7 @@ bin:
 native byte d.byte p.native: bin
 	$(OCAMLBUILD) $(addsuffix .$@,$(MAINS))
 	mkdir -p bin
-	for f in $(MAINS); do ln -sf `readlink $$f.$@` bin/$$f; rm $$f.$@; done
+	for f in $(MAINS); do $(CPLN) $$f.$@ bin/$$f; rm $$f.$@; done
 
 all: build
 

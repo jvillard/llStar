@@ -1,10 +1,13 @@
 (*** Llexpression: turn llvm types and values into Z3 expressions *)
 
+open Format
 (* LLVM modules *)
 open Llvm
 open TypeKind
 open ValueKind
 (* coreStar modules *)
+open Corestar_std
+open Debug
 open Syntax
 (* llStar modules *)
 open Llutils
@@ -19,17 +22,20 @@ let bblabel_sort = Z3.Sort.mk_uninterpreted_s z3_ctx "bblabel"
 let lltype_sort = Z3.Sort.mk_uninterpreted_s z3_ctx "lltype"
 let llmem_sort = Z3.Sort.mk_uninterpreted_s z3_ctx "llmem"
 let jump_sort = Z3.Sort.mk_uninterpreted_s z3_ctx "jump"
-let md_sort = Z3.Sort.mk_uninterpreted_s z3_ctx "MD"
+let md_sort = Z3.Sort.mk_uninterpreted_s z3_ctx "metadata"
 let pointer_sort = bv_sort 64
 let size_sort = bv_sort 64
+let array_idx_sort = bv_sort 64
 let function_sort args_t ret_t = int_sort (* TODO *)
-let array_sort elt_t = int_sort (* TODO *)
+let array_sort elt_t = Z3.Z3Array.mk_sort z3_ctx array_idx_sort elt_t
 let vector_sort sz elt_t = int_sort (* TODO *)
-let named_sort n = int_sort (* TODO *)
 
 let struct_sort_map = Hashtbl.create 0
 
-let rec sort_of_lltype t = match (classify_type t) with
+let rec named_sort n =
+  (sort_of_lltype @@ from_some @@ type_by_name (get_llmodule ())) n
+
+and sort_of_lltype t = match (classify_type t) with
   | Void -> void_sort
   | Float
   | Half
@@ -47,7 +53,7 @@ let rec sort_of_lltype t = match (classify_type t) with
     let par_types = sort_of_lltype_array (param_types t) in
     function_sort par_types ret_type
   | Struct ->
-    if is_opaque t then named_sort (Syntax.mk_plvar lltype_sort (string_of_struct t))
+    if is_opaque t then named_sort (string_of_struct t)
     else struct_sort t
   | Array ->
     let elt_t = sort_of_lltype (element_type t) in
@@ -69,7 +75,7 @@ let struct_as_fields_sort l =
     elts_s = l in
   let f t s r =
     if r = None && is_it_this_struct t  then Some s
-    else None in
+    else r in
   let r = Hashtbl.fold f struct_sort_map None in
   match r with
   | None -> raise Not_found (* TODO: error message *)
@@ -85,6 +91,7 @@ let declare_struct_types_in_llmodule m =
     | Struct -> true
     | _ -> false in
   let stl = List.filter struct_filter all_types in
+  prerr_endline ("found "^(string_of_int (List.length stl))^" structs");
   let struct_index t =
     let rec f i = function
       | tt::_ when tt = t -> i
@@ -93,6 +100,7 @@ let declare_struct_types_in_llmodule m =
     f 0 stl in
   let dummy_sort = Z3.Sort.mk_uninterpreted_s z3_ctx "dummy" in
   let one_struct t =
+    prerr_endline "one_struct: begin";
     let struct_name = string_of_struct t in
     let struct_sym = Z3.Symbol.mk_string z3_ctx struct_name in
     let constr_sym =
@@ -106,6 +114,7 @@ let declare_struct_types_in_llmodule m =
       let s = Printf.sprintf "%s_fld%d" struct_name i in
       Z3.Symbol.mk_string z3_ctx s in
     let elts_syms = Array.to_list (Array.mapi (fun i _ -> elt_sym i) elts) in
+    prerr_endline "one_struct: here";
     let one_elt et =
       try (sort_of_lltype et, 0)
       with Not_found ->
@@ -115,16 +124,24 @@ let declare_struct_types_in_llmodule m =
 	(dummy_sort, struct_index t) in
     let elts_sorts_and_indices = List.map one_elt (Array.to_list elts) in
     let (elts_sorts, indices) = List.split elts_sorts_and_indices in
+    prerr_endline "one_struct: almost";
     (struct_sym, [Z3.Datatype.mk_constructor z3_ctx
 		     constr_sym struct_recog elts_syms elts_sorts indices]) in
   let (s, c) = List.split (List.map one_struct stl) in
-  let sorts = Z3.Datatype.mk_sorts z3_ctx s c in
-  List.iter2 (Hashtbl.add struct_sort_map) stl sorts
+  prerr_endline "all structs: done";
+  let sorts =
+    if s = [] then []
+    else if List.length s = 1 then [Z3.Datatype.mk_sort z3_ctx (List.hd s) (List.hd c)]
+    else Z3.Datatype.mk_sorts z3_ctx s c in
+  prerr_endline "sorts done";
+  List.iter2 (fun st so ->
+    fprintf logf "Adding struct %s with sort %s@?@\n" (Llvm.string_of_lltype st) (Z3.Sort.to_string so);
+    Hashtbl.add struct_sort_map st so) stl sorts
 
 (*** /sorts *)
 
 
-(*** helpers for mk*Type *)
+(*** helpers for mk_*_type *)
 let bv_fun = Z3.FuncDecl.mk_func_decl_s z3_ctx "bv" [int_sort] lltype_sort
 let rec n_lltype n = if n <= 0 then [] else lltype_sort::n_lltype (n-1)
 let named_cons =
@@ -132,69 +149,77 @@ let named_cons =
     "named" [lltype_sort] lltype_sort
 (*** /helpers *)
 
-let mkIntType = Z3.Expr.mk_const_s z3_ctx "int" lltype_sort
-let mkBVType sz =
+let mk_int_type = Z3.Expr.mk_const_s z3_ctx "int" lltype_sort
+let mk_bv_type sz =
   let sz = Z3.Arithmetic.Integer.mk_numeral_i z3_ctx sz in
-  Z3.Expr.mk_app z3_ctx bv_fun [sz]
-let mkFPType t = failwith "floats not supported"
-let mkVoidType = Z3.Expr.mk_const_s z3_ctx "void" lltype_sort
-let mkLabelType = Z3.Expr.mk_const_s z3_ctx "label" lltype_sort
-let mkNamedType e = Z3.Expr.mk_app z3_ctx named_cons [e]
-let mkNamedType_s s =
+  Z3.FuncDecl.apply bv_fun [sz]
+let mk_fp_type t = failwith "floats not supported"
+let mk_void_type = Z3.Expr.mk_const_s z3_ctx "void" lltype_sort
+let mk_label_type = Z3.Expr.mk_const_s z3_ctx "label" lltype_sort
+let mk_named_type s =
   let v = Syntax.mk_plvar lltype_sort s in
-  mkNamedType v
-let mkOpaqueType = Z3.Expr.mk_const_s z3_ctx "opaque" lltype_sort
-let mkStructType elts_t =
+  Z3.FuncDecl.apply named_cons [v]
+let mk_opaque_type = Z3.Expr.mk_const_s z3_ctx "opaque" lltype_sort
+let mk_struct_type elts_t =
   let n = List.length elts_t in
   let s = Z3.FuncDecl.mk_func_decl_s z3_ctx "struct" (n_lltype n) lltype_sort in
-  Z3.Expr.mk_app z3_ctx s elts_t
-let mkFunctionType args_t ret_t =
+  Z3.FuncDecl.apply s elts_t
+let mk_function_type args_t ret_t =
   let n = List.length args_t + 1 in
   let s = Z3.FuncDecl.mk_func_decl_s z3_ctx "function" (n_lltype n) lltype_sort in
-  Z3.Expr.mk_app z3_ctx s (ret_t::args_t)
-let mkPointerType elt_t =
+  Z3.FuncDecl.apply s (ret_t::args_t)
+let mk_pointer_type elt_t =
   let s = Z3.FuncDecl.mk_func_decl_s z3_ctx "pointer" [lltype_sort] lltype_sort in
-  Z3.Expr.mk_app z3_ctx s [elt_t]
-let mkVectorType size elt_t =
-  let s = Z3.FuncDecl.mk_func_decl_s z3_ctx "vector" [int_sort; lltype_sort] lltype_sort in
-  let sz = Z3.Arithmetic.Integer.mk_numeral_i z3_ctx size in
-  Z3.Expr.mk_app z3_ctx s [sz; elt_t]
-let mkArrayType size elt_t =
-  let s = Z3.FuncDecl.mk_func_decl_s z3_ctx "array" [int_sort; lltype_sort] lltype_sort in
-  let sz = Z3.Arithmetic.Integer.mk_numeral_i z3_ctx size in
-  Z3.Expr.mk_app z3_ctx s [sz; elt_t]
-let mkMDType = Z3.Expr.mk_const_s z3_ctx "MD" lltype_sort
+  Z3.FuncDecl.apply s [elt_t]
+let mk_vector_type size elt_t =
+  let s = Z3.FuncDecl.mk_func_decl_s z3_ctx "vector" [size_sort; lltype_sort] lltype_sort in
+  Z3.FuncDecl.apply s [size; elt_t]
+let mk_array_type size elt_t =
+  let s = Z3.FuncDecl.mk_func_decl_s z3_ctx "array" [size_sort; lltype_sort] lltype_sort in
+  Z3.FuncDecl.apply s [size; elt_t]
+let mk_metadata_type = Z3.Expr.mk_const_s z3_ctx "MD" lltype_sort
 
-let mkI8Type = mkBVType 8
-let mkI32Type = mkBVType 32
-let mkI64Type = mkBVType 64
-let mkPtrBVType = mkI64Type
-let mkVoidPointerType elt_t = mkPointerType mkI8Type
+let mk_i8_type = mk_bv_type 8
+let mk_i32_type = mk_bv_type 32
+let mk_i64_type = mk_bv_type 64
+let mk_ptrBV_type = mk_i64_type
+let mk_void_pointer_type elt_t = mk_pointer_type mk_i8_type
 
 (* shorthands for value expressions *)
-let mkInt i = Z3.Arithmetic.Integer.mk_numeral_i z3_ctx i
-let mkInt64 i = Z3.Arithmetic.Integer.mk_numeral_s z3_ctx (Int64.to_string i)
-let mkBV sz i = Z3.BitVector.mk_numeral z3_ctx i sz
-let mkBV64 sz i = mkBV sz (Int64.to_string i)
-let mkFP t exp s = failwith "floats not supported"
-let mkVoid = Z3.Expr.mk_const_s z3_ctx "void" void_sort
-let mkStruct s elts_v =
+let mk_int i = Z3.Arithmetic.Integer.mk_numeral_i z3_ctx i
+let mk_int64 i = Z3.Arithmetic.Integer.mk_numeral_s z3_ctx (Int64.to_string i)
+let mk_bv sz i = Z3.BitVector.mk_numeral z3_ctx i sz
+let mk_bv64 sz i = mk_bv sz (Int64.to_string i)
+let mk_fp t exp s = failwith "floats not supported"
+let mk_void = Z3.Expr.mk_const_s z3_ctx "void" void_sort
+let mk_struct s elts_v =
+  Format.fprintf Debug.logf "making struct %s { %a }" (Z3.Sort.to_string s) (pp_list_sep ", " Syntax.pp_expr) elts_v;
   let cons = List.hd (Z3.Datatype.get_constructors s) in
-  Z3.Expr.mk_app z3_ctx cons elts_v
-let mkStruct_llt t elts_v =
+  Z3.FuncDecl.apply cons elts_v
+let mk_struct_llt t =
   let s = Hashtbl.find struct_sort_map t in
-  mkStruct s elts_v
-let mkArray t elts_v = failwith "TODO: mkArray"
-let mkVector t elts_v = failwith "TODO: mkVector"
-let mkNullPtr = mkBV 64 "0"
-let mkUndef t = Z3.Expr.mk_const_s z3_ctx "undef" t
+  mk_struct s
+let mk_struct_field s i st =
+  let accs = List.hd (Z3.Datatype.get_accessors s) in
+  let acc = List.nth accs i in
+  Z3.FuncDecl.apply acc [st]
+let mk_struct_field_llt t =
+  let s = Hashtbl.find struct_sort_map t in
+  mk_struct_field s
+let mk_array t elts_v = failwith "TODO: mk_array"
+let mk_vector t elts_v = failwith "TODO: mk_vector"
+let mk_null_ptr = mk_bv 64 "0"
+let mk_undef t = Z3.Expr.mk_const_s z3_ctx "undef" t
 
 let as_llmem_cons s =
   Z3.FuncDecl.mk_func_decl_s z3_ctx "as" [s] llmem_sort
-
 let as_llmem s e =
-  Z3.Expr.mk_app z3_ctx (as_llmem_cons s) [e]
+  Z3.FuncDecl.apply (as_llmem_cons s) [e]
 
+let as_sort_cons s =
+  Z3.FuncDecl.mk_func_decl_s z3_ctx "as" [llmem_sort] s
+let as_sort s e =
+  Z3.FuncDecl.apply (as_sort_cons s) [e]
 
 (* predicates *)
 let pointer_pred =
@@ -213,18 +238,21 @@ let jump =
 let eltptr =
   Z3.FuncDecl.mk_func_decl_s z3_ctx
     "eltptr" [pointer_sort; lltype_sort; jump_sort] pointer_sort
+let sizeof_fun =
+  Z3.FuncDecl.mk_func_decl_s z3_ctx "sizeof" [lltype_sort] size_sort
 
-let mkPointer ptr ptr_t v = Z3.Expr.mk_app z3_ctx pointer_pred [ptr; ptr_t; v]
-let mkMalloced ptr sz = Z3.Expr.mk_app z3_ctx malloced_pred [ptr; sz]
+let mk_pointer ptr ptr_t v = Z3.FuncDecl.apply pointer_pred [ptr; ptr_t; v]
+let mk_malloced ptr sz = Z3.FuncDecl.apply malloced_pred [ptr; sz]
 (** padding with [size] bytes at address [x] *)
-let mkPadding x size = Z3.Expr.mk_app z3_ctx padding_pred [x; size]
-let mkJumpEnd = jump_end
-let mkJump jhead jtail = Z3.Expr.mk_app z3_ctx jump [jhead; jtail]
-let mkEltptr ptr t jchain = Z3.Expr.mk_app z3_ctx eltptr [ptr; t; jchain]
+let mk_padding x size = Z3.FuncDecl.apply padding_pred [x; size]
+let mk_jump_end = jump_end
+let mk_jump jhead jtail = Z3.FuncDecl.apply jump [jhead; jtail]
+let mk_eltptr ptr t jchain = Z3.FuncDecl.apply eltptr [ptr; t; jchain]
+let mk_sizeof t = Z3.FuncDecl.apply sizeof_fun [t]
 
 let expr_of_sizeof t =
   let size64 = Llvm_target.DataLayout.abi_size t !lltarget in
-  mkBV64 64 size64
+  mk_bv64 64 size64
 
 let string_of_fptype t = match (classify_type t) with
   | Float -> "float"
@@ -249,41 +277,43 @@ let eb_sb_of_fpt t = match (classify_type t) with
 
 
 let rec expr_of_lltype t = match (classify_type t) with
-  | Void -> mkVoidType
+  | Void -> mk_void_type
   | Float
   | Half
   | Double
   | X86fp80
   | X86_mmx
   | Fp128
-  | Ppc_fp128 -> mkFPType (string_of_fptype t)
-  | Label -> mkLabelType
+  | Ppc_fp128 -> mk_fp_type (string_of_fptype t)
+  | Label -> mk_label_type
   | Integer ->
     let sz = integer_bitwidth t in
-    mkBVType sz
+    mk_bv_type sz
   | TypeKind.Function -> (* silly name clash *)
     let ret_type = expr_of_lltype (return_type t) in
     let par_types = expr_of_lltype_array (param_types t) in
-    mkFunctionType par_types ret_type
+    mk_function_type par_types ret_type
   | Struct -> (
-    if is_opaque t then mkOpaqueType
+    if is_opaque t then mk_opaque_type
     else match struct_name t with
 	| None ->
 	  let elts_types = struct_element_types t in
 	  let elt_ta = expr_of_lltype_array elts_types in
-	  mkStructType elt_ta
-	| Some n -> mkNamedType_s n
+	  mk_struct_type elt_ta
+	| Some n -> mk_named_type n
   )
   | Array ->
     let elt_t = expr_of_lltype (element_type t) in
-    mkArrayType (array_length t) elt_t
+    let size = mk_bv 64 (string_of_int (array_length t)) in
+    mk_array_type size elt_t
   | Pointer ->
     let elt_t = expr_of_lltype (element_type t) in
-    mkPointerType elt_t
+    mk_pointer_type elt_t
   | Vector ->
     let elt_t = expr_of_lltype (element_type t) in
-    mkVectorType (vector_size t) elt_t
-  | Metadata -> mkMDType
+    let size = mk_bv 64 (string_of_int (vector_size t)) in
+    mk_vector_type size elt_t
+  | Metadata -> mk_metadata_type
 and expr_of_lltype_array ta =
   Array.to_list (Array.map expr_of_lltype ta)
 
@@ -293,21 +323,21 @@ let rec expr_zero_of_type t = match (classify_type t) with
   | Double
   | X86fp80
   | Fp128
-  | Ppc_fp128 -> mkFP (string_of_fptype t) "0" "0"
+  | Ppc_fp128 -> mk_fp (string_of_fptype t) "0" "0"
   | Integer ->
     let sz = integer_bitwidth t in
-    mkBV sz "0"
+    mk_bv sz "0"
   | Struct when not (is_opaque t) ->
     let elts_types = struct_element_types t in
     let elt_za = expr_zero_of_type_array elts_types in
-    mkStruct_llt t elt_za
+    mk_struct_llt t elt_za
   | Array ->
     let elt_z = expr_zero_of_type (element_type t) in
-    mkArray t elt_z
-  | Pointer -> mkNullPtr
+    mk_array t elt_z
+  | Pointer -> mk_null_ptr
   | Vector ->
     let elt_z = expr_zero_of_type (element_type t) in
-    mkVector t elt_z
+    mk_vector t elt_z
   | _ -> failwith ("PANIC: asked to generate a ConstantAggregateZero of a wrong type ")
 and expr_zero_of_type_array ta =
   Array.to_list (Array.map expr_zero_of_type ta)
@@ -315,7 +345,7 @@ and expr_zero_of_type_array ta =
 let expr_of_int_const v =
   let sz = integer_bitwidth (type_of v) in
   match int64_of_const v with
-  | Some i -> mkBV64 sz i
+  | Some i -> mk_bv64 sz i
   | None -> mk_fresh_lvar bool_sort "i"
 
 let expr_of_fp_const v =
@@ -328,15 +358,15 @@ let expr_of_fp_const v =
 let lleq e f =
   Z3.Boolean.mk_ite z3_ctx
     (Z3.Boolean.mk_eq z3_ctx e f)
-    (mkBV 1 "1")
-    (mkBV 1 "0")
+    (mk_bv 1 "1")
+    (mk_bv 1 "0")
 
 (** expression that returns (_ bv1 1) if [e] != [f] and (_ bv1 0) otherwise *)
 let llne e f =
   Z3.Boolean.mk_ite z3_ctx
     (Z3.Boolean.mk_distinct z3_ctx [e; f])
-    (mkBV 1 "1")
-    (mkBV 1 "0")
+    (mk_bv 1 "1")
+    (mk_bv 1 "0")
 
 (** builds binary operation from constant expression or instruction *)
 let rec expr_of_op opcode opval =
@@ -411,16 +441,16 @@ let rec expr_of_op opcode opval =
       if i = max_op then []
       else operand opval i::(jlist_from_op (i+1)) in
     let rec jump_chain_of_lidx = function
-      | [] -> mkJumpEnd
+      | [] -> mk_jump_end
       | idx::tl ->
 	(* convert constant integers to 64 bits *)
 	let idx = match int64_of_const idx with
 	  | None -> idx
 	  | Some i -> const_of_int64 (integer_type !llcontext 64) i false in
 	let expr_idx = expr_of_llvalue idx in
-	mkJump expr_idx (jump_chain_of_lidx tl) in
+	mk_jump expr_idx (jump_chain_of_lidx tl) in
     let jump_chain = jump_chain_of_lidx (jlist_from_op 1) in
-    mkEltptr (expr_of_llvalue value) (expr_of_lltype (type_of value)) jump_chain
+    mk_eltptr (expr_of_llvalue value) (expr_of_lltype (type_of value)) jump_chain
   | Opcode.ICmp ->
     let op = match icmp_predicate opval with
       | None -> assert false
@@ -482,13 +512,13 @@ and expr_of_llvalue v = match classify_value v with
   | ConstantExpr -> expr_of_const_expr v
   | ConstantFP -> expr_of_fp_const v
   | ConstantInt -> expr_of_int_const v
-  | ConstantPointerNull -> mkNullPtr
-  | ConstantStruct -> mkStruct_llt (type_of v) (expr_of_composite_llvalue v)
+  | ConstantPointerNull -> mk_null_ptr
+  | ConstantStruct -> mk_struct_llt (type_of v) (expr_of_composite_llvalue v)
   | ConstantVector
-  | ConstantDataVector -> mkVector (type_of v) (expr_of_composite_llvalue v)
+  | ConstantDataVector -> mk_vector (type_of v) (expr_of_composite_llvalue v)
   | Function -> implement_this "function values"
   | GlobalAlias -> implement_this "global alias values" (* undocumented? *)
-  | UndefValue -> mkUndef (sort_of_lltype (type_of v))
+  | UndefValue -> mk_undef (sort_of_lltype (type_of v))
   | Argument
   | InlineAsm
   | Instruction _ -> mk_plvar (sort_of_lltype (type_of v)) (value_id v)
@@ -521,7 +551,7 @@ let expand_named_type = function
     | None -> Format.fprintf Debug.logf "No such type name %s" name; assert false)
   | t -> t
 
-let rec check_same_type t u = t = u || t = mkAnyType || u = mkAnyType || match (t, u) with
+let rec check_same_type t u = t = u || t = mk_any_type || u = mk_any_type || match (t, u) with
   | Arg_op("named_type", [name]), _ -> check_same_type (expand_named_type t) u
   | _, Arg_op("named_type", [name]) -> check_same_type t (expand_named_type u)
   | Arg_op("struct_type", elts_t), Arg_op("struct_type", elts_u)
@@ -544,9 +574,9 @@ let rec check_type_of_expr = function
   | Arg_op ("typed", [t; e]) -> (
     match t,e with
     | t, Arg_var _ -> t
-    | Arg_op("bv_type", [Arg_string "64"]), Arg_op("NULL", []) -> mkPtrBVType
+    | Arg_op("bv_type", [Arg_string "64"]), Arg_op("NULL", []) -> mk_ptrBV_type
     | t, Arg_op("NULL", []) ->
-    type_error (Printf.sprintf "Expected %s type, got %s instead" (string_of_llexpr mkPtrBVType) (string_of_llexpr t))
+    type_error (Printf.sprintf "Expected %s type, got %s instead" (string_of_llexpr mk_ptrBV_type) (string_of_llexpr t))
     | Arg_op ("numeral", []), e
     | Arg_op ("bv_type", [_]), e ->
       (match e with 
@@ -556,14 +586,14 @@ let rec check_type_of_expr = function
       | _ -> type_error (Printf.sprintf "%s should be an Int" (string_of_llexpr e)))
     | t, Arg_op("struct", elts) ->
       let elts_t = check_type_of_expr_list elts in
-      if not (check_same_type t (mkStructType elts_t)) then
+      if not (check_same_type t (mk_struct_type elts_t)) then
 	type_error (Printf.sprintf "%s is not of type %s" (string_of_llexpr e) (string_of_llexpr t));
       t
     | Arg_op ("type", []), _ -> (* TODO: check that [e] is a well-formed type *) t
     | _ -> type_error (Printf.sprintf "%s is not of type %s" (string_of_llexpr e) (string_of_llexpr t)))
   | Arg_op ("typed", _) as e -> type_error (Printf.sprintf "ill-formed typed expression %s" (string_of_llexpr e))
   | Arg_var (Vars.AnyVar _) -> Arg_op ("any_type", [])
-  | e -> mkAnyType
+  | e -> mk_any_type
 and check_type_of_expr_list = function
   | [] -> []
   | e::l -> check_type_of_expr e::(check_type_of_expr_list l)

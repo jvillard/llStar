@@ -20,6 +20,7 @@ val get_llmodule : unit -> Llvm.llmodule
 
 (* val classify_value : Llvm.llvalue -> Llvm.ValueKind.t *)
 
+val lltype_of_name : string -> Llvm.lltype
 (** gets names of named and unnamed variables *)
 val value_id : Llvm.llvalue -> string
 (** extract the location of instruction [instr] from the debug information *)

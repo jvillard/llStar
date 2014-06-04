@@ -1,29 +1,26 @@
-malloc:
-  {}
-  {(i64 $ret_v1 != NULL()
-    * malloced(i64 $ret_v1, i64 @parameter0:)
-    * $ret_v1 |-> [ i64 @parameter0: x i8 ] _v)
-  || i64 $ret_v1 = NULL()}
-
-__safe_malloc:
-  {}
-  {malloced(i64 $ret_v1, i64 @parameter0:)
-   * $ret_v1 |-> [ i64 @parameter0: x i8 ] _v}
-
+procedure malloc(i64 %s) returns (i64 %x)
+  {emp}
+  {(i64 %x != NULL()
+    * malloced(i64 %x, i64 %s)
+    * pointer(i64 %x, lltype [ i64 %s x lltype i8 ], llmem _v))
+  || i64 %x = NULL()}
+;
 /*
 free:
   {malloced(@parameter0:,_s) * pointer(@parameter0:,array_type(_s,integer_type("8")),_v)}
-  {}
+  {emp}
 */
 
-free:
-  {malloced(i64 @parameter0:, i64 ?s) * @parameter0: |-> [ i64 ?s x i8] _v}
-  {}
-
+procedure free(i64 %x)
+  {malloced(i64 %x, i64 ?s) * pointer(i64 %x, lltype [ i64 ?s x lltype i8], llmem _v)}
+  {emp}
+;
+/*
 __VERIFIER_assert:
    {i32 @parameter0: != i32 0 }
    {i32 @parameter0: != i32 0 }
 
 __VERIFIER_assume:
-   {}
+   {emp}
    {i32 @parameter0: != i32 0 }
+*/

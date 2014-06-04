@@ -5,9 +5,10 @@ syntax: glob
 *~
 _build/*
 bin/*
-corestar_src.subdirs
-corestar_src
 _llstar/
 webapp/llstar/
 *.c.bc
 *.ll.bc
+*.out/
+corestar/
+llstar
