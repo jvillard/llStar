@@ -57,13 +57,16 @@ let kwd_or_else =
     "bool", BOOL;
     "emp", EMP;
     "equiv", EQUIVRULE;
+    "fresh", FRESH;
     "False", FALSE;
     "global", GLOBAL;
     "if", IF;
     "import", IMPORT;
+    "in", IN;
     "inconsistent", INCONSISTENT;
     "nobacktrack", NO_BACKTRACK;
     "nodedecl", NODEDECL;
+    "priority", PRIORITY;
     "procedure", PROCEDURE;
     "purecheck", PURECHECK;
     "returns", RETURNS;

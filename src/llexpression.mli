@@ -63,6 +63,11 @@ val mk_jump : Z3.Expr.expr -> Z3.Expr.expr -> Z3.Expr.expr
 val mk_eltptr : Z3.Expr.expr -> Z3.Expr.expr -> Z3.Expr.expr -> Z3.Expr.expr
 val mk_sizeof : Z3.Expr.expr -> Z3.Expr.expr
 
+val mk_pointer_size : Z3.Expr.expr
+val mk_field_type : Z3.Expr.expr -> Z3.Expr.expr -> Z3.Expr.expr
+val mk_offset : Z3.Expr.expr -> Z3.Expr.expr -> Z3.Expr.expr
+val mk_exploded_struct : Z3.Expr.expr -> Z3.Expr.expr -> Z3.Expr.expr -> Z3.Expr.expr
+
 val expr_of_sizeof : Llvm.lltype -> Z3.Expr.expr
 val expr_of_lltype : Llvm.lltype -> Z3.Expr.expr
 val expr_of_int_const : Llvm.llvalue -> Z3.Expr.expr

@@ -250,6 +250,20 @@ let mk_jump jhead jtail = Z3.FuncDecl.apply jump [jhead; jtail]
 let mk_eltptr ptr t jchain = Z3.FuncDecl.apply eltptr [ptr; t; jchain]
 let mk_sizeof t = Z3.FuncDecl.apply sizeof_fun [t]
 
+let mk_pointer_size =
+  let ptr_bitsize = (Llvm_target.DataLayout.pointer_size !lltarget) * 8 in
+  mk_bv ptr_bitsize
+    (string_of_int (Llvm_target.DataLayout.pointer_size !lltarget))
+let field_type =
+  Z3.FuncDecl.mk_func_decl_s z3_ctx "field_type" [lltype_sort; size_sort] lltype_sort
+let mk_field_type st i = Z3.FuncDecl.apply field_type [st; i]
+let offset =
+  Z3.FuncDecl.mk_func_decl_s z3_ctx "offset" [lltype_sort; size_sort] size_sort
+let mk_offset st i = Z3.FuncDecl.apply offset [st; i]
+let exploded_struct =
+  Z3.FuncDecl.mk_func_decl_s z3_ctx "exploded_struct" [pointer_sort; lltype_sort; llmem_sort] bool_sort
+let mk_exploded_struct x t v = Z3.FuncDecl.apply exploded_struct [x; t; v]
+
 let expr_of_sizeof t =
   let size64 = Llvm_target.DataLayout.abi_size t !lltarget in
   mk_bv64 64 size64

@@ -55,6 +55,11 @@ let ops = [
   ("sizeof", mk_1 mk_sizeof);
   ("pointer_type", mk_1 mk_pointer_type);
   ("array_type", mk_2 mk_array_type);
+  (* struct rule generators *)
+  ("ptr_size", mk_0 mk_pointer_size);
+  ("offset", mk_2 mk_offset);
+  ("field_type", mk_2 mk_field_type);
+  ("exploded_struct", mk_3 mk_exploded_struct);
   (* bitvector operations *)
   ("bvudiv", mk_2 (Z3.BitVector.mk_udiv z3_ctx));
   ("bvsdiv", mk_2 (Z3.BitVector.mk_sdiv z3_ctx));
@@ -157,6 +162,7 @@ let lookup_op op args =
 %token NODEDECL
 %token NOT_EQUALS
 %token OROR
+%token PRIORITY
 %token PROCEDURE
 %token PURECHECK
 %token RETURNS
@@ -230,6 +236,7 @@ sort:
   | LLJUMP { jump_sort }
   | LLVOID { void_sort }
   | LLBVTYPE { bv_sort $1 }
+  | LLTYPE { lltype_sort }
   | LLMEM { llmem_sort }
   | LLNAMED L_PAREN STRING_CONSTANT R_PAREN { sort_of_lltype (lltype_of_name $3) }
   | L_LTBRACE sort_list R_BRACEGT { struct_as_fields_sort $2 }
@@ -311,43 +318,55 @@ spec:
 /* Rules */
 
 sequent_rule:
-  | RULE rule_flags IDENTIFIER rule_priority COLON sequent
-    sidecondition_list
+  | RULE rule_flags IDENTIFIER struct_vars COLON sequent
+      with_clause
     IF sequent_list SEMICOLON
-    { { Calculus.seq_name = $3
-      ; seq_pure_check = fst $7
-      ; seq_fresh_in_expr = snd $7
-      ; seq_goal_pattern = $6
-      ; seq_subgoal_pattern = $9
-      ; seq_priority = $4
-      ; seq_flags = $2 } }
+    { let seq = Calculus.Sequent_rule
+        { Calculus.seq_name = $3
+        ; seq_pure_check = fst $7
+        ; seq_fresh_in_expr = snd $7
+        ; seq_goal_pattern = $6
+        ; seq_subgoal_pattern = $9
+        ; seq_priority = fst $2
+        ; seq_flags = snd $2 } in
+    match $4 with
+    | None -> [seq]
+    | Some (st,i) -> Rulegen.gen_struct_rule st i seq }
 ;
 
 rewrite_rule:
-  | REWRITERULE IDENTIFIER rule_priority COLON
+  | REWRITERULE IDENTIFIER struct_vars COLON
       atomic_term EQUALS atomic_term SEMICOLON
-    { { Calculus.rw_name = $2
-      ; rw_from_pattern = $5
-      ; rw_to_pattern = $7 } }
+    { let rw =
+        { Calculus.rw_name = $2
+        ; rw_from_pattern = $5
+        ; rw_to_pattern = $7 } in
+      [rw] }
 ;
 
 equiv_rule:
-  | EQUIVRULE rule_flags IDENTIFIER rule_priority COLON term BIMP term SEMICOLON { ($3, $2, $4, $6, $8) }
+  | EQUIVRULE rule_flags IDENTIFIER struct_vars COLON
+      term BIMP term SEMICOLON
+      { let seqs = Calculus.mk_equiv_rule $3 (fst $2) (snd $2) $6 $8 in
+        match $4 with
+        | None -> seqs
+        | Some (st,i) -> seqs >>= (Rulegen.gen_struct_rule st i) }
 ;
 
 rule_flag:
-  | NO_BACKTRACK { Calculus.rule_no_backtrack }
-  | ABDUCT { Calculus.rule_abduct }
-  | INCONSISTENT { Calculus.rule_inconsistency }
+  | NO_BACKTRACK { (None,Calculus.rule_no_backtrack) }
+  | ABDUCT { (None,Calculus.rule_abduct) }
+  | INCONSISTENT { (None,Calculus.rule_inconsistency) }
+  | PRIORITY L_PAREN INTEGER R_PAREN { (Some (int_of_string $3), 0) }
 ;
 rule_flags:
-  | /* empty */ { 0 }
-  | rule_flag rule_flags { $1 lor $2 }
+  | /* empty */ { (Calculus.default_rule_priority,0) }
+  | rule_flags rule_flag { (from_option (fst $1) (fst $2), snd $1 lor snd $2) }
 ;
 
-rule_priority:
-  | /* empty */ { Calculus.default_rule_priority }
-  | L_PAREN INTEGER R_PAREN { int_of_string $2 }
+struct_vars:
+  | /* empty */ { None }
+  | L_PAREN variable COMMA variable R_PAREN { Some ($2, $4) }
 ;
 
 sequent:
@@ -376,9 +395,9 @@ sidecondition_list_ne:
       { (option (fst $3) (flip ListH.cons (fst $3)) (fst $1),
 	 option (snd $3) (flip ListH.cons (snd $3)) (snd $1)) }
 ;
-sidecondition_list:
-  | /*empty*/  { ([], []) }
-  | sidecondition_list_ne { $1 }
+with_clause:
+  | /* empty */ { ([],[]) }
+  | WITH sidecondition_list_ne { $2 }
 ;
 
 node_decl:
@@ -429,11 +448,9 @@ import_entry:
 normal_entry:
   | procedure { [ParserAst.Procedure $1] }
   | GLOBAL variable_list_ne SEMICOLON { [ParserAst.Global $2] }
-  | sequent_rule { [ParserAst.CalculusRule (Calculus.Sequent_rule $1)] }
-  | equiv_rule { let (n,f,p,l,r) = $1 in
-                 List.map (fun x -> ParserAst.CalculusRule x)
-                   (Calculus.mk_equiv_rule n p f l r) }
-  | rewrite_rule { [ParserAst.CalculusRule (Calculus.Rewrite_rule $1)] }
+  | sequent_rule { List.map (fun x -> ParserAst.CalculusRule x) $1 }
+  | equiv_rule { List.map (fun x -> ParserAst.CalculusRule x) $1 }
+  | rewrite_rule { List.map (fun x -> ParserAst.CalculusRule (Calculus.Rewrite_rule x)) $1 }
   | node_decl { [ParserAst.NodeDecl $1] }
 ;
 

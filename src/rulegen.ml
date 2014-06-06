@@ -9,6 +9,7 @@ open TypeKind
 (* coreStar modules *)
 open Corestar_std
 open Calculus
+open Debug
 (* llStar modules *)
 open Llexpression
 open Llutils
@@ -164,7 +165,6 @@ let mk_unfolded_struct struct_t root mk_field =
 
 (*** Scalar rules *)
 
-(* TODO: restore (needs rewrite rules) *)
 (* assumes that [t] is an int or struct type *)
 let sizeof_logic_of_type t =
   let expr_sizeof = mk_sizeof (expr_of_lltype t) in
@@ -190,102 +190,56 @@ let read_as_type t =
 
 (*** Structure rules *)
 
-(* assumes that [t] is a struct type *)
-let eltptr_logic_of_type t =
-  let expr_struct_t = expr_of_lltype t in
-  let root_var = Syntax.mk_tpat pointer_sort "x" in
-  let jump_var = Syntax.mk_tpat jump_sort "j" in
-  let t_var = Syntax.mk_tpat lltype_sort "t" in
-  let v_var = Syntax.mk_tpat llmem_sort "v" in
-  let subelt_eltptr_rules i subelt_type =
-    let jump = mk_jump (mk_bv 64 (string_of_int i)) jump_var in
-    let orig_eltptr = mk_eltptr root_var expr_struct_t jump in
-    let new_root =
-      if i = 0 then root_var
-      else Z3.BitVector.mk_add z3_ctx root_var (expr_offset_of_field t i) in
-    let result = mk_eltptr new_root (expr_of_lltype subelt_type) jump_var in
-    mk_simple_equiv_rule ("eltptr_"^(string_of_struct t)^(string_of_int i))
-      default_rule_priority
-      rule_no_backtrack
-      (mk_pointer orig_eltptr t_var v_var)
-      (mk_pointer result t_var v_var) in
-  List.flatten (Array.to_list
-                  (Array.mapi subelt_eltptr_rules (struct_element_types t)))
-
-(** unfolds a struct pointer on the lhs when the pointer on the rhs is exactly one of the fields of [t] *)
-(* this is not enough for nested structs or devious pointer casting, but it is
-    efficient to try that first as it will be a common case *)
-(* assumes that [t] is a struct type *)
-let unfold_logic_of_type t =
-  let x_var = Syntax.mk_tpat pointer_sort "x" in
-  let v_var = Syntax.mk_tpat llmem_sort "v" in
-  let w_var = Syntax.mk_tpat llmem_sort "w" in
-  let mk_field_rule1 i subelt_type =
-    (* take a struct with value { v_1, ..., v_n } and one of its fields on the rhs and unfold it *)
-    (* apply this rule before the next as it avoids cluttering of folding of unfolding of ... of struct values *)
-    let target_pointer = mk_field_pointer t i x_var w_var in
-    let mk_field i ft = 
-      Syntax.mk_tpat (sort_of_lltype ft) ("v"^(string_of_int i)) in
-    let sval = mk_struct_of_fields_descend_in_singletons t mk_field in
-    let sval = as_llmem (struct_sort t) sval in
-    let struct_pointer = mk_pointer x_var (expr_of_lltype t) sval in
-    let mk_llmem_field i ft =
-      as_llmem (sort_of_lltype (type_of_field t i)) (mk_field i ft) in
-    mk_simple_sequent_rule ((string_of_struct t)^"_field_"^(string_of_int i))
-      default_rule_priority
-      rule_no_backtrack
-      (mk_unfolded_struct_descend_in_singletons t x_var mk_llmem_field, target_pointer)
-      (struct_pointer, target_pointer) in
-  let mk_field_rule2 i subelt_type =
-    (* take a struct with value v and one of its fields on the rhs and unfold it *)
-    let target_pointer = mk_field_pointer t i x_var w_var in
-    let struct_pointer = mk_pointer x_var (expr_of_lltype t) v_var in
-    let struct_val = as_sort (struct_sort t) v_var in
+let subst_struct st_var st e =
+  let x = Syntax.mk_fresh_tpat (bv_sort 64) "x" in
+  let v = Syntax.mk_fresh_tpat llmem_sort "v" in
+  let exploded_pat = mk_exploded_struct x st_var v in
+  let exploded_concrete =
+    let sv = as_sort (struct_sort st) v in
     let mk_field i ft =
-        as_llmem (sort_of_lltype ft)
-          (mk_field_val_of_struct_val_descend_in_singletons t struct_val i) in
-    mk_simple_sequent_rule ((string_of_struct t)^"_field_"^(string_of_int i))
-      default_rule_priority
-      rule_no_backtrack
-      (mk_unfolded_struct_descend_in_singletons t x_var mk_field, target_pointer)
-      (struct_pointer, target_pointer) in
-  let rules_array1 = Array.mapi mk_field_rule1 (struct_element_types t) in
-  let rules_array2 = Array.mapi mk_field_rule2 (struct_element_types t) in
-  (Array.to_list rules_array1)@(Array.to_list rules_array2)
+      as_llmem (sort_of_lltype ft)
+        (mk_field_val_of_struct_val_descend_in_singletons st sv i) in
+    mk_unfolded_struct_descend_in_singletons st x mk_field in
+  let r = { rw_name = "exploded_struct"
+          ; rw_from_pattern = exploded_pat
+          ; rw_to_pattern = exploded_concrete } in
+  let e = Prover.rewrite_in_expr [] r e in
+  Z3.Expr.substitute_one e st_var (expr_of_lltype st)
 
-(** unfolds a struct pointer on the lhs when the pointer on the rhs is inside of the fields of [t] *)
-(* assumes that [t] is a struct type *)
-let arith_unfold_logic_of_type t =
-  let field_ranged_values base_val i ft =
-    let fv = mk_field_val_of_struct_val_descend_in_singletons t base_val i in
-    as_llmem (sort_of_lltype ft) fv in
-  let x_var = Syntax.mk_tpat pointer_sort "x" in
-  let v_var = Syntax.mk_tpat llmem_sort "v" in
-  let y_var = Syntax.mk_tpat pointer_sort "y" in
-  let t_var = Syntax.mk_tpat lltype_sort "t" in
-  let w_var = Syntax.mk_tpat llmem_sort "w" in
-  (* the whole struct *)
-  let struct_pointer = mk_pointer x_var (expr_of_lltype t) v_var in
-  let mk_field_rule i subelt_type =
-    let target_pointer = mk_pointer y_var t_var w_var in
-    let offset_end_of_field = mk_bv64 64 (Int64.add (alloc_size64_of_field t i) (offset64_of_field t i)) in
-    let x_plus_i = Z3.BitVector.mk_add z3_ctx x_var (expr_offset_of_field t i) in
-    let y_plus_sz = Z3.BitVector.mk_add z3_ctx y_var (mk_sizeof t_var) in
-    let x_plus_end = Z3.BitVector.mk_add z3_ctx x_var offset_end_of_field in
-    { seq_name = (string_of_struct t)^"_inside_field_"^(string_of_int i)
-    ; seq_pure_check =
-        [Z3.BitVector.mk_ule z3_ctx x_plus_i y_var;
-         Z3.BitVector.mk_ule z3_ctx y_plus_sz x_plus_end]
-    ; seq_fresh_in_expr = []
-    ; seq_goal_pattern = mk_simple_sequent struct_pointer target_pointer
-    ; seq_subgoal_pattern =
-        [mk_simple_sequent
-            (mk_unfolded_struct_descend_in_singletons t x_var (field_ranged_values (as_sort (struct_sort t) v_var)))
-            target_pointer]
-    ; seq_priority = default_rule_priority
-    ; seq_flags = rule_no_backtrack } in
-  let rules_array = Array.mapi mk_field_rule (struct_element_types t) in
-  List.map (fun r -> Sequent_rule r) (Array.to_list rules_array)
+let subst_field st_var i_var st i field_t e =
+  let fieldt_type = expr_of_lltype field_t in
+  let fieldt_e = mk_field_type st_var i_var in
+  let e = Z3.Expr.substitute_one e fieldt_e fieldt_type in
+  let offset_bv = expr_offset_of_field st i in
+  let offset_e = mk_offset st_var i_var in
+  let e = Z3.Expr.substitute_one e offset_e offset_bv in
+  let e = Z3.Expr.substitute_one e i_var (mk_bv 64 (string_of_int i)) in
+  subst_struct st_var st e
+
+let subst_in_sequent subst { frame; hypothesis; conclusion } =
+  { frame = subst frame; hypothesis = subst hypothesis; conclusion = subst conclusion }
+
+let gen_struct_seq_rule st_var i_var r =
+  fprintf logf "gen_struct_seq_rule@.";
+  let field st i field_t =
+    let subst = subst_field st_var i_var st i field_t in
+    Sequent_rule { r with
+      seq_name =
+        Printf.sprintf "%s_%s_%d" r.seq_name (string_of_struct st) i
+      ; seq_pure_check = List.map subst r.seq_pure_check
+      ; seq_goal_pattern = subst_in_sequent subst r.seq_goal_pattern
+      ; seq_subgoal_pattern = List.map (subst_in_sequent subst) r.seq_subgoal_pattern } in
+  let struc st =
+    Array.to_list (Array.mapi (field st) (struct_element_types st)) in
+  let struct_filter t = match classify_type t with
+    | Struct -> true
+    | _ -> false in
+  let structs = List.filter struct_filter (collect_types_in_module (get_llmodule ())) in
+  structs >>= struc
+
+let gen_struct_rule st_var i_var = function
+  | Sequent_rule r -> gen_struct_seq_rule st_var i_var r
+  | Rewrite_rule r -> assert false
 
 (* assumes that [t] is a struct type *)
 let fold_logic_of_type t =
@@ -301,7 +255,7 @@ let fold_logic_of_type t =
   mk_simple_equiv_rule ("collate_"^(string_of_struct t))
     default_rule_priority
     rule_no_backtrack
-    struct_pointer unfolded_struct
+    unfolded_struct struct_pointer
 
 (* assumes that [t] is a struct type *)
 let bytearray_to_struct_conversions t =
@@ -510,24 +464,6 @@ let gen_node_logics node_decls logic_generator t = match struct_name t with
         logic_generator t name nd.ParserAst.node_name num_fields
       with Not_found -> []
 
-(* TODO: restore (needs rewrite rules) *)
-let nullptr_logic =
-  let ptr_bitsize = (Llvm_target.DataLayout.pointer_size !lltarget) * 8 in
-  let r =
-    { rw_name = "nullptr"
-    ; rw_from_pattern = mk_null_ptr
-    ; rw_to_pattern = mk_bv ptr_bitsize "0" } in
-  [Rewrite_rule r]
-
-let sizeof_ptr_logic =
-  let ptr_bitsize = (Llvm_target.DataLayout.pointer_size !lltarget) * 8 in
-  let r =
-    { rw_name = "sizeof_ptr"
-    ; rw_from_pattern = mk_sizeof (mk_pointer_type (Syntax.mk_tpat lltype_sort "t"))
-    ; rw_to_pattern = mk_bv ptr_bitsize
-	(string_of_int (Llvm_target.DataLayout.pointer_size !lltarget)) } in
-  [Rewrite_rule r]
-
 type rule_apply =
 | CalculusOnce of Calculus.t
 | CalculusAtType of (lltype -> Calculus.t) * (lltype -> bool)
@@ -545,16 +481,16 @@ let add_rules_of_module node_decls base_logic m =
       are applied only to certain types *)
   let rule_generators =
     (* CalculusOnce nullptr_logic *)
-    CalculusOnce sizeof_ptr_logic
-    ::CalculusAtType (sizeof_logic_of_type, int_struct_filter)
+    (* CalculusOnce sizeof_ptr_logic *)
+    CalculusAtType (sizeof_logic_of_type, int_struct_filter)
     ::CalculusAtType (read_as_type, c1 true)
-    ::CalculusAtType (eltptr_logic_of_type, struct_filter)
+    (* ::CalculusAtType (eltptr_logic_of_type, struct_filter) *)
     ::CalculusAtType (gen_node_logics node_decls malloc_logic_of_node, struct_filter)
-    ::CalculusAtType (unfold_logic_of_type, struct_filter)
+    (* ::CalculusAtType (unfold_logic_of_type, struct_filter) *)
     ::CalculusAtType (bytearray_to_struct_conversions, struct_filter)
     ::CalculusAtType (gen_node_logics node_decls unfold_logic_of_node, struct_filter)
     ::CalculusOnce remove_pointer_arith_same_root_same_size
-    ::CalculusAtType (arith_unfold_logic_of_type, struct_filter)
+    (* ::CalculusAtType (arith_unfold_logic_of_type, struct_filter) *)
     ::CalculusAtType (gen_node_logics node_decls concretise_node_logic_of_type, struct_filter)
     ::CalculusAtType (gen_node_logics node_decls rollup_node_logic_of_type, struct_filter)
     ::CalculusAtType (fold_logic_of_type, struct_filter)

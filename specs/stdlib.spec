@@ -12,7 +12,7 @@ free:
 */
 
 procedure free(i64 %x)
-  {malloced(i64 %x, i64 ?s) * pointer(i64 %x, lltype [ i64 ?s x lltype i8], llmem _v)}
+  {malloced(i64 %x, i64 _s) * pointer(i64 %x, lltype [ i64 _s x lltype i8], llmem _v)}
   {emp}
 ;
 /*

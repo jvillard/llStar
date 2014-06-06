@@ -14,6 +14,7 @@ bin:
 	mkdir bin
 
 native byte d.byte p.native: bin
+	@$(MAKE) -C corestar/scripts byte
 	$(OCAMLBUILD) $(addsuffix .$@,$(MAINS))
 	mkdir -p bin
 	for f in $(MAINS); do $(CPLN) $$f.$@ bin/$$f; rm $$f.$@; done

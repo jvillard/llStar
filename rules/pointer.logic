@@ -8,26 +8,50 @@ rewrite sizeof_array:
  * Generally useful rules about getelementptr 
  *************************************/
 
+rewrite sizeof_ptr:
+  sizeof(pointer_type(lltype ?t)) = ptr_size()
+;
+
 /* the size of the array doesn't matter for jumping
  * (moreover, ?n here might be a size given by LLVM's type system, which
  *  doesn't keep track of array's sizes unless they are constant)
  * and the rules are the same for arrays and pointers
  * so we might as well care only about pointers
  */
-
-/*
-equiv eltptr_array:
-  pointer(eltptr(i64 ?p,array_type(i64 ?n, lltype ?at),jump ?j), lltype ?t, llmem ?v)
-  <=> pointer(eltptr(i64 ?p,pointer_type(lltype ?at),jump ?j), lltype ?t, llmem ?v)
-*/
-
-equiv inconsistent nobacktrack jump_end:
+equiv gep_array:
+  bool ?f * pointer(eltptr(i64 ?p,lltype [i64 ?n x lltype ?at],lljump ?j), lltype ?t, llmem ?v)
+  <=> bool ?f * pointer(eltptr(i64 ?p,pointer_type(lltype ?at),lljump ?j), lltype ?t, llmem ?v)
+;
+equiv inconsistent nobacktrack gep_end:
   bool ?f * pointer(eltptr(i64 ?y,lltype ?t, jump_end()),lltype ?tt, llmem ?v)
   <=> bool ?f * pointer(i64 ?y, lltype ?tt, llmem ?v)
 ;
-equiv inconsistent nobacktrack pointer_getelementptr0:
+equiv inconsistent nobacktrack pointer_gep0:
   bool ?f * pointer(eltptr(i64 ?p, pointer_type(lltype ?pt), jump(i64 0,lljump ?j)),lltype ?t, llmem ?v)
   <=> bool ?f * pointer(eltptr(i64 ?p,lltype ?pt,lljump ?j),lltype ?t,llmem ?v)
+;
+equiv inconsistent nobacktrack gep_struct(lltype _st, i64 _i):
+ bool ?f * pointer(eltptr(i64 ?p, lltype _st, jump(i64 _i,lljump ?j)),lltype ?t, llmem ?v)
+  <=> bool ?f * pointer(eltptr(i64 %p + offset(lltype _st,i64 _i),field_type(lltype _st,i64 _i),lljump ?j),lltype ?t,llmem ?v)
+;
+
+rule nobacktrack unfold_struct(lltype _st, i64 _i):
+  bool ?f | bool ?l * pointer(i64 ?x, lltype _st, llmem ?v)
+  |- pointer(i64 %p + offset(lltype _st, i64 _i), field_type(lltype _st, i64 _i), llmem ?w) * bool ?r
+if
+  bool ?f | bool ?l * exploded_struct(i64 ?x, lltype _st, llmem ?v)
+  |- pointer(i64 %p + offset(lltype _st, i64 _i), field_type(lltype _st, i64 _i), llmem ?w) * bool ?r
+;
+
+rule nobacktrack unfold_struct_inner(lltype _st, i64 _i):
+  bool ?f | bool ?l * pointer(i64 ?x, lltype _st, llmem ?v)
+  |- pointer(i64 ?y, lltype ?t, llmem ?w) * bool ?r
+with
+  purecheck (i64 ?x + offset(lltype _st, i64 _i)) <=u i64 ?y;
+  purecheck (i64 ?y + sizeof(lltype _st)) <=u i64 ?x
+if
+  bool ?f | bool ?l * exploded_struct(i64 ?x, lltype _st, llmem ?v)
+  |- pointer(i64 ?y, lltype ?t, llmem ?w) * bool ?r
 ;
 
 /*************************************
@@ -187,37 +211,38 @@ equiv merge_array_array:
 rule remove_array:
  bool ?f | bool ?l * pointer(i64 ?x, array_type(i64 ?m, lltype ?t), llmem ?v)
  |- pointer(i64 ?x, array_type(i64 ?n, lltype ?t), llmem ?w) * bool ?r
-purecheck i64 ?m = i64 ?n
+with
+  purecheck i64 ?m = i64 ?n
 if
  pointer(i64 ?x, array_type(i64 ?m, lltype ?t), llmem ?v) * bool ?f | bool ?l
  |- llmem ?v = llmem ?w * bool ?r
 ;
 
+rule array_remove_same_size_l:
+ bool ?f | bool ?l * pointer(i64 ?x, lltype [i64 ?s x lltype i8], llmem ^v)
+ |- pointer(i64 ?x, lltype ?t, llmem ?w) * bool ?r
+with
+  fresh llmem ^v in bool ?f;
+  fresh llmem ^v in bool ?l;
+  fresh llmem ^v in bool ?r;
+  purecheck sizeof(lltype ?t) = i64 ?s
+if
+ bool ?f * pointer(i64 ?x, lltype [i64 ?s x lltype i8], llmem ^v) | bool ?l
+ |- llmem ^v = llmem ?w * bool ?r
+;
+rule array_remove_same_size_r:
+ bool ?f | bool ?l * pointer(i64 ?x, lltype ?t, llmem ?w)
+ |- pointer(i64 ?x, lltype [i64 ?s x lltype i8], llmem ^v) * bool ?r
+with
+  fresh llmem ^v in bool ?f;
+  fresh llmem ^v in bool ?l;
+  fresh llmem ^v in bool ?r
+if
+ bool ?f * pointer(i64 ?x, lltype ?t, llmem ?w) | bool ?l
+ |- sizeof(lltype ?t) = i64 ?s * bool ?r
+;
+
 /*
-rule remove_same_size:
- | pointer(?x, array_type(?s, integer_type("8")), _v)
- |- pointer(?x, ?t, ?w)
-without
- ?t = array_type(?as,?ta)
-where
-  _v notincontext;
-  sizeof(?t) = ?s pureguard
-if
- | pointer(?x, ?t, _v)
- |- pointer(?x, ?t, ?w)
-
-rule array_remove_same_size:
- | pointer(?x, ?t, ?w)
- |- pointer(?x, array_type(?s, integer_type("8")), _v)
-without
- ?t = array_type(?as,?ta)
-where
-  _v notincontext;
-  sizeof(?t) = ?s pureguard
-if
- | pointer(?x, ?t, ?w)
- |- pointer(?x, ?t, _v)
-
 rule ptr_no_overflow:
  | pointer(?x,?t,?v) |-
 without
@@ -225,4 +250,14 @@ without
 if
  | pointer(?x,?t,?v) * !bvugt(bvadd.64(?x, sizeof(?t)),?x) |-
 
+*/
+
+/*
+rule nobacktrack fold_struct(lltype _st):
+  bool ?f | bool ?l * exploded_struct_val_pat(i64 ?x, lltype _st)
+  |- bool ?r
+if
+  bool ?f | bool ?l * pointer(i64 ?x, lltype _st, struct_val_pat(lltype _st))
+  |- bool ?r
+;
 */
