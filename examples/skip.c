@@ -1,0 +1,1 @@
+void skip(void) {}

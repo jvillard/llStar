@@ -30,6 +30,8 @@ let parse_warning = message "W"
 
 let z3_ctx = Syntax.z3_ctx
 
+let dag_const = Z3.FuncDecl.mk_func_decl_s z3_ctx "dag" [lltype_sort; bv_sort 64; int_sort] bool_sort
+
 let ops = [
   (* spatial predicates *)
   ("pointer", mk_3 mk_pointer);
@@ -50,6 +52,7 @@ let ops = [
   ("exploded_struct", mk_3 mk_exploded_struct);
   (* misc *)
   ("as", mk_1 mk_as_llmem);
+  ("dag", mk_3 (fun a b c -> Z3.FuncDecl.apply dag_const [a; b; c]));
   (* bitvector operations *)
   ("bvudiv", mk_2 (Z3.BitVector.mk_udiv z3_ctx));
   ("bvsdiv", mk_2 (Z3.BitVector.mk_sdiv z3_ctx));
@@ -129,6 +132,7 @@ let lookup_op op args =
 %token IMPORT
 %token IN
 %token INCONSISTENT
+%token INT
 %token LLANY
 %token LLDOUBLE
 %token LLDOUBLE
@@ -218,6 +222,7 @@ cmpop:
 
 sort:
   | BOOL { bool_sort }
+  | INT { int_sort }
   | LLJUMP { jump_sort }
   | LLVOID { void_sort }
   | LLBVTYPE { bv_sort $1 }
@@ -248,8 +253,9 @@ atomic_term:
   | LLTYPE LLHALF { mk_fp_type "half" }
   | LLTYPE LLFLOAT { mk_fp_type "float" }
   | LLTYPE LLDOUBLE { mk_fp_type "double" }
+  | LLTYPE IDENTIFIER { mk_named_type $2 }
   | LLBVTYPE INTEGER { mk_bv $1 $2  }
-  | LLTYPE LLNAMED L_PAREN STRING_CONSTANT R_PAREN { mk_named_type $4 }
+  | INT INTEGER { mk_int (int_of_string $2)  }
   | LLTYPE L_BRACKET term CROSS term R_BRACKET { mk_array_type $3 $5 }
   | sort L_LTBRACE term_list R_BRACEGT { mk_struct $1 $3 }
   | sort L_BRACE term_list R_BRACE { mk_struct $1 $3 }
@@ -387,11 +393,10 @@ with_clause:
 ;
 
 node_decl:
-  | NODEDECL COLON STRING_CONSTANT L_PAREN int_list R_PAREN
-      EQUALS IDENTIFIER SEMICOLON
-      { { ParserAst.struct_name = $3
-	; node_fields = $5
-	; node_name = $8 } }
+  | NODEDECL IDENTIFIER COLON IDENTIFIER L_PAREN int_list R_PAREN SEMICOLON
+      { { ParserAst.struct_name = $4
+	; node_fields = $6
+	; node_name = $2 } }
 ;
 
 int_ne_list:

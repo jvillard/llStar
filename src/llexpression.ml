@@ -158,6 +158,7 @@ let mk_fp_type t = failwith "floats not supported"
 let mk_void_type = Z3.Expr.mk_const_s z3_ctx "void" lltype_sort
 let mk_label_type = Z3.Expr.mk_const_s z3_ctx "label" lltype_sort
 let mk_named_type s =
+  (* TODO: should probably keep these in a map instead of creating them on the fly *)
   let v = Syntax.mk_plvar lltype_sort s in
   Z3.FuncDecl.apply named_cons [v]
 let mk_opaque_type = Z3.Expr.mk_const_s z3_ctx "opaque" lltype_sort

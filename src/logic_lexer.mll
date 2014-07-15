@@ -64,6 +64,7 @@ let kwd_or_else =
     "import", IMPORT;
     "in", IN;
     "inconsistent", INCONSISTENT;
+    "int", INT;
     "nobacktrack", NO_BACKTRACK;
     "nodedecl", NODEDECL;
     "priority", PRIORITY;
