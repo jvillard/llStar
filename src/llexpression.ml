@@ -29,6 +29,7 @@ let array_idx_sort = bv_sort 64
 let function_sort args_t ret_t = int_sort (* TODO *)
 let array_sort elt_t = Z3.Z3Array.mk_sort z3_ctx array_idx_sort elt_t
 let vector_sort sz elt_t = int_sort (* TODO *)
+let llany_sort = Z3.Sort.mk_uninterpreted_s z3_ctx "llany"
 
 let struct_sort_map = Hashtbl.create 0
 
@@ -213,8 +214,14 @@ let mk_undef t = Z3.Expr.mk_const_s z3_ctx "undef" t
 
 let as_llmem_cons s =
   Z3.FuncDecl.mk_func_decl_s z3_ctx "as" [s] llmem_sort
-let as_llmem s e =
-  Z3.FuncDecl.apply (as_llmem_cons s) [e]
+let mk_as_llmem e =
+  Z3.FuncDecl.apply (as_llmem_cons (Z3.Expr.get_sort e)) [e]
+let is_as_llmem e =
+  match Z3.Expr.get_args e with
+    | [a] ->
+      let s = Z3.Expr.get_sort a in
+      Z3.FuncDecl.equal (Z3.Expr.get_func_decl e) (as_llmem_cons s)
+    | _ -> false
 
 let as_sort_cons s =
   Z3.FuncDecl.mk_func_decl_s z3_ctx "as" [llmem_sort] s

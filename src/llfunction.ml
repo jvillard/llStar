@@ -11,6 +11,34 @@ open Llutils
 
 let z3_ctx = Syntax.z3_ctx
 
+let polymorphic_update e =
+  if Z3.Boolean.is_eq e then mk_2 (Z3.Boolean.mk_eq z3_ctx)
+  else if is_as_llmem e then mk_1 mk_as_llmem
+  else Z3.Expr.update e
+
+let rec subst_llany llanys e =
+  let app op args =
+    let args = List.map (subst_llany llanys) args in
+    polymorphic_update e args in
+  let var v =
+    try Syntax.ExprMap.find v llanys
+    with Not_found -> v in
+  (Syntax.on_var var & Syntax.on_app app) e
+
+let mk_llanys vs llts =
+  let mk_llany m v llt =
+    assert (Z3.Expr.is_const v && Z3.Sort.equal (Z3.Expr.get_sort v) llany_sort);
+    let name = Z3.FuncDecl.get_name (Z3.Expr.get_func_decl v) in
+    Syntax.ExprMap.add v (Z3.Expr.mk_const z3_ctx name llt) m in
+  List.fold_left2 mk_llany Syntax.ExprMap.empty vs llts
+
+let get_template tps name =
+  try
+    List.find (fun t -> t.C.proc_name = "llvm_"^name) tps
+  with Not_found ->
+    Format.fprintf Debug.logf "@{ERROR: No template provided for instruction %s@}@?@\n" name;
+    assert false
+
 (** context when translating a function
  * contains indirection information for basic blocks (see
  * statements_of_instr, Br case), and basic alloca information
@@ -60,8 +88,22 @@ let mk_simple_asgn pre post =
 	       asgn_spec = spec } in
   C.Assignment_core asgn
 
+let asgn_of_template tpl anys anys_s args rets =
+    let llanys = mk_llanys anys anys_s in
+    let subst = subst_llany llanys in
+    let conc_triple { C.pre; post; modifies } =
+      { C.pre = subst pre; post = subst post
+      ; modifies = List.map subst modifies } in
+    let spec = C.TripleSet.map conc_triple tpl.C.proc_spec in
+    let asgn = { C.asgn_rets = rets
+	       ; asgn_rets_formal = List.map subst tpl.C.proc_rets
+	       ; asgn_args = args
+	       ; asgn_args_formal = List.map subst tpl.C.proc_args
+	       ; asgn_spec = spec } in
+    [C.Assignment_core asgn]
+
 (** compile an llvm instruction within a function into a piece of CoreStar CFG *) 
-let statements_of_instr retv fun_env instr =
+let statements_of_instr procs retv fun_env instr =
   (* TODO: restore *)
   (* let mk_node stmt = *)
   (*   let loc = location_of_instr instr in *)
@@ -161,34 +203,28 @@ let statements_of_instr retv fun_env instr =
   | Opcode.Load ->
     (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00225 *)
     let ptr_v = operand instr 0 in
-    let ptr = expr_of_llvalue ptr_v in
     let value_t = type_of instr in
     let value_s = sort_of_lltype value_t in
-    let value_e = Syntax.mk_fresh_lvar value_s "v" in
-    let mem_val = as_llmem value_s value_e in
-    let pointer = mk_pointer ptr (expr_of_lltype value_t) mem_val in
-    let pre = pointer in
-    let id = Syntax.mk_plvar value_s (value_id instr) in
-    let post = Syntax.mk_star (Z3.Boolean.mk_eq z3_ctx value_e id) pointer in
-    let triple = { C.pre = pre; post = post; modifies = [] } in
-    let spec = C.TripleSet.singleton triple in
-    let asgn = { C.asgn_rets = [id]; asgn_rets_formal = [id];
-		 asgn_args = []; asgn_args_formal = [];
-		 asgn_spec = spec } in
-    [C.Assignment_core asgn]
+    let tpl = get_template procs "load" in
+    let tpl_ret = mk_1 id tpl.C.proc_rets in
+    let tpl_llv = mk_3 (c2 id) tpl.C.proc_args in
+    let ptr = expr_of_llvalue ptr_v in
+    let ret = Syntax.mk_plvar value_s (value_id instr) in
+    asgn_of_template tpl [tpl_ret; tpl_llv] [value_s; value_s]
+      [ptr; expr_of_lltype value_t] [ret]
   | Opcode.Store ->
     (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l003.4 *)
     let value = operand instr 0 in
     (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00346 *)
     let ptr_v = operand instr 1 in
-    let ptr = expr_of_llvalue ptr_v in
     let value_t = type_of value in
     let value_s = sort_of_lltype value_t in
-    let e = Syntax.mk_fresh_lvar llmem_sort "v" in
-    let v = as_llmem value_s (expr_of_llvalue value) in
-    let pre = mk_pointer ptr (expr_of_lltype value_t) e in
-    let post = mk_pointer ptr (expr_of_lltype value_t) v in
-    [mk_simple_asgn pre post]
+    let tpl = get_template procs "store" in
+    assert(tpl.C.proc_rets = []);
+    let tpl_llv = mk_3 (c2 id) tpl.C.proc_args in
+    let ptr = expr_of_llvalue ptr_v in
+    let v = expr_of_llvalue value in
+    asgn_of_template tpl [tpl_llv] [value_s] [ptr; expr_of_lltype value_t; v] []
   (* misc instructions that cannot be used in constant expressions *)
   | Opcode.PHI ->
     (* We cannot treat phi nodes directly. Instead, we accumulate the
@@ -324,7 +360,7 @@ let make_phi_blocks fun_env =
     List.map snd blocks in
   List.flatten (List.map blocks_of_blk_phi_nodes fun_env.fun_phi_nodes)
 
-let statements_of_block retv fun_env lnsl b =
+let statements_of_block procs retv fun_env lnsl b =
   (* insert label command from the block's label l, followed by the sequence
      of commands of the block *)
   let l = value_id (value_of_block b) in
@@ -332,19 +368,19 @@ let statements_of_block retv fun_env lnsl b =
   fun_env.fun_cur_blk_phi_nodes <- [];
   let label_node = C.Label_stmt_core l in
   let body_nodes = fold_left_instrs
-    (fun cfgs i -> cfgs@(statements_of_instr retv fun_env i)) [] b in
+    (fun cfgs i -> cfgs@(statements_of_instr procs retv fun_env i)) [] b in
   if fun_env.fun_cur_blk_phi_nodes <> [] then (
     let phi_nodes = fun_env.fun_phi_nodes in
     fun_env.fun_phi_nodes <- (l, fun_env.fun_cur_blk_phi_nodes)::phi_nodes;);
   lnsl@[(l,label_node::body_nodes)]
 
-let body_of_function retv f =
+let body_of_function procs retv f =
   let fun_env = mk_empty_fun_env () in
   (* it would be more efficient to fold_right here, but then the
      identifiers we generate would be in reversed order, which is
      confusing in output messages *)
   let lab_nodes_list =
-    fold_left_blocks (statements_of_block retv fun_env) [] f in
+    fold_left_blocks (statements_of_block procs retv fun_env) [] f in
   (* print_endline ("*** Found "^(string_of_int (List.length fun_env.fun_br_blocks))^" conditional branchings and "^(string_of_int (List.length fun_env.fun_phi_nodes))^" blocks with phi nodes"); *)
   let lnsl = lab_nodes_list@fun_env.fun_br_blocks in
   let phi_cfg = make_phi_blocks fun_env in
@@ -368,7 +404,7 @@ let add_body_of_llfunction procs f =
       | [a] -> Some a
       | [] -> None
       | _ -> assert (false) in
-    let body = body_of_function retv f in
+    let body = body_of_function procs retv f in
     { proc with C.proc_body = Some body }
 
 let question_of_llmodule q m =

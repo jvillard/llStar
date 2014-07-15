@@ -78,30 +78,28 @@ let initialise_logic llmod =
     let add_abstraction r q =
       let q_rules = q.Core.q_rules in
       let abstraction = q_rules.Core.abstraction in
-      let abstraction = r :: abstraction in
+      let abstraction = abstraction @ [r] in
       let q_rules = { q_rules with Core.abstraction } in
       { q with Core.q_rules } in
     let add_calculus r q =
       let q_rules = q.Core.q_rules in
       let calculus = q_rules.Core.calculus in
-      let calculus = r :: calculus in
+      let calculus = calculus @ [r] in
       let q_rules = { q_rules with Core.calculus } in
       { q with Core.q_rules } in
     let f (q,n) = function
       | ParserAst.AbstractionRule r -> (add_abstraction r q, n)
       | ParserAst.CalculusRule r -> (add_calculus r q, n)
-      | ParserAst.Global xs ->
-	({ q with Core.q_globals = xs @ q.Core.q_globals }, n)
       | ParserAst.Procedure p ->
-	({ q with Core.q_procs = p :: q.Core.q_procs }, n)
-      | ParserAst.NodeDecl nd -> (q, nd::n) in
-    List.fold_left f (question,[]) xs in
+	({ q with Core.q_procs = q.Core.q_procs @ [p] }, n)
+      | ParserAst.NodeDecl nd -> (q, n @ [nd]) in
+    List.fold_right (flip f) xs (question,[]) in
   let path = System.getenv_dirlist (System.getenv "COREPATH") in
   let parse fn =
     System.parse_file Logic_parser.file Logic_lexer.token fn "core" in
   let load_file q fn =
     let xs = Load.load ~path parse fn in
-    question_of_entries q (List.rev xs) in
+    question_of_entries q xs in
   let q = CoreOps.empty_ast_question in
   let (q,nodes) = load_file q !Llstar_config.star_file_name in
   let rules =

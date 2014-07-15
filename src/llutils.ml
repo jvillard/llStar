@@ -169,3 +169,16 @@ let dump_into_file suffix pp_stuff stuff =
   let file_fmt = Format.formatter_of_out_channel file_out in
   Format.fprintf file_fmt "@[%a@." pp_stuff stuff;
   close_out file_out
+
+let mk_0 f = function
+  | [] -> f
+  | _ -> assert false
+let mk_1 f = function
+  | [a] -> f a
+  | _ -> assert false
+let mk_2 f = function
+  | [a; b] -> f a b
+  | _ -> assert false
+let mk_3 f = function
+  | [a; b; c] -> f a b c
+  | _ -> assert false

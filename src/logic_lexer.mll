@@ -80,6 +80,7 @@ let kwd_or_else =
     "half", LLHALF;
     "float", LLFLOAT;
     "double", LLDOUBLE;
+    "llany", LLANY;
     "lltype", LLTYPE;
     "llmem", LLMEM;
     "named", LLNAMED;

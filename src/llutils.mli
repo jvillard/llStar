@@ -35,3 +35,8 @@ val collect_types_in_module : Llvm.llmodule -> Llvm.lltype list
 val dump_into_file : string -> (Format.formatter -> 'a -> unit) -> 'a -> unit
 
 val string_of_struct : Llvm.lltype -> string
+
+val mk_0 : 'b -> 'a list -> 'b
+val mk_1 : ('a -> 'b) -> 'a list -> 'b
+val mk_2 : ('a -> 'a -> 'b) -> 'a list -> 'b
+val mk_3 : ('a -> 'a -> 'a -> 'b) -> 'a list -> 'b

@@ -32,15 +32,15 @@ equiv inconsistent nobacktrack pointer_gep0:
 ;
 equiv inconsistent nobacktrack gep_struct(lltype _st, i64 _i):
  bool ?f * pointer(eltptr(i64 ?p, lltype _st, jump(i64 _i,lljump ?j)),lltype ?t, llmem ?v)
-  <=> bool ?f * pointer(eltptr(i64 %p + offset(lltype _st,i64 _i),field_type(lltype _st,i64 _i),lljump ?j),lltype ?t,llmem ?v)
+  <=> bool ?f * pointer(eltptr(i64 ?p + offset(lltype _st,i64 _i),field_type(lltype _st,i64 _i),lljump ?j),lltype ?t,llmem ?v)
 ;
 
 rule nobacktrack unfold_struct(lltype _st, i64 _i):
   bool ?f | bool ?l * pointer(i64 ?x, lltype _st, llmem ?v)
-  |- pointer(i64 %p + offset(lltype _st, i64 _i), field_type(lltype _st, i64 _i), llmem ?w) * bool ?r
+  |- pointer(i64 ?p + offset(lltype _st, i64 _i), field_type(lltype _st, i64 _i), llmem ?w) * bool ?r
 if
   bool ?f | bool ?l * exploded_struct(i64 ?x, lltype _st, llmem ?v)
-  |- pointer(i64 %p + offset(lltype _st, i64 _i), field_type(lltype _st, i64 _i), llmem ?w) * bool ?r
+  |- pointer(i64 ?p + offset(lltype _st, i64 _i), field_type(lltype _st, i64 _i), llmem ?w) * bool ?r
 ;
 
 rule nobacktrack unfold_struct_inner(lltype _st, i64 _i):
@@ -57,12 +57,6 @@ if
 /*************************************
  * Simple subtraction rules 
  *************************************/
-
-rule nobacktrack read:
- bool ?f | bool ?l |-  as(i32 ?x) = as(i32 ?y) * bool ?r
-if
- bool ?f | bool ?l |- i32 ?x = i32 ?y * bool ?r
-;
 
 /* match malloc first
  * usually, ?n below will be a constant and ?m a logical variable,

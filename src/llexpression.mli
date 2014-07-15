@@ -17,6 +17,7 @@ val vector_sort : int -> Z3.Sort.sort -> Z3.Sort.sort
 val named_sort : string -> Z3.Sort.sort
 val struct_sort : Llvm.lltype -> Z3.Sort.sort
 val struct_as_fields_sort : Z3.Sort.sort list -> Z3.Sort.sort
+val llany_sort : Z3.Sort.sort
 val sort_of_lltype : Llvm.lltype -> Z3.Sort.sort
 
 val mk_int_type : Z3.Expr.expr
@@ -51,8 +52,8 @@ val mk_array : Z3.Sort.sort -> Z3.Expr.expr list -> Z3.Expr.expr
 val mk_null_ptr : Z3.Expr.expr
 val mk_undef : Z3.Sort.sort -> Z3.Expr.expr
 
-val as_llmem_cons : Z3.Sort.sort -> Z3.FuncDecl.func_decl
-val as_llmem : Z3.Sort.sort -> Z3.Expr.expr -> Z3.Expr.expr
+val mk_as_llmem : Z3.Expr.expr -> Z3.Expr.expr
+val is_as_llmem : Z3.Expr.expr -> bool
 val as_sort : Z3.Sort.sort -> Z3.Expr.expr -> Z3.Expr.expr
 
 val mk_pointer : Z3.Expr.expr -> Z3.Expr.expr -> Z3.Expr.expr -> Z3.Expr.expr

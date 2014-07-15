@@ -175,20 +175,41 @@ let sizeof_logic_of_type t =
     ; rw_to_pattern = expr_size } in
   [Rewrite_rule r]
 
-(* TODO: make this a rewrite rule *)
 let read_as_type t =
   let s = sort_of_lltype t in
   let x = Syntax.mk_tpat s "x" in
   let y = Syntax.mk_tpat s "y" in
-  let as_x = as_llmem s x in
-  let as_y = as_llmem s y in
-  mk_simple_equiv_rule ("read_"^(string_of_lltype t))
-    default_rule_priority
-    rule_no_backtrack
-    (Syntax.mk_eq as_x as_y)
-    (Syntax.mk_eq x y)
+  let as_x = mk_as_llmem x in
+  let as_y = mk_as_llmem y in
+  let r =
+    { rw_name = ("read_"^(string_of_lltype t))
+    ; rw_from_pattern = Syntax.mk_eq as_x as_y
+    ; rw_to_pattern = Syntax.mk_eq x y } in
+  [Rewrite_rule r]
 
 (*** Structure rules *)
+
+let int_struct_filter t = match classify_type t with
+  | Integer
+  | Struct -> true
+  | _ -> false
+let value_filter t = match classify_type t with
+  | Half
+  | Float
+  | Double
+  | X86fp80
+  | Fp128
+  | Ppc_fp128
+  | Integer
+  | Struct
+  | Array
+  | Pointer
+  | Vector
+  | X86_mmx -> true
+  | _ -> false
+let struct_filter t = match classify_type t with
+  | Struct -> true
+  | _ -> false
 
 let subst_struct st_var st e =
   let x = Syntax.mk_fresh_tpat (bv_sort 64) "x" in
@@ -197,8 +218,7 @@ let subst_struct st_var st e =
   let exploded_concrete =
     let sv = as_sort (struct_sort st) v in
     let mk_field i ft =
-      as_llmem (sort_of_lltype ft)
-        (mk_field_val_of_struct_val_descend_in_singletons st sv i) in
+      mk_as_llmem (mk_field_val_of_struct_val_descend_in_singletons st sv i) in
     mk_unfolded_struct_descend_in_singletons st x mk_field in
   let r = { rw_name = "exploded_struct"
           ; rw_from_pattern = exploded_pat
@@ -220,7 +240,6 @@ let subst_in_sequent subst { frame; hypothesis; conclusion } =
   { frame = subst frame; hypothesis = subst hypothesis; conclusion = subst conclusion }
 
 let gen_struct_seq_rule st_var i_var r =
-  fprintf logf "gen_struct_seq_rule@.";
   let field st i field_t =
     let subst = subst_field st_var i_var st i field_t in
     Sequent_rule { r with
@@ -231,9 +250,6 @@ let gen_struct_seq_rule st_var i_var r =
       ; seq_subgoal_pattern = List.map (subst_in_sequent subst) r.seq_subgoal_pattern } in
   let struc st =
     Array.to_list (Array.mapi (field st) (struct_element_types st)) in
-  let struct_filter t = match classify_type t with
-    | Struct -> true
-    | _ -> false in
   let structs = List.filter struct_filter (collect_types_in_module (get_llmodule ())) in
   structs >>= struc
 
@@ -248,8 +264,8 @@ let fold_logic_of_type t =
     Syntax.mk_tpat (sort_of_lltype ft) ("v"^(string_of_int i)) in
   let collate_field_values = mk_struct_of_fields_descend_in_singletons t mk_field in
   let mk_llmem_field i ft =
-    as_llmem (sort_of_lltype ft) (mk_field i ft) in
-  let struct_llmem = as_llmem (struct_sort t) collate_field_values in
+    mk_as_llmem (mk_field i ft) in
+  let struct_llmem = mk_as_llmem collate_field_values in
   let unfolded_struct = mk_unfolded_struct_descend_in_singletons t x_var mk_llmem_field in
   let struct_pointer = mk_pointer x_var (expr_of_lltype t) struct_llmem in
   mk_simple_equiv_rule ("collate_"^(string_of_struct t))
@@ -295,8 +311,8 @@ let unfold_logic_of_node t struct_name node_name node_fields =
     let mk_field i ft =
       let fs = sort_of_lltype ft in
       if List.mem i node_fields
-      then as_llmem fs (mk_field_var i)
-      else as_llmem fs (Syntax.mk_fresh_lvar fs ("f"^(string_of_int i))) in
+      then mk_as_llmem (mk_field_var i)
+      else mk_as_llmem (Syntax.mk_fresh_lvar fs ("f"^(string_of_int i))) in
     let node = mk_node node_name struct_name x_var n_vars in
     mk_simple_sequent_rule (node_name^"_field_"^(string_of_int i))
       default_rule_priority
@@ -309,7 +325,7 @@ let unfold_logic_of_node t struct_name node_name node_fields =
 let arith_unfold_logic_of_node t struct_name node_name node_fields =
   let field_ranged_values base_val i ft =
     let fv = mk_field_val_of_struct_val_descend_in_singletons t base_val i in
-    as_llmem (sort_of_lltype ft) fv in
+    mk_as_llmem fv in
   let x_var = Syntax.mk_tpat pointer_sort "x" in
   let v_var = Syntax.mk_tpat llmem_sort "v" in
   let y_var = Syntax.mk_tpat pointer_sort "y" in
@@ -356,7 +372,7 @@ let concretise_node_logic_of_type t struct_name node_name node_fields =
         then mk_field_var i
         else Syntax.mk_fresh_lvar (sort_of_lltype ft) ("f"^(string_of_int i)))
         (struct_element_types t) in
-    as_llmem (struct_sort t) (mk_struct_llt t (Array.to_list field_values)) in
+    mk_as_llmem (mk_struct_llt t (Array.to_list field_values)) in
   let struct_pointer = mk_pointer x_var (expr_of_lltype t) struct_field_values in
   let node = mk_node node_name struct_name x_var n_vars in
   let target_pointer = mk_pointer y_var t_var v_var in
@@ -387,7 +403,7 @@ let rollup_node_logic_of_type t struct_name node_name node_fields =
         then mk_field_var i
         else Syntax.mk_tpat (sort_of_lltype ft) ("v"^(string_of_int i)))
         (struct_element_types t) in
-    as_llmem (struct_sort t) (mk_struct_llt t (Array.to_list field_values)) in
+    mk_as_llmem (mk_struct_llt t (Array.to_list field_values)) in
   let struct_pointer = mk_pointer x_var (expr_of_lltype t) struct_field_values in
   let node = mk_node node_name struct_name x_var n_vars in
   let rollup_rule_known_next =
@@ -420,7 +436,7 @@ let malloc_logic_of_node t struct_name node_name node_fields =
         then mk_field_var i
         else Syntax.mk_tpat (sort_of_lltype ft) ("v"^(string_of_int i)))
         (struct_element_types t) in
-    as_llmem (struct_sort t) (mk_struct_llt t (Array.to_list field_values)) in
+    mk_as_llmem (mk_struct_llt t (Array.to_list field_values)) in
   let malloced_right = mk_malloced x_var s_var in
   let malloced_node = mk_malloced x_var (expr_of_sizeof t) in
   let struct_pointer = mk_pointer x_var (expr_of_lltype t) struct_field_values in
@@ -470,20 +486,13 @@ type rule_apply =
 
 (** generates the logic and the abduction logic of module [m] *)
 let add_rules_of_module node_decls base_logic m =
-  let int_struct_filter t = match classify_type t with
-    | Integer
-    | Struct -> true
-    | _ -> false in
-  let struct_filter t = match classify_type t with
-    | Struct -> true
-    | _ -> false in
   (** pairs of rule generation functions and a filter that checks they
       are applied only to certain types *)
   let rule_generators =
     (* CalculusOnce nullptr_logic *)
     (* CalculusOnce sizeof_ptr_logic *)
     CalculusAtType (sizeof_logic_of_type, int_struct_filter)
-    ::CalculusAtType (read_as_type, c1 true)
+    ::CalculusAtType (read_as_type, value_filter)
     (* ::CalculusAtType (eltptr_logic_of_type, struct_filter) *)
     ::CalculusAtType (gen_node_logics node_decls malloc_logic_of_node, struct_filter)
     (* ::CalculusAtType (unfold_logic_of_type, struct_filter) *)

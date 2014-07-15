@@ -29,18 +29,6 @@ let parse_error = message "E"
 let parse_warning = message "W"
 
 let z3_ctx = Syntax.z3_ctx
-let mk_0 f = function
-  | [] -> f
-  | _ -> assert false
-let mk_1 f = function
-  | [a] -> f a
-  | _ -> assert false
-let mk_2 f = function
-  | [a; b] -> f a b
-  | _ -> assert false
-let mk_3 f = function
-  | [a; b; c] -> f a b c
-  | _ -> assert false
 
 let ops = [
   (* spatial predicates *)
@@ -60,6 +48,8 @@ let ops = [
   ("offset", mk_2 mk_offset);
   ("field_type", mk_2 mk_field_type);
   ("exploded_struct", mk_3 mk_exploded_struct);
+  (* misc *)
+  ("as", mk_1 mk_as_llmem);
   (* bitvector operations *)
   ("bvudiv", mk_2 (Z3.BitVector.mk_udiv z3_ctx));
   ("bvsdiv", mk_2 (Z3.BitVector.mk_sdiv z3_ctx));
@@ -85,14 +75,8 @@ let register_op = Hashtbl.add hops
 let lookup_op op args =
   try (Hashtbl.find hops op) args
   with Not_found ->
-    if op = "as" then
-      match args with
-      | [e] -> let s = Z3.Expr.get_sort e in as_llmem s e
-      | _ -> assert false
-    else begin
-      prerr_endline (Printf.sprintf "Undeclared operation %s" op);
-      assert false
-    end
+    prerr_endline (Printf.sprintf "Undeclared operation %s" op);
+    assert false
 
 %} /* declarations */
 
@@ -145,6 +129,7 @@ let lookup_op op args =
 %token IMPORT
 %token IN
 %token INCONSISTENT
+%token LLANY
 %token LLDOUBLE
 %token LLDOUBLE
 %token LLFLOAT
@@ -243,6 +228,7 @@ sort:
   | L_BRACE sort_list R_BRACE { struct_as_fields_sort $2 }
   | L_BRACKET term CROSS sort R_BRACKET { array_sort $4 }
   | sort STAR { pointer_sort }
+  | LLANY { llany_sort }
 ;
 sort_list_ne:
   | sort COMMA sort_list_ne  {  $1::$3 }
@@ -444,10 +430,8 @@ import_entry:
   | IMPORT STRING_CONSTANT SEMICOLON  { $2 }
 ;
 
-/* FIXME: ugly list hack */
 normal_entry:
   | procedure { [ParserAst.Procedure $1] }
-  | GLOBAL variable_list_ne SEMICOLON { [ParserAst.Global $2] }
   | sequent_rule { List.map (fun x -> ParserAst.CalculusRule x) $1 }
   | equiv_rule { List.map (fun x -> ParserAst.CalculusRule x) $1 }
   | rewrite_rule { List.map (fun x -> ParserAst.CalculusRule (Calculus.Rewrite_rule x)) $1 }
