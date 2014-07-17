@@ -1,108 +1,111 @@
+predicate dag (lltype, i64, int);
+predicate dagnode(lltype,i64,i64,i64);
+
 /* empty dag */
 equiv dag_nil:
-  dag(?t,NULL(),?d) <=> 
+  dag(lltype ?t,NULL(),int ?d) <=> 
 
 /* unfold dag to get root */
 rule dag_unfold:
- | dag(?t,?x,?d) * ?x != NULL() |- pointer(?x,?sz,?w)
+ | dag(lltype ?t,i64 ?x,int ?d) * i64 ?x != NULL() |- pointer(i64 ?x,i64 ?sz,llmem ?w)
 if
- |  dagnode(?t,?x,_l,_r)
-  * dagunion(dag(?t,_l,?d), dag(?t,_r,?d))
-  * mdag(?d,?x) = mnode(_l,_r)
- |- pointer(?x,?sz,?w)
+ |  dagnode(lltype ?t,i64 ?x,_l,_r)
+  * dagunion(dag(lltype ?t,_l,int ?d), dag(lltype ?t,_r,int ?d))
+  * mdag(int ?d,i64 ?x) = mnode(_l,_r)
+ |- pointer(i64 ?x,i64 ?sz,?w)
 
 /* fold back into a dag */
 rule dag_fold:
- |  dagnode(?t,?x,?l,?r)
-  * dagunion(dag(?t,?l,?d), dag(?t,?r,?d))
-  * mdag(?d,?x) = mnode(?l,?r)
- |- dag(?t,?x,?dd)
+ |  dagnode(?t,i64 ?x,?l,?r)
+  * dagunion(dag(lltype ?t,?l,int ?d), dag(lltype ?t,?r,int ?d))
+  * mdag(int ?d,i64 ?x) = mnode(?l,?r)
+ |- dag(lltype ?t,i64 ?x,int ?dd)
 if
- dag(?t,?x,?d) | |- ?d = ?dd
+ dag(lltype ?t,i64 ?x,int ?d) | |- int ?d = int ?dd
 
 /* extract dags from overlapping conjunctions */
 
 rule dagl_dagr_dagl:
- | dagunion(dag(?t,?y,?d1), ?dags)
- |- dag(?t,?y,?d2)
+ | dagunion(dag(lltype ?t,?y,int ?d1), int ?dags)
+ |- dag(lltype ?t,?y,int ?d2)
 if
-   dag(?t,?y,?d1)
- | ewand(dag(?t,?y,?d1),
-         dagunion(dag(?t,?y,?d1), ?dags))
- |- ?d1 = ?d2
+   dag(lltype ?t,?y,int ?d1)
+ | ewand(dag(lltype ?t,?y,int ?d1),
+         dagunion(dag(lltype ?t,?y,int ?d1), int ?dags))
+ |- int ?d1 = int ?d2
 
 rule dagl_dagr_dagr:
- | dagunion(?dags, dag(?t,?z,?d1))
- |- dag(?t,?z,?d2)
+ | dagunion(int ?dags, dag(lltype ?t,?z,int ?d1))
+ |- dag(lltype ?t,?z,int ?d2)
 if
-   dag(?t,?z,?d1)
- | ewand(dag(?t,?z,?d1),
-         dagunion(?dags, dag(?t,?z,?d1)))
- |- ?d1 = ?d2
+   dag(lltype ?t,?z,int ?d1)
+ | ewand(dag(lltype ?t,?z,int ?d1),
+         dagunion(int ?dags, dag(lltype ?t,?z,int ?d1)))
+ |- int ?d1 = int ?d2
 
 
 /* eliminate wands */
 
 rule dag_ewand_left:
- |   dag(?t,?y,?d)
-   * ewand(dag(?t,?y,?dd), dagunion(?d1,?d2))
+ |   dag(lltype ?t,?y,int ?d)
+   * ewand(dag(lltype ?t,?y,int ?dd), dagunion(int ?d1,int ?d2))
  |-
 if
- | dagunion(?d1, ?d2) |- ?d = ?dd
+ | dagunion(int ?d1, int ?d2) |- int ?d = int ?dd
 
 rule dag_ewand_right:
- |   dag(?t,?z,?d)
-   * ewand(dag(?t,?z,?dd), dagunion(?d1,?d2))
+ |   dag(lltype ?t,?z,int ?d)
+   * ewand(dag(lltype ?t,?z,int ?dd), dagunion(int ?d1,int ?d2))
  |-
 if
- | dagunion(?d1, ?d2) |- ?d = ?dd
+ | dagunion(int ?d1, int ?d2) |- int ?d = int ?dd
 
 
 /* extract root from overlapping conjunctions */
 
 rule subdag_lunfold:
- | dagunion(dag(?t,?y,?d), ?dags)
- |- pointer(?y,?sz,?w)
+ | dagunion(dag(lltype ?t,?y,int ?d), int ?dags)
+ |- pointer(?y,i64 ?sz,?w)
 if
- |  dag(?t,?y,?d)
-  * ewand(dag(?t,?y,?d), dagunion(dag(?t,?y,?d), ?dags))
- |- pointer(?y,?sz,?w)
+ |  dag(lltype ?t,?y,int ?d)
+  * ewand(dag(lltype ?t,?y,int ?d), dagunion(dag(lltype ?t,?y,int ?d), int ?dags))
+ |- pointer(?y,i64 ?sz,?w)
 
 rule subdag_runfold:
- | dagunion(?dags, dag(?t,?z,?d))
- |- pointer(?z,?sz,?w)
+ | dagunion(int ?dags, dag(lltype ?t,?z,int ?d))
+ |- pointer(?z,i64 ?sz,?w)
 if
- |  dag(?t,?z,?d)
-  * ewand(dag(?t,?z,?d), dagunion(?dags, dag(?t,?z,?d)))
- |- pointer(?z,?sz,?w)
+ |  dag(lltype ?t,?z,int ?d)
+  * ewand(dag(lltype ?t,?z,int ?d), dagunion(int ?dags, dag(lltype ?t,?z,int ?d)))
+ |- pointer(?z,i64 ?sz,?w)
 
 
 /* eliminate wands to get deep dags */
 
 rule subdag_fold1:
- |  dagnode(?t,?x,?l,?r)
-  * dagunion(dag(?t,?l,?d), dag(?t,?r,?d))
-  * ewand(dag(?t,?x,?d), dagunion(dag(?t,?x,?d), dag(?t,?y,?d)))
- |- pointer(?y,?sz,?w)
+ |  dagnode(?t,i64 ?x,?l,?r)
+  * dagunion(dag(lltype ?t,?l,int ?d), dag(lltype ?t,?r,int ?d))
+  * ewand(dag(lltype ?t,i64 ?x,int ?d), dagunion(dag(lltype ?t,i64 ?x,int ?d), dag(lltype ?t,?y,int ?d)))
+ |- pointer(?y,i64 ?sz,?w)
 if
- |dagunion(dag(?t,?x,?d),
-           dag(?t,?y,?d))
- |- pointer(?y,?sz,?w)
+ |dagunion(dag(lltype ?t,i64 ?x,int ?d),
+           dag(lltype ?t,?y,int ?d))
+ |- pointer(?y,i64 ?sz,?w)
 
 rule subdag_fold2:
  |  dagnode(?t,?y,?l,?r)
-  * dagunion(dag(?t,?l,?d), dag(?t,?r,?d))
-  * ewand(dag(?t,?y,?d), dagunion(dag(?t,?x,?d), dag(?t,?y,?d)))
- |- dag(?t,?x,?dd)
+  * dagunion(dag(lltype ?t,?l,int ?d), dag(lltype ?t,?r,int ?d))
+  * ewand(dag(lltype ?t,?y,int ?d), dagunion(dag(lltype ?t,i64 ?x,int ?d), dag(lltype ?t,?y,int ?d)))
+ |- dag(lltype ?t,i64 ?x,int ?dd)
 if
- |dagunion(dag(?t,?x,?d),
-           dag(?t,?y,?d))
- |- dag(?t,?x,?dd)
+ |dagunion(dag(lltype ?t,i64 ?x,int ?d),
+           dag(lltype ?t,?y,int ?d))
+ |- dag(lltype ?t,i64 ?x,int ?dd)
 
 rule node_no_overflow:
-  | dagnode(?s,?x,?l,?r) |-
+  | dagnode(lltype ?s,i64 ?x,?l,?r) |-
 without
-  !bvugt(bvadd.64(?x, sizeof(named_type(?s))),?x)
+  !bvugt(bvadd.64(i64 ?x, sizeof(named_type(lltype ?s))),i64 ?x)
 if
-  | !bvugt(bvadd.64(?x, sizeof(named_type(?s))),?x) * dagnode(?s,?x,?l,?r) |-
+  | !bvugt(bvadd.64(i64 ?x, sizeof(named_type(lltype ?s))),i64 ?x) * dagnode(lltype ?s,i64 ?x,?l,?r) |-
 

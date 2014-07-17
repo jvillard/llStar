@@ -1,7 +1,9 @@
 import "../rules/llvm.logic";
-/* import "../rules/dags_const_pointers.logic"; */
+import "../rules/dags_const_pointers.logic";
 
-nodedecl dagnode: struct.node(1, 2);
+equiv dagnode:
+      dagnode(lltype ?t, i64 ?x, i64 ?l, i64 ?r)
+      <=> pointer(i64 ?x, lltype struct.node, mk_struct.node(i64 _c, i64 ?l, i64 ?r))
 
 procedure mark(i64 %d)
   {dag(lltype struct.node,i64 %d,int _d)}

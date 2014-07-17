@@ -30,53 +30,49 @@ let parse_warning = message "W"
 
 let z3_ctx = Syntax.z3_ctx
 
-let dag_const = Z3.FuncDecl.mk_func_decl_s z3_ctx "dag" [lltype_sort; bv_sort 64; int_sort] bool_sort
+let ops = Hashtbl.create 0
 
-let ops = [
-  (* spatial predicates *)
-  ("pointer", mk_3 mk_pointer);
-  ("malloced", mk_2 mk_malloced);
-  ("NULL", mk_0 mk_null_ptr);
-  (* eltptr *)
-  ("jump", mk_2 mk_jump);
-  ("jump_end", mk_0 mk_jump_end);
-  ("eltptr", mk_3 mk_eltptr);
-  (* types *)
-  ("sizeof", mk_1 mk_sizeof);
-  ("pointer_type", mk_1 mk_pointer_type);
-  ("array_type", mk_2 mk_array_type);
-  (* struct rule generators *)
-  ("ptr_size", mk_0 mk_pointer_size);
-  ("offset", mk_2 mk_offset);
-  ("field_type", mk_2 mk_field_type);
-  ("exploded_struct", mk_3 mk_exploded_struct);
-  (* misc *)
-  ("as", mk_1 mk_as_llmem);
-  ("dag", mk_3 (fun a b c -> Z3.FuncDecl.apply dag_const [a; b; c]));
-  (* bitvector operations *)
-  ("bvudiv", mk_2 (Z3.BitVector.mk_udiv z3_ctx));
-  ("bvsdiv", mk_2 (Z3.BitVector.mk_sdiv z3_ctx));
-  ("bvmul", mk_2 (Z3.BitVector.mk_mul z3_ctx));
-  ("bvsub", mk_2 (Z3.BitVector.mk_sub z3_ctx));
-  ("bvadd", mk_2 (Z3.BitVector.mk_add z3_ctx));
-  ("bvsle", mk_2 (Z3.BitVector.mk_sle z3_ctx));
-  ("bvule", mk_2 (Z3.BitVector.mk_ule z3_ctx));
-  ("bvslt", mk_2 (Z3.BitVector.mk_slt z3_ctx));
-  ("bvult", mk_2 (Z3.BitVector.mk_ult z3_ctx));
-  ("bvsge", mk_2 (Z3.BitVector.mk_sge z3_ctx));
-  ("bvuge", mk_2 (Z3.BitVector.mk_uge z3_ctx));
-  ("bvsgt", mk_2 (Z3.BitVector.mk_sgt z3_ctx));
-  ("bvugt", mk_2 (Z3.BitVector.mk_ugt z3_ctx));
+let () = List.iter (fun (n, f) -> Hashtbl.add ops n f) 
+  [
+    (* spatial predicates *)
+    ("pointer", mk_3 mk_pointer);
+    ("malloced", mk_2 mk_malloced);
+    ("NULL", mk_0 mk_null_ptr);
+    (* eltptr *)
+    ("jump", mk_2 mk_jump);
+    ("jump_end", mk_0 mk_jump_end);
+    ("eltptr", mk_3 mk_eltptr);
+    (* types *)
+    ("sizeof", mk_1 mk_sizeof);
+    ("pointer_type", mk_1 mk_pointer_type);
+    ("array_type", mk_2 mk_array_type);
+    (* struct rule generators *)
+    ("ptr_size", mk_0 mk_pointer_size);
+    ("offset", mk_2 mk_offset);
+    ("field_type", mk_2 mk_field_type);
+    ("exploded_struct", mk_3 mk_exploded_struct);
+    (* misc *)
+    ("as", mk_1 mk_as_llmem);
+    (* bitvector operations *)
+    ("bvudiv", mk_2 (Z3.BitVector.mk_udiv z3_ctx));
+    ("bvsdiv", mk_2 (Z3.BitVector.mk_sdiv z3_ctx));
+    ("bvmul", mk_2 (Z3.BitVector.mk_mul z3_ctx));
+    ("bvsub", mk_2 (Z3.BitVector.mk_sub z3_ctx));
+    ("bvadd", mk_2 (Z3.BitVector.mk_add z3_ctx));
+    ("bvsle", mk_2 (Z3.BitVector.mk_sle z3_ctx));
+    ("bvule", mk_2 (Z3.BitVector.mk_ule z3_ctx));
+    ("bvslt", mk_2 (Z3.BitVector.mk_slt z3_ctx));
+    ("bvult", mk_2 (Z3.BitVector.mk_ult z3_ctx));
+    ("bvsge", mk_2 (Z3.BitVector.mk_sge z3_ctx));
+    ("bvuge", mk_2 (Z3.BitVector.mk_uge z3_ctx));
+    ("bvsgt", mk_2 (Z3.BitVector.mk_sgt z3_ctx));
+    ("bvugt", mk_2 (Z3.BitVector.mk_ugt z3_ctx));
   (* TODO: many other bitvector operations (all of BitVector.mk_* ) *)
-]
+  ]
 
-let hops = Hashtbl.create (List.length ops)
-
-let () = List.iter (uncurry (Hashtbl.add hops)) ops
-
-let register_op = Hashtbl.add hops
+let register_op = Hashtbl.add ops
 let lookup_op op args =
-  try (Hashtbl.find hops op) args
+  try (Hashtbl.find ops op) args
   with Not_found ->
     prerr_endline (Printf.sprintf "Undeclared operation %s" op);
     assert false
@@ -148,9 +144,9 @@ let lookup_op op args =
 %token L_LTBRACE
 %token L_PAREN
 %token NO_BACKTRACK
-%token NODEDECL
 %token NOT_EQUALS
 %token OROR
+%token PREDICATE
 %token PRIORITY
 %token PROCEDURE
 %token PURECHECK
@@ -392,13 +388,6 @@ with_clause:
   | WITH sidecondition_list_ne { $2 }
 ;
 
-node_decl:
-  | NODEDECL IDENTIFIER COLON IDENTIFIER L_PAREN int_list R_PAREN SEMICOLON
-      { { ParserAst.struct_name = $4
-	; node_fields = $6
-	; node_name = $2 } }
-;
-
 int_ne_list:
   | INTEGER { [int_of_string $1] }
   | INTEGER COMMA int_ne_list { int_of_string $1::$3 }
@@ -431,6 +420,13 @@ procedure:
       ; proc_rules = { C.calculus = []; abstraction = [] } } }
 ;
 
+/* type declarations */
+pred_decl:
+   | PREDICATE IDENTIFIER L_PAREN sort_list R_PAREN SEMICOLON
+    { let f = Z3.FuncDecl.mk_func_decl_s z3_ctx $2 $4 bool_sort in
+      register_op $2 (Z3.FuncDecl.apply f) }
+;
+
 import_entry:
   | IMPORT STRING_CONSTANT SEMICOLON  { $2 }
 ;
@@ -440,7 +436,7 @@ normal_entry:
   | sequent_rule { List.map (fun x -> ParserAst.CalculusRule x) $1 }
   | equiv_rule { List.map (fun x -> ParserAst.CalculusRule x) $1 }
   | rewrite_rule { List.map (fun x -> ParserAst.CalculusRule (Calculus.Rewrite_rule x)) $1 }
-  | node_decl { [ParserAst.NodeDecl $1] }
+  | pred_decl { [] }
 ;
 
 entry:

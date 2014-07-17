@@ -87,13 +87,12 @@ let initialise_logic llmod =
       let calculus = calculus @ [r] in
       let q_rules = { q_rules with Core.calculus } in
       { q with Core.q_rules } in
-    let f (q,n) = function
-      | ParserAst.AbstractionRule r -> (add_abstraction r q, n)
-      | ParserAst.CalculusRule r -> (add_calculus r q, n)
+    let f q = function
+      | ParserAst.AbstractionRule r -> add_abstraction r q
+      | ParserAst.CalculusRule r -> add_calculus r q
       | ParserAst.Procedure p ->
-	({ q with Core.q_procs = q.Core.q_procs @ [p] }, n)
-      | ParserAst.NodeDecl nd -> (q, n @ [nd]) in
-    List.fold_right (flip f) xs (question,[]) in
+	{ q with Core.q_procs = q.Core.q_procs @ [p] } in
+    List.fold_right (flip f) xs question in
   let path = System.getenv_dirlist (System.getenv "COREPATH") in
   let parse fn =
     System.parse_file Logic_parser.file Logic_lexer.token fn "core" in
@@ -101,12 +100,12 @@ let initialise_logic llmod =
     let xs = Load.load ~path parse fn in
     question_of_entries q xs in
   let q = CoreOps.empty_ast_question in
-  let (q,nodes) = load_file q !Llstar_config.star_file_name in
+  let q = load_file q !Llstar_config.star_file_name in
   let rules =
     if !Llstar_config.auto_gen_struct_logic then
       (if log log_phase then
 	  fprintf logf "@.@[<2>Generating logic for the module";
-       Rulegen.add_rules_of_module nodes q.q_rules llmod
+       Rulegen.add_rules_of_module q.q_rules llmod
       ) else q.q_rules in
   let q = { q with
     q_rules = rules;

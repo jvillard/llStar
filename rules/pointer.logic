@@ -1,3 +1,4 @@
+predicate pointer (i64, lltype, llmem);
 
 /*
 rewrite sizeof_array:

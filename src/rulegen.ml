@@ -469,23 +469,12 @@ let remove_pointer_arith_same_root_same_size =
       ; seq_priority = default_rule_priority
       ; seq_flags = rule_no_backtrack }]
 
-let gen_node_logics node_decls logic_generator t = match struct_name t with
-  | None ->
-    (* nodes are necessarily named for now *)
-    []
-  | Some name ->
-      try
-        let nd = List.find (fun nd -> nd.ParserAst.node_name = name) node_decls in
-        let num_fields = nd.ParserAst.node_fields in
-        logic_generator t name nd.ParserAst.node_name num_fields
-      with Not_found -> []
-
 type rule_apply =
 | CalculusOnce of Calculus.t
 | CalculusAtType of (lltype -> Calculus.t) * (lltype -> bool)
 
 (** generates the logic and the abduction logic of module [m] *)
-let add_rules_of_module node_decls base_logic m =
+let add_rules_of_module base_logic m =
   (** pairs of rule generation functions and a filter that checks they
       are applied only to certain types *)
   let rule_generators =
@@ -494,14 +483,10 @@ let add_rules_of_module node_decls base_logic m =
     CalculusAtType (sizeof_logic_of_type, int_struct_filter)
     ::CalculusAtType (read_as_type, value_filter)
     (* ::CalculusAtType (eltptr_logic_of_type, struct_filter) *)
-    ::CalculusAtType (gen_node_logics node_decls malloc_logic_of_node, struct_filter)
     (* ::CalculusAtType (unfold_logic_of_type, struct_filter) *)
     ::CalculusAtType (bytearray_to_struct_conversions, struct_filter)
-    ::CalculusAtType (gen_node_logics node_decls unfold_logic_of_node, struct_filter)
     ::CalculusOnce remove_pointer_arith_same_root_same_size
     (* ::CalculusAtType (arith_unfold_logic_of_type, struct_filter) *)
-    ::CalculusAtType (gen_node_logics node_decls concretise_node_logic_of_type, struct_filter)
-    ::CalculusAtType (gen_node_logics node_decls rollup_node_logic_of_type, struct_filter)
     ::CalculusAtType (fold_logic_of_type, struct_filter)
     ::[] in 
   let all_types = collect_types_in_module m in

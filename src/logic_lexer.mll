@@ -66,7 +66,7 @@ let kwd_or_else =
     "inconsistent", INCONSISTENT;
     "int", INT;
     "nobacktrack", NO_BACKTRACK;
-    "nodedecl", NODEDECL;
+    "predicate", PREDICATE;
     "priority", PRIORITY;
     "procedure", PROCEDURE;
     "purecheck", PURECHECK;
