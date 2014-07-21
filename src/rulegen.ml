@@ -50,9 +50,6 @@ let mk_simple_sequent_rule name p f (pre_lhs,pre_rhs) (post_lhs, post_rhs) =
 
 (*** helper functions to define predicates for structs *)
 
-let bits_of_bytes x =
-  Int64.mul (Int64.of_int 8) x
-
 let type_of_field struct_t i = Array.get (struct_element_types struct_t) i
 
 (** the physical offset inside the struct, in bytes *)
@@ -67,22 +64,6 @@ let alloc_size64_of_field struct_t i =
 
 let expr_alloc_sizeof_field struct_t i =
   mk_bv64 64 (alloc_size64_of_field struct_t i)
-
-let bitsize64_of_field struct_t i =
-  Llvm_target.DataLayout.size_in_bits (type_of_field struct_t i) !lltarget
-
-let expr_bitsize_of_field struct_t i =
-  mk_bv64 64 (bitsize64_of_field struct_t i)
-
-(** what bit number starts element [i] of [struct_t] *)
-let bitoffset64_of_field struct_t i =
-  let bitsize_of_struct = Llvm_target.DataLayout.size_in_bits struct_t !lltarget in
-  let bitoffset_of_field = bits_of_bytes (offset64_of_field struct_t i) in
-  Int64.sub (Int64.sub bitsize_of_struct bitoffset_of_field) Int64.one
-
-(** what bit number ends element [i] of [struct_t] *)
-let bitoffset64_of_field_end struct_t i =
-  Int64.add (Int64.sub (bitoffset64_of_field struct_t i) (bitsize64_of_field struct_t i)) Int64.one
 
 let expr_type_field struct_t i =
   expr_of_lltype (type_of_field struct_t i)
