@@ -1,5 +1,5 @@
 (*** Rulegen: generate rules for the module's types and recursive data structures *)
-(* This assumes that the pointer size is 64! TODO: handle any size! *)
+(* BUG: This assumes that the pointer size is 64! TODO: handle any size! *)
 
 
 open Format
@@ -253,9 +253,22 @@ let gen_struct_seq_rule st_var i_var r =
   let structs = List.filter struct_filter (collect_types_in_module (get_llmodule ())) in
   structs >>= struc
 
+let gen_struct_rw_rule st_var i_var r =
+  let field st i field_t =
+    let subst = subst_field st_var i_var st i field_t in
+    Rewrite_rule {
+      rw_name =
+        Printf.sprintf "%s_%s_%d" r.rw_name (string_of_struct st) i
+      ; rw_from_pattern = subst r.rw_from_pattern
+      ; rw_to_pattern = subst r.rw_to_pattern } in
+  let struc st =
+    Array.to_list (Array.mapi (field st) (struct_element_types st)) in
+  let structs = List.filter struct_filter (collect_types_in_module (get_llmodule ())) in
+  structs >>= struc
+
 let gen_struct_rule st_var i_var = function
   | Sequent_rule r -> gen_struct_seq_rule st_var i_var r
-  | Rewrite_rule r -> assert false
+  | Rewrite_rule r -> gen_struct_rw_rule st_var i_var r
 
 (* assumes that [t] is a struct type *)
 let fold_logic_of_type t =
@@ -487,7 +500,7 @@ let add_rules_of_module base_logic m =
     ::CalculusAtType (bytearray_to_struct_conversions, struct_filter)
     ::CalculusOnce remove_pointer_arith_same_root_same_size
     (* ::CalculusAtType (arith_unfold_logic_of_type, struct_filter) *)
-    ::CalculusAtType (fold_logic_of_type, struct_filter)
+    (* ::CalculusAtType (fold_logic_of_type, struct_filter) *)
     ::[] in 
   let all_types = collect_types_in_module m in
   let add_calculus log c = { log with Core.calculus = log.Core.calculus@c } in

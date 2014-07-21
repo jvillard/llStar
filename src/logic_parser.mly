@@ -325,11 +325,13 @@ sequent_rule:
 rewrite_rule:
   | REWRITERULE IDENTIFIER struct_vars COLON
       atomic_term EQUALS atomic_term SEMICOLON
-    { let rw =
+    { let rw = Calculus.Rewrite_rule
         { Calculus.rw_name = $2
         ; rw_from_pattern = $5
         ; rw_to_pattern = $7 } in
-      [rw] }
+      match $3 with
+      | None -> [rw]
+      | Some (st,i) -> Rulegen.gen_struct_rule st i rw }
 ;
 
 equiv_rule:
@@ -435,7 +437,7 @@ normal_entry:
   | procedure { [ParserAst.Procedure $1] }
   | sequent_rule { List.map (fun x -> ParserAst.CalculusRule x) $1 }
   | equiv_rule { List.map (fun x -> ParserAst.CalculusRule x) $1 }
-  | rewrite_rule { List.map (fun x -> ParserAst.CalculusRule (Calculus.Rewrite_rule x)) $1 }
+  | rewrite_rule { List.map (fun x -> ParserAst.CalculusRule x) $1 }
   | pred_decl { [] }
 ;
 
