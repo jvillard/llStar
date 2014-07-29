@@ -81,9 +81,7 @@ let kwd_or_else =
     "half", LLHALF;
     "float", LLFLOAT;
     "double", LLDOUBLE;
-    "llany", LLANY;
     "lltype", LLTYPE;
-    "llmem", LLMEM;
     "named", LLNAMED;
     "lljump", LLJUMP;
 
@@ -177,6 +175,7 @@ rule token = parse
   | ";" { SEMICOLON }
   | "*" { STAR }
   | "|-" { VDASH }
+  | "->" { RIGHTARROW }
   | eof { EOF }
 
   | llinteger_type as s { LLBVTYPE (int_of_string (strip_first_char s)) }

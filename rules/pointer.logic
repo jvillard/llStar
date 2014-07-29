@@ -1,4 +1,4 @@
-predicate pointer (i64, lltype, llmem);
+predicate malloced(i64, i64); /* location, size in bytes */
 
 /*
 rewrite sizeof_array:
@@ -15,28 +15,44 @@ rewrite sizeof_ptr:
 
 /* the size of the array doesn't matter for jumping
  * (moreover, ?n here might be a size given by LLVM's type system, which
- *  doesn't keep track of array's sizes unless they are constant)
+ *  need not keep accurate track of array sizes)
  * and the rules are the same for arrays and pointers
  * so we might as well care only about pointers
  */
-equiv gep_array:
-  bool ?f * pointer(eltptr(i64 ?p,lltype [i64 ?n x lltype ?at],lljump ?j), lltype ?t, llmem ?v)
-  <=> bool ?f * pointer(eltptr(i64 ?p,pointer_type(lltype ?at),lljump ?j), lltype ?t, llmem ?v)
+rewrite gep_array:
+  eltptr(i64 ?p,lltype [i64 ?n x lltype ?at],lljump ?j)
+  = eltptr(i64 ?p,pointer_type(lltype ?at),lljump ?j)
 ;
-equiv inconsistent nobacktrack gep_end:
-  bool ?f * pointer(eltptr(i64 ?y,lltype ?t, jump_end()),lltype ?tt, llmem ?v)
-  <=> bool ?f * pointer(i64 ?y, lltype ?tt, llmem ?v)
+rewrite gep_end:
+  eltptr(i64 ?y,lltype ?t, jump_end())
+  = i64 ?y
 ;
-equiv inconsistent nobacktrack pointer_gep0:
-  bool ?f * pointer(eltptr(i64 ?p, pointer_type(lltype ?pt), jump(i64 0,lljump ?j)),lltype ?t, llmem ?v)
-  <=> bool ?f * pointer(eltptr(i64 ?p,lltype ?pt,lljump ?j),lltype ?t,llmem ?v)
+rewrite pointer_gep0:
+  eltptr(i64 ?p, pointer_type(lltype ?pt), jump(i64 0,lljump ?j))
+  = eltptr(i64 ?p,lltype ?pt,lljump ?j)
 ;
-equiv inconsistent nobacktrack gep_struct(lltype _st, i64 _i):
- bool ?f * pointer(eltptr(i64 ?p, lltype _st, jump(i64 _i,lljump ?j)),lltype ?t, llmem ?v)
-  <=> bool ?f * pointer(eltptr(i64 ?p + offset(lltype _st,i64 _i),field_type(lltype _st,i64 _i),lljump ?j),lltype ?t,llmem ?v)
+rewrite gep_struct{st, i}:
+ eltptr(i64 ?p, lltype st, jump(i64 i,lljump ?j))
+  = eltptr(i64 ?p + offset(lltype st,i64 i),field_type(lltype st,i64 i),lljump ?j)
 ;
 
-rule nobacktrack unfold_struct(lltype _st, i64 _i):
+/* TODO: doesn't use i, so there should be a syntax for that */
+rewrite unfold_struct{st, i}:
+  pointer(i64 ?x, st ?v)
+  = exploded_struct(i64 ?x, st ?v)
+;
+
+rule bitcast_hint[s]:
+  bool ?f | bool ?l *
+    !bitcast(i64 ?x,pointer_type(lltype s)) * array(i64 ?x,i64 ?n, (i64 -> i8) ?v) |- bool ?r
+with
+  purecheck sizeof(lltype s) = i64 ?n
+if
+  bool ?f | bool ?l * pointer(i64 ?x, s _v) |- bool ?r
+;
+
+/*
+rule nobacktrack unfold_struct{ _st, _i}:
   bool ?f | bool ?l * pointer(i64 ?x, lltype _st, llmem ?v)
   |- pointer(i64 ?p + offset(lltype _st, i64 _i), field_type(lltype _st, i64 _i), llmem ?w) * bool ?r
 if
@@ -54,6 +70,7 @@ if
   bool ?f | bool ?l * exploded_struct(i64 ?x, lltype _st, llmem ?v)
   |- pointer(i64 ?y, lltype ?t, llmem ?w) * bool ?r
 ;
+*/
 
 /*************************************
  * Simple subtraction rules 
@@ -68,10 +85,16 @@ if
  bool ?f * malloced(i64 ?mb,i64 ?n) |  bool ?l |- i64 ?n = i64 ?m * bool ?r
 ;
 
-rule nobacktrack ptr_same_root_same_type:
- bool ?f | bool ?l * pointer(i64 ?x,lltype ?t,llmem ?v) |- pointer(i64 ?x,lltype ?t,llmem ?w) * bool ?r
+rule nobacktrack ptr_same_root_same_type[s]:
+ bool ?f | bool ?l * pointer(i64 ?x, s ?v) |- pointer(i64 ?x, s ?w) * bool ?r
 if
- bool ?f * pointer(i64 ?x,lltype ?t,llmem ?v) | bool ?l |- llmem ?w = llmem ?v * bool ?r
+ bool ?f * pointer(i64 ?x, s ?v) | bool ?l |- s ?w = s ?v * bool ?r
+;
+
+rule nobacktrack remove_pad:
+ bool ?f | bool ?l * pad(i64 ?x, i64 ?s) |- pad(i64 ?x, i64 ?s) * bool ?r
+if
+ bool ?f * pad(i64 ?x, i64 ?s) | bool ?l |- bool ?r
 ;
 
 
@@ -83,8 +106,8 @@ if
   If we have an assumption of a pointer
   for null then we have a contradiction.
  */
-rule inconsistent nobacktrack pointer_nil_contradiction:
-  bool ?f | bool ?l * pointer(NULL(),lltype ?t,llmem ?v) |- bool ?r
+rule inconsistent nobacktrack pointer_nil_contradiction[s]:
+  bool ?f | bool ?l * pointer(NULL(), s ?v) |- bool ?r
 if
 ;
 
@@ -103,22 +126,24 @@ if
   then we are going to fail, unless we can find 
   a contradiction.
  */
+/*
 rule nobacktrack pointer_nil_failed :
   bool ?f | bool ?l |- pointer(NULL(),lltype ?t,llmem ?v) * bool ?r
 if
   bool ?f | bool ?l |- pointer(NULL(),lltype ?t,llmem ?v) * False * bool ?r
 ;
+*/
 
-rule nobacktrack pointer_not_null :
-  bool ?f | bool ?l * pointer(i64 ?x,lltype ?t,llmem ?v) |- i64 ?x!=NULL() * bool ?r
+rule nobacktrack pointer_not_null[s]:
+  bool ?f | bool ?l * pointer(i64 ?x, s ?v) |- i64 ?x!=NULL() * bool ?r
 if
-  bool ?f | bool ?l * pointer(i64 ?x,lltype ?t,llmem ?v) |- bool ?r
+  bool ?f | bool ?l * pointer(i64 ?x, s ?v) |- bool ?r
 ;
 
-rule nobacktrack pointer_different :
-  bool ?f | bool ?l * pointer(i64 ?x,lltype ?t,llmem ?v) * pointer(i64 ?y,lltype ?tt,llmem ?vv) |- i64 ?x!=i64 ?y * bool ?r
+rule nobacktrack pointer_different[s,t]:
+  bool ?f | bool ?l * pointer(i64 ?x, s ?v) * pointer(i64 ?y, t ?vv) |- i64 ?x!=i64 ?y * bool ?r
 if
-  bool ?f | bool ?l * pointer(i64 ?x,lltype ?t,llmem ?v) * pointer(i64 ?y,lltype ?tt,llmem ?vv) |- bool ?r
+  bool ?f | bool ?l * pointer(i64 ?x, s ?v) * pointer(i64 ?y, t ?vv) |- bool ?r
 ;
 
 /*
@@ -203,38 +228,41 @@ equiv merge_array_array:
  <=> pointer(?x,array_type(bvadd.64(?s,?s2),?t),array_merge(?v,?s,?w))
 */
 
-rule remove_array:
- bool ?f | bool ?l * pointer(i64 ?x, array_type(i64 ?m, lltype ?t), llmem ?v)
- |- pointer(i64 ?x, array_type(i64 ?n, lltype ?t), llmem ?w) * bool ?r
+rule remove_array[s]:
+ bool ?f | bool ?l * array(i64 ?x, i64 ?m, (i64 -> s) ?v)
+ |- array(i64 ?x, i64 ?n, (i64 -> s) ?w) * bool ?r
 with
   purecheck i64 ?m = i64 ?n
 if
- pointer(i64 ?x, array_type(i64 ?m, lltype ?t), llmem ?v) * bool ?f | bool ?l
- |- llmem ?v = llmem ?w * bool ?r
+ array(i64 ?x, i64 ?m, (i64 -> s) ?v) * bool ?f | bool ?l
+ |- (i64 -> s) ?v = (i64 -> s) ?w * bool ?r
 ;
 
-rule array_remove_same_size_l:
- bool ?f | bool ?l * pointer(i64 ?x, lltype [i64 ?s x lltype i8], llmem ^v)
- |- pointer(i64 ?x, lltype ?t, llmem ?w) * bool ?r
+rule array_remove_same_size_l[s]:
+ bool ?f | bool ?l * array(i64 ?x, i64 ?s, (i64 -> i8) ^v)
+ |- pointer(i64 ?x, s ^w) * bool ?r
 with
-  fresh llmem ^v in bool ?f;
-  fresh llmem ^v in bool ?l;
-  fresh llmem ^v in bool ?r;
-  purecheck sizeof(lltype ?t) = i64 ?s
+  fresh (i64 -> i8) ^v in bool ?f;
+  fresh (i64 -> i8) ^v in bool ?l;
+  fresh (i64 -> i8) ^v in bool ?r;
+  fresh s ^w in bool ?f;
+  fresh s ^w in bool ?l;
+  fresh s ^w in bool ?r;
+  purecheck sizeof(lltype s) = i64 ?s
 if
- bool ?f * pointer(i64 ?x, lltype [i64 ?s x lltype i8], llmem ^v) | bool ?l
- |- llmem ^v = llmem ?w * bool ?r
+ bool ?f * array(i64 ?x, i64 ?s, (i64 -> i8) ^v) | bool ?l
+ |- bool ?r
 ;
-rule array_remove_same_size_r:
- bool ?f | bool ?l * pointer(i64 ?x, lltype ?t, llmem ?w)
- |- pointer(i64 ?x, lltype [i64 ?s x lltype i8], llmem ^v) * bool ?r
+rule array_remove_same_size_r[s]:
+ bool ?f | bool ?l * pointer(i64 ?x, s ?w)
+ |- array(i64 ?x, i64 ?s, (i64 -> i8) ^v) * bool ?r
 with
-  fresh llmem ^v in bool ?f;
-  fresh llmem ^v in bool ?l;
-  fresh llmem ^v in bool ?r
+  fresh (i64 -> i8) ^v in bool ?f;
+  fresh (i64 -> i8) ^v in bool ?l;
+  fresh (i64 -> i8) ^v in bool ?r
 if
- bool ?f * pointer(i64 ?x, lltype ?t, llmem ?w) | bool ?l
- |- sizeof(lltype ?t) = i64 ?s * bool ?r
+ bool ?f * pointer(i64 ?x, s ?w) | bool ?l
+ |- sizeof(lltype s) = i64 ?s * bool ?r
 ;
 
 /*

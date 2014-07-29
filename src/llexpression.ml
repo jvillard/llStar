@@ -20,16 +20,14 @@ let bv_sort sz = Z3.BitVector.mk_sort z3_ctx sz
 let void_sort = Z3.Sort.mk_uninterpreted_s z3_ctx "void"
 let bblabel_sort = Z3.Sort.mk_uninterpreted_s z3_ctx "bblabel"
 let lltype_sort = Z3.Sort.mk_uninterpreted_s z3_ctx "lltype"
-let llmem_sort = Z3.Sort.mk_uninterpreted_s z3_ctx "llmem"
 let jump_sort = Z3.Sort.mk_uninterpreted_s z3_ctx "jump"
 let md_sort = Z3.Sort.mk_uninterpreted_s z3_ctx "metadata"
 let pointer_sort = bv_sort 64
 let size_sort = bv_sort 64
-let array_idx_sort = bv_sort 64
+let idx_sort = bv_sort 64
 let function_sort args_t ret_t = int_sort (* TODO *)
-let array_sort elt_t = Z3.Z3Array.mk_sort z3_ctx array_idx_sort elt_t
+let array_sort elt_t = Z3.Z3Array.mk_sort z3_ctx idx_sort elt_t
 let vector_sort sz elt_t = int_sort (* TODO *)
-let llany_sort = Z3.Sort.mk_uninterpreted_s z3_ctx "llany"
 
 let struct_sort_map = Hashtbl.create 0
 
@@ -144,7 +142,7 @@ let declare_struct_types_in_llmodule m =
 
 (*** helpers for mk_*_type *)
 let bv_fun = Z3.FuncDecl.mk_func_decl_s z3_ctx "bv" [int_sort] lltype_sort
-let rec n_lltype n = if n <= 0 then [] else lltype_sort::n_lltype (n-1)
+let rec repeat n e = if n <= 0 then [] else e::(repeat (n-1) e)
 let named_cons =
   Z3.FuncDecl.mk_func_decl_s z3_ctx
     "named" [lltype_sort] lltype_sort
@@ -164,14 +162,14 @@ let mk_named_type s =
 let mk_opaque_type = Z3.Expr.mk_const_s z3_ctx "opaque" lltype_sort
 let mk_struct_type elts_t =
   let n = List.length elts_t in
-  let s = Z3.FuncDecl.mk_func_decl_s z3_ctx "struct" (n_lltype n) lltype_sort in
+  let s = Z3.FuncDecl.mk_func_decl_s z3_ctx "struct" (repeat n lltype_sort) lltype_sort in
   Z3.FuncDecl.apply s elts_t
 let mk_function_type args_t ret_t =
   let n = List.length args_t + 1 in
-  let s = Z3.FuncDecl.mk_func_decl_s z3_ctx "function" (n_lltype n) lltype_sort in
+  let s = Z3.FuncDecl.mk_func_decl_s z3_ctx "function" (repeat n lltype_sort) lltype_sort in
   Z3.FuncDecl.apply s (ret_t::args_t)
 let mk_pointer_type elt_t =
-  let s = Z3.FuncDecl.mk_func_decl_s z3_ctx "pointer" [lltype_sort] lltype_sort in
+  let s = Z3.FuncDecl.mk_func_decl_s z3_ctx "pointer_type" [lltype_sort] lltype_sort in
   Z3.FuncDecl.apply s [elt_t]
 let mk_vector_type size elt_t =
   let s = Z3.FuncDecl.mk_func_decl_s z3_ctx "vector" [size_sort; lltype_sort] lltype_sort in
@@ -208,31 +206,12 @@ let mk_struct_field s i st =
 let mk_struct_field_llt t =
   let s = Hashtbl.find struct_sort_map t in
   mk_struct_field s
-let mk_array t elts_v = failwith "TODO: mk_array"
-let mk_vector t elts_v = failwith "TODO: mk_vector"
+let mk_array_val elts_v = failwith "TODO: mk_array_val"
+let mk_vector_val elts_v = failwith "TODO: mk_vector_val"
 let mk_null_ptr = mk_bv 64 "0"
 let mk_undef t = Z3.Expr.mk_const_s z3_ctx "undef" t
 
-let as_llmem_cons s =
-  Z3.FuncDecl.mk_func_decl_s z3_ctx "as" [s] llmem_sort
-let mk_as_llmem e =
-  Z3.FuncDecl.apply (as_llmem_cons (Z3.Expr.get_sort e)) [e]
-let is_as_llmem e =
-  match Z3.Expr.get_args e with
-    | [a] ->
-      let s = Z3.Expr.get_sort a in
-      Z3.FuncDecl.equal (Z3.Expr.get_func_decl e) (as_llmem_cons s)
-    | _ -> false
-
-let as_sort_cons s =
-  Z3.FuncDecl.mk_func_decl_s z3_ctx "as" [llmem_sort] s
-let as_sort s e =
-  Z3.FuncDecl.apply (as_sort_cons s) [e]
-
 (* predicates *)
-let pointer_pred =
-  Z3.FuncDecl.mk_func_decl_s z3_ctx
-    "pointer" [pointer_sort; lltype_sort; llmem_sort] bool_sort
 let malloced_pred =
   Z3.FuncDecl.mk_func_decl_s z3_ctx
     "malloced" [pointer_sort; size_sort] bool_sort
@@ -249,7 +228,19 @@ let eltptr =
 let sizeof_fun =
   Z3.FuncDecl.mk_func_decl_s z3_ctx "sizeof" [lltype_sort] size_sort
 
-let mk_pointer ptr ptr_t v = Z3.FuncDecl.apply pointer_pred [ptr; ptr_t; v]
+let is_func_name name e =
+  let s = Z3.FuncDecl.get_name (Z3.Expr.get_func_decl e) in
+  Z3.Symbol.is_string_symbol s && Z3.Symbol.get_string s = name
+
+
+let mk_pointer ptr v =
+  let f = Z3.FuncDecl.mk_func_decl_s z3_ctx
+    "pointer" [pointer_sort; Z3.Expr.get_sort v] bool_sort in
+  Z3.FuncDecl.apply f [ptr; v]
+let mk_array ptr size v =
+  let f = Z3.FuncDecl.mk_func_decl_s z3_ctx
+    "array" [pointer_sort; size_sort; Z3.Expr.get_sort v] bool_sort in
+  Z3.FuncDecl.apply f [ptr; size; v]
 let mk_malloced ptr sz = Z3.FuncDecl.apply malloced_pred [ptr; sz]
 (** padding with [size] bytes at address [x] *)
 let mk_padding x size = Z3.FuncDecl.apply padding_pred [x; size]
@@ -268,9 +259,19 @@ let mk_field_type st i = Z3.FuncDecl.apply field_type [st; i]
 let offset =
   Z3.FuncDecl.mk_func_decl_s z3_ctx "offset" [lltype_sort; size_sort] size_sort
 let mk_offset st i = Z3.FuncDecl.apply offset [st; i]
-let exploded_struct =
-  Z3.FuncDecl.mk_func_decl_s z3_ctx "exploded_struct" [pointer_sort; lltype_sort; llmem_sort] bool_sort
-let mk_exploded_struct x t v = Z3.FuncDecl.apply exploded_struct [x; t; v]
+let mk_exploded_struct x v =
+  let f = Z3.FuncDecl.mk_func_decl_s z3_ctx
+    "exploded_struct" [pointer_sort; Z3.Expr.get_sort v] bool_sort in
+  Z3.FuncDecl.apply f [x; v]
+
+let mk_bitcast x t =
+  let bt = Z3.FuncDecl.mk_func_decl_s z3_ctx
+    "!bitcast" [pointer_sort; lltype_sort] bool_sort in
+  Z3.FuncDecl.apply bt [x; t]
+
+let is_pointer = is_func_name "pointer"
+let is_array = is_func_name "array"
+let is_exploded_struct = is_func_name "exploded_struct"
 
 let expr_of_sizeof t =
   let size64 = Llvm_target.DataLayout.abi_size t !lltarget in
@@ -355,11 +356,11 @@ let rec expr_zero_of_type t = match (classify_type t) with
     mk_struct_llt t elt_za
   | Array ->
     let elt_z = expr_zero_of_type (element_type t) in
-    mk_array t elt_z
+    mk_array_val (repeat (Llvm.array_length t) elt_z) (* TODO: can we trust this length? *)
   | Pointer -> mk_null_ptr
   | Vector ->
     let elt_z = expr_zero_of_type (element_type t) in
-    mk_vector t elt_z
+    mk_vector_val (repeat (Llvm.vector_size t) elt_z)
   | _ -> failwith ("PANIC: asked to generate a ConstantAggregateZero of a wrong type ")
 and expr_zero_of_type_array ta =
   Array.to_list (Array.map expr_zero_of_type ta)
@@ -537,7 +538,7 @@ and expr_of_llvalue v = match classify_value v with
   | ConstantPointerNull -> mk_null_ptr
   | ConstantStruct -> mk_struct_llt (type_of v) (expr_of_composite_llvalue v)
   | ConstantVector
-  | ConstantDataVector -> mk_vector (type_of v) (expr_of_composite_llvalue v)
+  | ConstantDataVector -> mk_vector_val (expr_of_composite_llvalue v)
   | Function -> implement_this "function values"
   | GlobalAlias -> implement_this "global alias values" (* undocumented? *)
   | UndefValue -> mk_undef (sort_of_lltype (type_of v))
@@ -560,114 +561,35 @@ let string_of_llexpr e =
   pp_llexpr Format.str_formatter e;
   Format.flush_str_formatter ()
 
-(*
-let type_error err =
-  prerr_string "Wrong_type: ";
-  prerr_endline err;
-  assert false
+let polymorphic_update e =
+  if Z3.Boolean.is_eq e then mk_2 (Z3.Boolean.mk_eq z3_ctx)
+  else if is_pointer e then mk_2 mk_pointer
+  else if is_array e then mk_3 mk_array
+  else if is_exploded_struct e then mk_2 mk_exploded_struct
+  else Z3.Expr.update e
 
-let expand_named_type = function
-  | Arg_op("named_type", [Arg_string (name)]) ->
-    (match type_by_name (get_llmodule ()) name with
-    | Some llt -> expr_of_lltype llt
-    | None -> Format.fprintf Debug.logf "No such type name %s" name; assert false)
-  | t -> t
+let pp_sort f = pp_string f @@ Z3.Sort.to_string
 
-let rec check_same_type t u = t = u || t = mk_any_type || u = mk_any_type || match (t, u) with
-  | Arg_op("named_type", [name]), _ -> check_same_type (expand_named_type t) u
-  | _, Arg_op("named_type", [name]) -> check_same_type t (expand_named_type u)
-  | Arg_op("struct_type", elts_t), Arg_op("struct_type", elts_u)
-  | Arg_op("function_type", elts_t), Arg_op("function_type", elts_u) ->
-    check_same_type_list elts_t elts_u
-  | Arg_op("pointer_type", [elt_t]), Arg_op("pointer_type", [elt_u]) ->
-    check_same_type elt_t elt_u
-  | Arg_op("vector_type", [_; elt_t]), Arg_op("vector_type", [_; elt_u])
-  | Arg_op("array_type", [_; elt_t]), Arg_op("array_type", [_; elt_u]) ->
-    (* cannot check for size equality here as it may require reasoning *)
-    check_same_type elt_t elt_u
-  | _ -> false
-and check_same_type_list ts us = match ts, us with
-  | [], [] -> true
-  | t::tl, u::ul -> check_same_type t u && check_same_type_list tl ul
-  | _ -> false
-
-
-let rec check_type_of_expr = function
-  | Arg_op ("typed", [t; e]) -> (
-    match t,e with
-    | t, Arg_var _ -> t
-    | Arg_op("bv_type", [Arg_string "64"]), Arg_op("NULL", []) -> mk_ptrBV_type
-    | t, Arg_op("NULL", []) ->
-    type_error (Printf.sprintf "Expected %s type, got %s instead" (string_of_llexpr mk_ptrBV_type) (string_of_llexpr t))
-    | Arg_op ("numeral", []), e
-    | Arg_op ("bv_type", [_]), e ->
-      (match e with 
-      | Arg_string(a) ->
-	(try ignore (int_of_string a); t
-	 with Failure "int_of_string" -> type_error (Printf.sprintf "%s should be an Int" a))
-      | _ -> type_error (Printf.sprintf "%s should be an Int" (string_of_llexpr e)))
-    | t, Arg_op("struct", elts) ->
-      let elts_t = check_type_of_expr_list elts in
-      if not (check_same_type t (mk_struct_type elts_t)) then
-	type_error (Printf.sprintf "%s is not of type %s" (string_of_llexpr e) (string_of_llexpr t));
-      t
-    | Arg_op ("type", []), _ -> (* TODO: check that [e] is a well-formed type *) t
-    | _ -> type_error (Printf.sprintf "%s is not of type %s" (string_of_llexpr e) (string_of_llexpr t)))
-  | Arg_op ("typed", _) as e -> type_error (Printf.sprintf "ill-formed typed expression %s" (string_of_llexpr e))
-  | Arg_var (Vars.AnyVar _) -> Arg_op ("any_type", [])
-  | e -> mk_any_type
-and check_type_of_expr_list = function
-  | [] -> []
-  | e::l -> check_type_of_expr e::(check_type_of_expr_list l)
-
-let rec check_wf_form_at = function
-  | P_EQ (e, f) ->
-    let t = check_type_of_expr e in
-    let u = check_type_of_expr f in
-    if not (check_same_type t u) then type_error (Printf.sprintf "%s and %s have different types %s and %s (in P_EQ)" (string_of_llexpr e) (string_of_llexpr f) (string_of_llexpr t) (string_of_llexpr u));
-  | P_NEQ (e, f) ->
-    let t = check_type_of_expr e in
-    let u = check_type_of_expr f in
-    if not (check_same_type t u) then type_error (Printf.sprintf "%s and %s have different types %s and %s (in P_NEQ)" (string_of_llexpr e) (string_of_llexpr f) (string_of_llexpr t) (string_of_llexpr u));
-  | P_PPred (_, l)
-  | P_SPred (_, l) ->
-    ignore (check_type_of_expr_list l)
-  | P_Wand (a, b)
-  | P_Or (a, b)
-  | P_Septract (a, b) ->
-    check_wf_form a; check_wf_form b
-  | P_False -> ()
-and check_wf_form f = List.iter check_wf_form_at f
-
-let check_wf_where = function
-  | PureGuard f -> check_wf_form f
-  | _ -> ()
-
-let check_wf_sequent (a, b, c, d) =
-  check_wf_form a; check_wf_form b; check_wf_form c; check_wf_form d
-
-let check_wf_sequent_rule (seq, seqll, _, (a, b), wl) =
-  check_wf_sequent seq;
-  List.iter (List.iter check_wf_sequent) seqll;
-  check_wf_form a; check_wf_form b;
-  List.iter check_wf_where wl
-
-let check_wf_rewrite_guard { without_form = a; if_form = b; rewrite_where = wl; } =
-  check_wf_form a; check_wf_form b;
-  List.iter check_wf_where wl
-
-let check_wf_rewrite_rule { function_name = _; arguments = el; result = r; guard = rwg; rewrite_name = _; saturate = _; } =
-  List.iter (fun e -> ignore (check_type_of_expr e)) el;
-  ignore (check_type_of_expr r);
-  check_wf_rewrite_guard rwg
-
-let check_wf_logic { seq_rules = seqrl; rw_rules = rwrl; consdecl = _; dummy = _; } =
-  List.iter check_wf_sequent_rule seqrl;
-  List.iter check_wf_rewrite_rule rwrl
-
-let check_wf_spec { Spec.pre = pre; Spec.post = post; Spec.excep = _; } =
-  (* TODO: check excep *)
-  check_wf_form pre; check_wf_form post
-
-let check_wf_funspec (Logic_spec.Funspec (_, spec)) = check_wf_spec spec
-*)
+let change_sort_of_vars abs_s conc_s =
+  let h = Syntax.ExprHashMap.create 0 in
+  let rec f e =
+    let app op args =
+      let e = Z3.FuncDecl.apply op args in
+      let args = List.map f args in
+      polymorphic_update e args in
+    let var v =
+      let name = Z3.FuncDecl.get_name (Z3.Expr.get_func_decl v) in
+      if Z3.Sort.equal (Z3.Expr.get_sort v) abs_s
+	&& Z3.Symbol.is_string_symbol name then
+	(* we create fresh names to avoid clashes, but we want the
+	   same fresh name for all occurrences of the same variable,
+	   hence the hashmap. *)
+	let name = Z3.Symbol.get_string name in
+	Z3.Expr.mk_fresh_const z3_ctx name conc_s
+      else v in
+    try Syntax.ExprHashMap.find h e
+    with Not_found ->
+      let r = (Syntax.on_var var & Syntax.on_app app) e in
+      ExprHashMap.add h e r;
+      r
+  in f

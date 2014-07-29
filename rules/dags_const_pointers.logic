@@ -1,13 +1,15 @@
 predicate dag (lltype, i64, int);
-predicate dagnode(lltype,i64,i64,i64);
+predicate dagnode(lltype, i64, i64, i64);
+function int mdag(int, i64);
+predicate ocon(bool, bool);
 
 /* empty dag */
-equiv dag_nil:
-  dag(lltype ?t,NULL(),int ?d) <=> 
+rewrite dag_nil:
+  dag(lltype ?t,NULL(),int ?d) = emp
 
 /* unfold dag to get root */
-rule dag_unfold:
- | dag(lltype ?t,i64 ?x,int ?d) * i64 ?x != NULL() |- pointer(i64 ?x,i64 ?sz,llmem ?w)
+rule no_backtrack dag_unfold[st]:
+ | dag(lltype ?t,i64 ?x,int ?d) * i64 ?x != NULL() |- pointer(i64 ?x, st ?w)
 if
  |  dagnode(lltype ?t,i64 ?x,_l,_r)
   * dagunion(dag(lltype ?t,_l,int ?d), dag(lltype ?t,_r,int ?d))

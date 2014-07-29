@@ -2,7 +2,7 @@ LLSRC=$(wildcard *.ll)
 CSRC=$(wildcard *.c)
 TESTS=$(LLSRC:=.test) $(CSRC:=.test)
 
-LLVM_AS=llvm-as-3.4
+LLVM_AS=llvm-as
 CC=clang -O0
 LLSTAR=../bin/llstar -v -v -v
 

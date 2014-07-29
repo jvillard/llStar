@@ -1,11 +1,17 @@
-/* %y = load  %t* %x */
-procedure llvm_load(i64 %x, lltype %t, llany _v) returns (llany %y)
-  {pointer(i64 %x, lltype %t, as(llany _v))}
-  {pointer(i64 %x, lltype %t, as(llany _v)) * llany %y = llany _v }
+/* %x = alloca t */
+procedure llvm_alloca(lltype t) returns (i64 %x)
+  {emp}
+  {pointer(i64 %x, t _v)}
 ;
 
-/* store %t %v %t* %x */
-procedure llvm_store(i64 %x, lltype %t, llany %v)
-  {pointer(i64 %x, lltype %t, llmem _v)}
-  {pointer(i64 %x, lltype %t, as(llany %v))}
+/* %y = load  t* %x */
+procedure llvm_load(i64 %x, lltype t) returns (t %y)
+  {pointer(i64 %x, t _v)}
+  {pointer(i64 %x, t _v) * t %y = t _v }
+;
+
+/* store t %v t* %x */
+procedure llvm_store(i64 %x, lltype t, t %v)
+  {pointer(i64 %x, t _v)}
+  {pointer(i64 %x, t %v)}
 ;

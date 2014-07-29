@@ -2,7 +2,7 @@ procedure malloc(i64 %s) returns (i64 %x)
   {emp}
   {(i64 %x != NULL()
     * malloced(i64 %x, i64 %s)
-    * pointer(i64 %x, lltype [ i64 %s x lltype i8 ], llmem _v))
+    * array(i64 %x, i64 %s, (i64 -> i8) _v))
   || i64 %x = NULL()}
 ;
 /*
@@ -12,7 +12,7 @@ free:
 */
 
 procedure free(i64 %x)
-  {malloced(i64 %x, i64 _s) * pointer(i64 %x, lltype [ i64 _s x lltype i8], llmem _v)}
+  {malloced(i64 %x, i64 _s) * array(i64 %x, i64 _s, (i64 -> i8) _v)}
   {emp}
 ;
 /*

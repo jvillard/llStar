@@ -11,27 +11,6 @@ open Llutils
 
 let z3_ctx = Syntax.z3_ctx
 
-let polymorphic_update e =
-  if Z3.Boolean.is_eq e then mk_2 (Z3.Boolean.mk_eq z3_ctx)
-  else if is_as_llmem e then mk_1 mk_as_llmem
-  else Z3.Expr.update e
-
-let rec subst_llany llanys e =
-  let app op args =
-    let args = List.map (subst_llany llanys) args in
-    polymorphic_update e args in
-  let var v =
-    try Syntax.ExprMap.find v llanys
-    with Not_found -> v in
-  (Syntax.on_var var & Syntax.on_app app) e
-
-let mk_llanys vs llts =
-  let mk_llany m v llt =
-    assert (Z3.Expr.is_const v && Z3.Sort.equal (Z3.Expr.get_sort v) llany_sort);
-    let name = Z3.FuncDecl.get_name (Z3.Expr.get_func_decl v) in
-    Syntax.ExprMap.add v (Z3.Expr.mk_const z3_ctx name llt) m in
-  List.fold_left2 mk_llany Syntax.ExprMap.empty vs llts
-
 let get_template tps name =
   try
     List.find (fun t -> t.C.proc_name = "llvm_"^name) tps
@@ -88,19 +67,17 @@ let mk_simple_asgn pre post =
 	       asgn_spec = spec } in
   C.Assignment_core asgn
 
-let asgn_of_template tpl anys anys_s args rets =
-    let llanys = mk_llanys anys anys_s in
-    let subst = subst_llany llanys in
-    let conc_triple { C.pre; post; modifies } =
-      { C.pre = subst pre; post = subst post
+let asgn_of_template tpl abs_s conc_s args rets =
+  let subst = change_sort_of_vars abs_s conc_s in
+  let conc_triple { C.pre; post; modifies } =
+    { C.pre = subst pre; post = subst post
       ; modifies = List.map subst modifies } in
-    let spec = C.TripleSet.map conc_triple tpl.C.proc_spec in
-    let asgn = { C.asgn_rets = rets
-	       ; asgn_rets_formal = List.map subst tpl.C.proc_rets
-	       ; asgn_args = args
-	       ; asgn_args_formal = List.map subst tpl.C.proc_args
-	       ; asgn_spec = spec } in
-    [C.Assignment_core asgn]
+  let spec = C.TripleSet.map conc_triple tpl.C.proc_spec in
+  { C.asgn_rets = rets
+  ; asgn_rets_formal = List.map subst tpl.C.proc_rets
+  ; asgn_args = args
+  ; asgn_args_formal = List.map subst tpl.C.proc_args
+  ; asgn_spec = spec }
 
 (** compile an llvm instruction within a function into a piece of CoreStar CFG *) 
 let statements_of_instr procs retv fun_env instr =
@@ -186,32 +163,22 @@ let statements_of_instr procs retv fun_env instr =
   | Opcode.Invalid
   | Opcode.Invalid2 -> failwith "\"Invalid\" instruction"
   (* Memory Operators *)
-  | Opcode.Alloca ->
-    let ptr_t = type_of instr in
-    let ptr_s = sort_of_lltype ptr_t in
-    let id = Syntax.mk_plvar ptr_s (value_id instr) in
-    let value_t = element_type ptr_t in
-    let e = Syntax.mk_fresh_lvar llmem_sort "v" in
-    let heap = mk_pointer id (expr_of_lltype value_t) e in
-    fun_env.fun_alloca_pred <- Syntax.mk_star fun_env.fun_alloca_pred heap;
-    let triple = { C.pre = Syntax.mk_emp; post = heap; modifies = [] } in
-    let spec = C.TripleSet.singleton triple in
-    let asgn = { C.asgn_rets = [id]; asgn_rets_formal = [id];
-		 asgn_args = []; asgn_args_formal = [];
-		 asgn_spec = spec } in
-    [C.Assignment_core asgn]
   | Opcode.Load ->
     (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l00225 *)
     let ptr_v = operand instr 0 in
     let value_t = type_of instr in
     let value_s = sort_of_lltype value_t in
     let tpl = get_template procs "load" in
-    let tpl_ret = mk_1 id tpl.C.proc_rets in
-    let tpl_llv = mk_3 (c2 id) tpl.C.proc_args in
+    (** TODO: write as "check_lengths_and_stuff [sort_check (bv_sort 64); sort_check lltype_sort] ..." *)
+    (match tpl.C.proc_args, tpl.C.proc_rets with
+    | [p; t], [r] -> assert ((Z3.Sort.equal (Z3.Expr.get_sort p) (bv_sort 64))
+			     && (Z3.Sort.equal (Z3.Expr.get_sort t) lltype_sort))
+    | _ -> assert false);
+    let abs_s = Z3.Expr.get_sort (List.hd tpl.C.proc_rets) in
     let ptr = expr_of_llvalue ptr_v in
     let ret = Syntax.mk_plvar value_s (value_id instr) in
-    asgn_of_template tpl [tpl_ret; tpl_llv] [value_s; value_s]
-      [ptr; expr_of_lltype value_t] [ret]
+    [C.Assignment_core(asgn_of_template tpl abs_s value_s
+			 [ptr; expr_of_lltype value_t] [ret])]
   | Opcode.Store ->
     (* Hardcoded from http://llvm.org/docs/doxygen/html/Instructions_8h_source.html#l003.4 *)
     let value = operand instr 0 in
@@ -221,10 +188,29 @@ let statements_of_instr procs retv fun_env instr =
     let value_s = sort_of_lltype value_t in
     let tpl = get_template procs "store" in
     assert(tpl.C.proc_rets = []);
-    let tpl_llv = mk_3 (c2 id) tpl.C.proc_args in
+    let abs_s = Z3.Expr.get_sort (List.nth tpl.C.proc_args 2) in
     let ptr = expr_of_llvalue ptr_v in
     let v = expr_of_llvalue value in
-    asgn_of_template tpl [tpl_llv] [value_s] [ptr; expr_of_lltype value_t; v] []
+    [C.Assignment_core (asgn_of_template tpl abs_s value_s
+			  [ptr; expr_of_lltype value_t; v] [])]
+  | Opcode.Alloca ->
+    let tpl = get_template procs "alloca" in
+    let abs_s = Z3.Sort.mk_uninterpreted z3_ctx
+      (Z3.FuncDecl.get_name (Z3.Expr.get_func_decl (List.hd tpl.C.proc_args))) in
+    let ptr_t = type_of instr in
+    let ptr_s = sort_of_lltype ptr_t in
+    let ret = Syntax.mk_plvar ptr_s (value_id instr) in
+    let value_t = element_type ptr_t in
+    let value_s = sort_of_lltype value_t in
+    let asgn = asgn_of_template tpl abs_s value_s [expr_of_lltype value_t] [ret] in
+    (* TODO: check that there is a single triple, that its pre is
+       emp, otherwise give up on stack management *)
+    let heap = Z3.Expr.substitute
+      ((C.TripleSet.choose asgn.C.asgn_spec).C.post)
+      asgn.C.asgn_rets_formal
+      asgn.C.asgn_rets in
+    fun_env.fun_alloca_pred <- Syntax.mk_star fun_env.fun_alloca_pred heap;
+    [C.Assignment_core asgn]
   (* misc instructions that cannot be used in constant expressions *)
   | Opcode.PHI ->
     (* We cannot treat phi nodes directly. Instead, we accumulate the
@@ -289,18 +275,8 @@ let statements_of_instr procs retv fun_env instr =
   | Opcode.AtomicRMW -> implement_this "atomic RMW instr"
   | Opcode.Resume -> implement_this "resume instr"
   | Opcode.LandingPad -> [C.Nop_stmt_core]
-  | Opcode.BitCast
-    (* TODO: restore *)
-    (* -> *)
-    (* let id = value_id instr in *)
-    (* let t = expr_of_lltype (type_of instr) in *)
-    (* let expr_e = expr_of_op (instr_opcode instr) instr in *)
-    (* let post = pconjunction (mkPPred ("bitcast", [mkTypedExpr t ret_arg; expr_of_lltype (type_of instr) ])) *)
-    (*   (Z3.Boolean.mk_eq z3_ctx  (mkTypedExpr t ret_arg, expr_e)) in *)
-    (* let pre = Syntax.mk_emp in *)
-    (* let spec = Spec.mk_spec pre post Spec.ClassMap.empty in *)
-    (* [C.Assignment_core ([Vars.concretep_str id],spec,[])] *)
   (* the remaining opcodes are shared with constant expressions *)
+  | Opcode.BitCast
   | Opcode.Add | Opcode.FAdd | Opcode.Sub | Opcode.FSub | Opcode.Mul
   | Opcode.FMul | Opcode.UDiv | Opcode.SDiv | Opcode.FDiv | Opcode.URem
   | Opcode.SRem | Opcode.FRem | Opcode.Shl | Opcode.LShr | Opcode.AShr
@@ -314,6 +290,12 @@ let statements_of_instr procs retv fun_env instr =
     let id = Syntax.mk_plvar s (value_id instr) in
     let expr_e = expr_of_op (instr_opcode instr) instr in
     let post = Z3.Boolean.mk_eq z3_ctx id expr_e in
+    let post = 
+      if instr_opcode instr = Opcode.BitCast
+      && classify_type (type_of instr) = TypeKind.Pointer then
+	Syntax.mk_star post
+	  (mk_bitcast id (expr_of_lltype (type_of instr)))
+      else post in
     let pre = Syntax.mk_emp in
     let triple = { C.pre = pre; post = post; modifies = [] } in
     let spec = C.TripleSet.singleton triple in

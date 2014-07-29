@@ -113,7 +113,7 @@ let rec collect_type (seen_t, seen_const) t =
     let seen_t = LltypeSet.add t seen_t in
     match (classify_type t) with
       | Struct ->
-	Array.fold_left collect_type (seen_t, seen_const) (struct_element_types t)
+       Array.fold_left collect_type (seen_t, seen_const) (struct_element_types t)
       | Pointer
       | Array
       | Vector -> collect_type (seen_t, seen_const) (element_type t)
@@ -150,7 +150,16 @@ let collect_types_in_block o b =
   fold_left_instrs collect_types_in_instr o b
 
 let collect_types_in_function o f =
-  let o = collect_type o (type_of f) in
+  let t = type_of f in
+  (* don't add [t] here, as it's not used as a "first-class
+     value". Instead, add the types of the parameters and return value
+     (because they might be mentioned in specs). If a function is used
+     as a value, it will be caught somewhere else. *)
+  (* for some reason, we get function pointer as the type of [f] *)
+  let t = element_type t in
+  (* /for some reason *)
+  let o = collect_type o (return_type t) in
+  let o = Array.fold_left collect_type o (param_types t) in
   fold_left_blocks collect_types_in_block o f
 
 (** collects all the types referred to by the functions of module [m] *)
@@ -160,7 +169,6 @@ let collect_types_in_module m =
   let o = (LltypeSet.empty,LlvalueSet.empty) in
   let (typs, _) = fold_left_functions collect_types_in_function o m in
   LltypeSet.elements typs
-
 
 (** dump things into files in the output directory *)
 let dump_into_file suffix pp_stuff stuff =

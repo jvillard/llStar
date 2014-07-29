@@ -35,9 +35,11 @@ let ops = Hashtbl.create 0
 let () = List.iter (fun (n, f) -> Hashtbl.add ops n f) 
   [
     (* spatial predicates *)
-    ("pointer", mk_3 mk_pointer);
-    ("malloced", mk_2 mk_malloced);
     ("NULL", mk_0 mk_null_ptr);
+    ("pointer", mk_2 mk_pointer);
+    ("array", mk_3 mk_array);
+    ("bitcast", mk_2 mk_bitcast);
+    ("pad", mk_2 mk_padding);
     (* eltptr *)
     ("jump", mk_2 mk_jump);
     ("jump_end", mk_0 mk_jump_end);
@@ -50,9 +52,7 @@ let () = List.iter (fun (n, f) -> Hashtbl.add ops n f)
     ("ptr_size", mk_0 mk_pointer_size);
     ("offset", mk_2 mk_offset);
     ("field_type", mk_2 mk_field_type);
-    ("exploded_struct", mk_3 mk_exploded_struct);
-    (* misc *)
-    ("as", mk_1 mk_as_llmem);
+    ("exploded_struct", mk_2 mk_exploded_struct);
     (* bitvector operations *)
     ("bvudiv", mk_2 (Z3.BitVector.mk_udiv z3_ctx));
     ("bvsdiv", mk_2 (Z3.BitVector.mk_sdiv z3_ctx));
@@ -129,13 +129,11 @@ let lookup_op op args =
 %token IN
 %token INCONSISTENT
 %token INT
-%token LLANY
 %token LLDOUBLE
 %token LLDOUBLE
 %token LLFLOAT
 %token LLHALF
 %token LLJUMP
-%token LLMEM
 %token LLNAMED
 %token LLTYPE
 %token LLVOID
@@ -157,6 +155,7 @@ let lookup_op op args =
 %token R_BRACEGT
 %token R_BRACKET
 %token R_PAREN
+%token RIGHTARROW
 %token SEMICOLON
 %token STAR
 %token TRUE
@@ -171,6 +170,7 @@ let lookup_op op args =
 %right OROR
 %right STAR
 %right BVUDIV BVSDIV BVSUB BVADD BVMUL
+%right RIGHTARROW
 
 /* entry points */
 %start file
@@ -186,6 +186,7 @@ variable:
   | sort LIDENTIFIER { Syntax.mk_lvar $1 $2 }
   | sort TPIDENTIFIER { Syntax.mk_tpat $1 $2 }
   | sort VPIDENTIFIER { Syntax.mk_vpat $1 $2 }
+  | sort IDENTIFIER { Z3.Expr.mk_const_s z3_ctx $2 $1 }
 ;
 variable_list_ne:
   |  variable    { [$1] }
@@ -194,6 +195,11 @@ variable_list_ne:
 variable_list:
   |  {[]}
   | variable_list_ne { $1 }
+;
+
+identifier_list_ne:
+  | IDENTIFIER { [$1] }
+  | IDENTIFIER COMMA identifier_list_ne  { $1 :: $3 }
 ;
 
 /* none implemented for now, which ocamlyacc doesn't like */
@@ -223,13 +229,14 @@ sort:
   | LLVOID { void_sort }
   | LLBVTYPE { bv_sort $1 }
   | LLTYPE { lltype_sort }
-  | LLMEM { llmem_sort }
   | LLNAMED L_PAREN STRING_CONSTANT R_PAREN { sort_of_lltype (lltype_of_name $3) }
   | L_LTBRACE sort_list R_BRACEGT { struct_as_fields_sort $2 }
   | L_BRACE sort_list R_BRACE { struct_as_fields_sort $2 }
   | L_BRACKET term CROSS sort R_BRACKET { array_sort $4 }
   | sort STAR { pointer_sort }
-  | LLANY { llany_sort }
+  | IDENTIFIER { Z3.Sort.mk_uninterpreted_s z3_ctx $1 }
+  | sort RIGHTARROW sort { Z3.Z3Array.mk_sort z3_ctx $1 $3 }
+  | L_PAREN sort R_PAREN { $2 }
 ;
 sort_list_ne:
   | sort COMMA sort_list_ne  {  $1::$3 }
@@ -244,18 +251,17 @@ sort_list:
 /* TODO: type-checking */
 atomic_term:
   | variable { $1 }
-  | LLTYPE TPIDENTIFIER { Syntax.mk_tpat lltype_sort $2 }
   | LLTYPE LLBVTYPE { mk_bv_type $2 }
   | LLTYPE LLHALF { mk_fp_type "half" }
   | LLTYPE LLFLOAT { mk_fp_type "float" }
   | LLTYPE LLDOUBLE { mk_fp_type "double" }
-  | LLTYPE IDENTIFIER { mk_named_type $2 }
+  | LLTYPE STRING_CONSTANT { mk_named_type $2 }
   | LLBVTYPE INTEGER { mk_bv $1 $2  }
   | INT INTEGER { mk_int (int_of_string $2)  }
   | LLTYPE L_BRACKET term CROSS term R_BRACKET { mk_array_type $3 $5 }
   | sort L_LTBRACE term_list R_BRACEGT { mk_struct $1 $3 }
   | sort L_BRACE term_list R_BRACE { mk_struct $1 $3 }
-  | sort L_BRACKET term_list R_BRACKET { mk_array $1 $3 }
+  | L_BRACKET term_list R_BRACKET { mk_array_val $2 }
   | PUREIDENTIFIER L_PAREN term_list R_PAREN { lookup_op $1 $3 }
   | IDENTIFIER L_PAREN term_list R_PAREN { lookup_op $1 $3 }
   | EMP  { Syntax.mk_emp }
@@ -306,41 +312,45 @@ spec:
 /* Rules */
 
 sequent_rule:
-  | RULE rule_flags IDENTIFIER struct_vars COLON sequent
+  | RULE rule_flags IDENTIFIER sort_vars struct_vars COLON sequent
       with_clause
     IF sequent_list SEMICOLON
-    { let seq = Calculus.Sequent_rule
+    { let s = Calculus.Sequent_rule
         { Calculus.seq_name = $3
-        ; seq_pure_check = fst $7
-        ; seq_fresh_in_expr = snd $7
-        ; seq_goal_pattern = $6
-        ; seq_subgoal_pattern = $9
+        ; seq_pure_check = fst $8
+        ; seq_fresh_in_expr = snd $8
+        ; seq_goal_pattern = $7
+        ; seq_subgoal_pattern = $10
         ; seq_priority = fst $2
         ; seq_flags = snd $2 } in
-    match $4 with
-    | None -> [seq]
-    | Some (st,i) -> Rulegen.gen_struct_rule st i seq }
+      let srs =
+        match $5 with
+        | None -> [s]
+        | Some (st,i) -> Rulegen.struct_rule st i s in
+      srs >>= Rulegen.polymorphic_rule $4 }
 ;
 
 rewrite_rule:
-  | REWRITERULE IDENTIFIER struct_vars COLON
+  | REWRITERULE IDENTIFIER sort_vars struct_vars COLON
       atomic_term EQUALS atomic_term SEMICOLON
     { let rw = Calculus.Rewrite_rule
         { Calculus.rw_name = $2
-        ; rw_from_pattern = $5
-        ; rw_to_pattern = $7 } in
-      match $3 with
-      | None -> [rw]
-      | Some (st,i) -> Rulegen.gen_struct_rule st i rw }
+        ; rw_from_pattern = $6
+        ; rw_to_pattern = $8 } in
+      let rrs = match $4 with
+        | None -> [rw]
+        | Some (st,i) -> Rulegen.struct_rule st i rw in
+      rrs >>= Rulegen.polymorphic_rule $3 }
 ;
 
 equiv_rule:
-  | EQUIVRULE rule_flags IDENTIFIER struct_vars COLON
+  | EQUIVRULE rule_flags IDENTIFIER sort_vars struct_vars COLON
       term BIMP term SEMICOLON
-      { let seqs = Calculus.mk_equiv_rule $3 (fst $2) (snd $2) $6 $8 in
-        match $4 with
-        | None -> seqs
-        | Some (st,i) -> seqs >>= (Rulegen.gen_struct_rule st i) }
+      { let seqs = Calculus.mk_equiv_rule $3 (fst $2) (snd $2) $7 $9 in
+        let srs = match $5 with
+          | None -> seqs
+          | Some (st,i) -> seqs >>= (Rulegen.struct_rule st i) in
+        srs >>= Rulegen.polymorphic_rule $4 }
 ;
 
 rule_flag:
@@ -356,7 +366,13 @@ rule_flags:
 
 struct_vars:
   | /* empty */ { None }
-  | L_PAREN variable COMMA variable R_PAREN { Some ($2, $4) }
+  | L_BRACE IDENTIFIER COMMA IDENTIFIER R_BRACE
+      { Some ($2, $4) }
+;
+
+sort_vars:
+   | /* empty */ { [] }
+   | L_BRACKET identifier_list_ne R_BRACKET { $2 }
 ;
 
 sequent:
@@ -390,16 +406,6 @@ with_clause:
   | WITH sidecondition_list_ne { $2 }
 ;
 
-int_ne_list:
-  | INTEGER { [int_of_string $1] }
-  | INTEGER COMMA int_ne_list { int_of_string $1::$3 }
-;
-
-int_list:
-  | /* empty */ { [] }
-  | int_ne_list { $1 }
-;
-
 /* Input files */
 
 proc_args:
@@ -424,9 +430,13 @@ procedure:
 
 /* type declarations */
 pred_decl:
-   | PREDICATE IDENTIFIER L_PAREN sort_list R_PAREN SEMICOLON
-    { let f = Z3.FuncDecl.mk_func_decl_s z3_ctx $2 $4 bool_sort in
-      register_op $2 (Z3.FuncDecl.apply f) }
+   | PREDICATE IDENTIFIER sort_vars L_PAREN sort_list R_PAREN SEMICOLON
+    { let op args =
+	(* TODO: check [args] sorts against $5 *)
+	let arg_sorts = List.map Z3.Expr.get_sort args in
+	let f = Z3.FuncDecl.mk_func_decl_s z3_ctx $2 arg_sorts bool_sort in
+	Z3.FuncDecl.apply f args in
+      register_op $2 op }
 ;
 
 import_entry:

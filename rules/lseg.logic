@@ -39,7 +39,7 @@ if
  *************************************/
 
 rule node_equal:
-  | sllnode(?s,?i,?n) |- sllnode(?s,?j,?n2)
+  | sllnode(?s,?i,?n) |- sllnode(?s,?i,?n2)
 if
   sllnode(?s,?i,?n) | |- ?n = ?n2
 
