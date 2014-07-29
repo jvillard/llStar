@@ -59,6 +59,7 @@ let kwd_or_else =
     "equiv", EQUIVRULE;
     "fresh", FRESH;
     "False", FALSE;
+    "function", FUNCTION;
     "global", GLOBAL;
     "if", IF;
     "import", IMPORT;

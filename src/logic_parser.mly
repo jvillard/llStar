@@ -53,6 +53,9 @@ let () = List.iter (fun (n, f) -> Hashtbl.add ops n f)
     ("offset", mk_2 mk_offset);
     ("field_type", mk_2 mk_field_type);
     ("exploded_struct", mk_2 mk_exploded_struct);
+    (* boolean *)
+    ("not", mk_1 (Z3.Boolean.mk_not z3_ctx));
+    ("ite", mk_3 (Z3.Boolean.mk_ite z3_ctx));
     (* bitvector operations *)
     ("bvudiv", mk_2 (Z3.BitVector.mk_udiv z3_ctx));
     ("bvsdiv", mk_2 (Z3.BitVector.mk_sdiv z3_ctx));
@@ -123,6 +126,7 @@ let lookup_op op args =
 %token EQUIVRULE
 %token FALSE
 %token FRESH
+%token FUNCTION
 %token GLOBAL
 %token IF
 %token IMPORT
@@ -332,7 +336,7 @@ sequent_rule:
 
 rewrite_rule:
   | REWRITERULE IDENTIFIER sort_vars struct_vars COLON
-      atomic_term EQUALS atomic_term SEMICOLON
+      term RIGHTARROW term SEMICOLON
     { let rw = Calculus.Rewrite_rule
         { Calculus.rw_name = $2
         ; rw_from_pattern = $6
@@ -439,6 +443,16 @@ pred_decl:
       register_op $2 op }
 ;
 
+func_decl:
+   | FUNCTION sort IDENTIFIER sort_vars L_PAREN sort_list R_PAREN SEMICOLON
+    { let op args =
+	(* TODO: check [args] sorts against $5 *)
+	let arg_sorts = List.map Z3.Expr.get_sort args in
+	let f = Z3.FuncDecl.mk_func_decl_s z3_ctx $3 arg_sorts $2 in
+	Z3.FuncDecl.apply f args in
+      register_op $3 op }
+;
+
 import_entry:
   | IMPORT STRING_CONSTANT SEMICOLON  { $2 }
 ;
@@ -449,6 +463,7 @@ normal_entry:
   | equiv_rule { List.map (fun x -> ParserAst.CalculusRule x) $1 }
   | rewrite_rule { List.map (fun x -> ParserAst.CalculusRule x) $1 }
   | pred_decl { [] }
+  | func_decl { [] }
 ;
 
 entry:

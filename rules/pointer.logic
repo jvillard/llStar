@@ -10,7 +10,7 @@ rewrite sizeof_array:
  *************************************/
 
 rewrite sizeof_ptr:
-  sizeof(pointer_type(lltype ?t)) = ptr_size()
+  sizeof(pointer_type(lltype ?t)) -> ptr_size()
 ;
 
 /* the size of the array doesn't matter for jumping
@@ -21,25 +21,25 @@ rewrite sizeof_ptr:
  */
 rewrite gep_array:
   eltptr(i64 ?p,lltype [i64 ?n x lltype ?at],lljump ?j)
-  = eltptr(i64 ?p,pointer_type(lltype ?at),lljump ?j)
+  -> eltptr(i64 ?p,pointer_type(lltype ?at),lljump ?j)
 ;
 rewrite gep_end:
   eltptr(i64 ?y,lltype ?t, jump_end())
-  = i64 ?y
+  -> i64 ?y
 ;
 rewrite pointer_gep0:
   eltptr(i64 ?p, pointer_type(lltype ?pt), jump(i64 0,lljump ?j))
-  = eltptr(i64 ?p,lltype ?pt,lljump ?j)
+  -> eltptr(i64 ?p,lltype ?pt,lljump ?j)
 ;
 rewrite gep_struct{st, i}:
  eltptr(i64 ?p, lltype st, jump(i64 i,lljump ?j))
-  = eltptr(i64 ?p + offset(lltype st,i64 i),field_type(lltype st,i64 i),lljump ?j)
+ -> eltptr(i64 ?p + offset(lltype st,i64 i),field_type(lltype st,i64 i),lljump ?j)
 ;
 
 /* TODO: doesn't use i, so there should be a syntax for that */
 rewrite unfold_struct{st, i}:
   pointer(i64 ?x, st ?v)
-  = exploded_struct(i64 ?x, st ?v)
+  -> exploded_struct(i64 ?x, st ?v)
 ;
 
 rule bitcast_hint[s]:

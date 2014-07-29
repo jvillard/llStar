@@ -1,3 +1,13 @@
 rewrite add0:
-  bvadd(i64 ?x, i64 0) = i64 ?x
+  bvadd(i64 ?x, i64 0) -> i64 ?x
+;
+
+rewrite ite_bool_true:
+  i1 1 = ite(bool ?s, i1 1, i1 0)
+  -> bool ?s
+;
+
+rewrite ite_bool_false:
+  i1 0 = ite(bool ?s, i1 1, i1 0)
+  -> not (bool ?s)
 ;
