@@ -386,8 +386,11 @@ let add_body_of_llfunction procs f =
       | [a] -> Some a
       | [] -> None
       | _ -> assert (false) in
+    let args = List.map expr_of_llvalue (Array.to_list (params f)) in
     let body = body_of_function procs retv f in
-    { proc with C.proc_body = Some body }
+    proc.C.proc_spec <- C.specialize_spec args proc.C.proc_args
+      proc.C.proc_rets proc.C.proc_rets proc.C.proc_spec;
+    { proc with C.proc_args = args; C.proc_body = Some body }
 
 let question_of_llmodule q m =
   let fill_proc f p = (add_body_of_llfunction q.C.q_procs f)::p in
