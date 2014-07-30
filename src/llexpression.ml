@@ -563,6 +563,7 @@ let string_of_llexpr e =
 
 let polymorphic_update e =
   if Z3.Boolean.is_eq e then mk_2 (Z3.Boolean.mk_eq z3_ctx)
+  else if Z3.Boolean.is_distinct e then Z3.Boolean.mk_distinct z3_ctx
   else if is_pointer e then mk_2 mk_pointer
   else if is_array e then mk_3 mk_array
   else if is_exploded_struct e then mk_2 mk_exploded_struct

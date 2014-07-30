@@ -3,7 +3,7 @@ CSRC=$(wildcard *.c)
 TESTS=$(LLSRC:=.test) $(CSRC:=.test)
 
 LLVM_AS=llvm-as
-CC=clang -O0
+CC=clang -O2
 LLSTAR=../bin/llstar -v -v -v
 
 WEBEXAMPLES=skip.c.O0.ll
@@ -14,10 +14,10 @@ all: test
 	$(LLVM_AS) -f -o $@ $?
 
 %.c.bc: %.c
-	clang -emit-llvm -g -O0 -c -o $@ $?
+	$(CC) -emit-llvm -g -c -o $@ $?
 
 %.c.O0.ll: %.c
-	clang -emit-llvm -O0 -S -o $@ $?
+	$(CC) -emit-llvm -O0 -S -o $@ $?
 
 $(TESTS): %.test: %.bc
 	@rm -rf $*.out && mkdir $*.out

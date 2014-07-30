@@ -11,3 +11,7 @@ rewrite ite_bool_false:
   i1 0 = ite(bool ?s, i1 1, i1 0)
   -> not (bool ?s)
 ;
+
+rewrite not_equal[s]:
+  not (s ?x = s ?y) -> s ?x != s ?y
+;
