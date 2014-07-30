@@ -21,10 +21,10 @@ if
 ;*/
 
 rewrite dag_unfold:
-  dag(lltype ?t,i64 ?x,int ?d) * i64 ?x != NULL()
+  dag(lltype ?t,i64 ?x,int ?d) * i64 ?x != NULL() * bool ?f
   -> dagnode(lltype ?t,i64 ?x, i64 _l, i64 _r)
     * ocon(dag(lltype ?t, i64 _l,int ?d), dag(lltype ?t, i64 _r,int ?d))
-    * mdag(int ?d,i64 ?x) = mnode(i64 _l,i64 _r)
+    * mdag(int ?d,i64 ?x) = mnode(i64 _l,i64 _r) * bool ?f
 ;
 
 /* fold back into a dag */
