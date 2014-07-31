@@ -350,7 +350,7 @@ rewrite_rule:
 equiv_rule:
   | EQUIVRULE rule_flags IDENTIFIER sort_vars struct_vars COLON
       term BIMP term SEMICOLON
-      { let seqs = Calculus.mk_equiv_rule $3 (fst $2) (snd $2) $7 $9 in
+      { let seqs = CalculusOps.mk_equiv_rule $3 (fst $2) (snd $2) $7 $9 in
         let srs = match $5 with
           | None -> seqs
           | Some (st,i) -> seqs >>= (Rulegen.struct_rule st i) in

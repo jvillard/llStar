@@ -20,9 +20,6 @@ let frame_pat = Syntax.mk_bool_tpat "_frame"
 let lhs_frame_pat = Syntax.mk_bool_tpat "_lhs"
 let rhs_frame_pat = Syntax.mk_bool_tpat "_rhs"
 
-let mk_simple_equiv_rule n p f lhs rhs =
-  mk_equiv_rule n p f (Syntax.mk_star lhs lhs_frame_pat) (Syntax.mk_star rhs lhs_frame_pat)
-
 let mk_simple_sequent lhs rhs =
   let frame_on e f =
     if Syntax.expr_equal e Syntax.mk_emp then f
@@ -195,27 +192,6 @@ let seq_set_name r s = { r with seq_name = s }
 let rw_get_name r = r.rw_name
 let rw_set_name r s = { r with rw_name = s }
 
-(*** apply substitution in rules *)
-
-let pair_map f (a, b) = (f a, f b)
-
-let subst_in_seq subst { frame; hypothesis; conclusion } =
-  { frame = subst frame
-  ; hypothesis = subst hypothesis
-  ; conclusion = subst conclusion }
-
-let subst_in_seq_rule subst r =
-  { r with
-    seq_pure_check = List.map subst r.seq_pure_check
-  ; seq_fresh_in_expr = List.map (pair_map subst) r.seq_fresh_in_expr
-  ; seq_goal_pattern = subst_in_seq subst r.seq_goal_pattern
-  ; seq_subgoal_pattern = List.map (subst_in_seq subst) r.seq_subgoal_pattern }
-
-let subst_in_rw_rule subst r =
-  { r with
-    rw_from_pattern = subst r.rw_from_pattern
-    ; rw_to_pattern = subst r.rw_to_pattern }
-
 (*** the substitutions of interest *)
 
 let subst_lltype_expr t_var t e =
@@ -243,10 +219,12 @@ let st_rule get_name set_name subst_in_rule st i r =
 
 let struct_rule st i = function
   | Sequent_rule r -> List.map (fun u -> Sequent_rule u)
-                               (st_rule seq_get_name seq_set_name subst_in_seq_rule
+                               (st_rule seq_get_name seq_set_name
+                                        CalculusOps.subst_in_sequent_schema
                                         st i r)
   | Rewrite_rule r -> List.map (fun u -> Rewrite_rule u)
-                               (st_rule rw_get_name rw_set_name subst_in_rw_rule
+                               (st_rule rw_get_name rw_set_name
+                                        CalculusOps.subst_in_rewrite_schema
                                         st i r)
 
 let rec poly_rule get_name set_name subst_in_rule ss r =
@@ -272,10 +250,12 @@ let rec poly_rule get_name set_name subst_in_rule ss r =
 let polymorphic_rule ss = function
   | Sequent_rule r ->
      List.map (fun u -> Sequent_rule u)
-              (poly_rule seq_get_name seq_set_name subst_in_seq_rule ss r)
+              (poly_rule seq_get_name seq_set_name
+                         CalculusOps.subst_in_sequent_schema ss r)
   | Rewrite_rule r ->
      List.map (fun u -> Rewrite_rule u)
-              (poly_rule rw_get_name rw_set_name subst_in_rw_rule ss r)
+              (poly_rule rw_get_name rw_set_name
+                         CalculusOps.subst_in_rewrite_schema ss r)
 
 type rule_apply =
 | CalculusOnce of Calculus.t
