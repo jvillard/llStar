@@ -169,6 +169,21 @@ let exploded_struct_logic st =
           ; rw_to_pattern = exploded_concrete } in
   [Rewrite_rule r]
 
+(* assumes that [t] is a struct type *)
+(** rewrites st_fldi {e1, ..., en } -> ei *)
+let struct_expr_simplifier_logic t =
+  let mk_field i ft = 
+    let s = Printf.sprintf "v_%d" i in
+    Syntax.mk_tpat (sort_of_lltype ft) s in
+  let st_val = mk_struct_of_fields t mk_field in
+  let field i ft =
+    let fld_expr = mk_struct_field_llt t i st_val in
+    let r = mk_field i ft in
+    Rewrite_rule
+      { rw_name = Printf.sprintf "field_simpl_%s_%d" (string_of_lltype t) i
+      ; rw_from_pattern = fld_expr ; rw_to_pattern = r } in
+  Array.to_list (Array.mapi field (struct_element_types t))
+
 (*** Structure rules *)
 
 let int_struct_filter t = match classify_type t with
@@ -269,6 +284,7 @@ let add_rules_of_module base_logic m =
     CalculusAtType (sizeof_logic_of_type, int_struct_filter)
     ::CalculusAtType (field_functions_logic, struct_filter)
     ::CalculusAtType (exploded_struct_logic, struct_filter)
+    ::CalculusAtType (struct_expr_simplifier_logic, struct_filter)
     ::[] in 
   let all_types = collect_types_in_module m in
   let add_calculus log c = { log with Core.calculus = log.Core.calculus@c } in
