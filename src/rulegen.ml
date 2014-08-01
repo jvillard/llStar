@@ -23,7 +23,7 @@ let rhs_frame_pat = Syntax.mk_bool_tpat "_rhs"
 let mk_simple_sequent lhs rhs =
   let frame_on e f =
     if Syntax.expr_equal e Syntax.mk_emp then f
-    else Syntax.mk_star e f in
+    else Syntax.mk_star [e; f] in
   { frame = frame_pat;
     hypothesis = frame_on lhs lhs_frame_pat;
     conclusion = frame_on rhs rhs_frame_pat }
@@ -115,14 +115,14 @@ let mk_padded_field_pointer struct_t i root value =
   let field_pointer = mk_field_pointer struct_t i root value in
   match mk_padding_of_field struct_t i root with
     | None -> field_pointer
-    | Some pad -> Syntax.mk_star field_pointer pad
+    | Some pad -> Syntax.mk_star [field_pointer; pad]
 
 let mk_unfolded_struct struct_t root mk_field =
   let mk_field_ptr i subelt_t =
     let v = mk_field i subelt_t in
     mk_padded_field_pointer struct_t i root v in
   let pointers = Array.mapi mk_field_ptr (struct_element_types struct_t) in
-  Syntax.mk_big_star (Array.to_list pointers)
+  Syntax.mk_star (Array.to_list pointers)
 
 (*** Scalar rules *)
 

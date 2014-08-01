@@ -274,7 +274,7 @@ atomic_term:
 ;
 term:
   | atomic_term { $1 }
-  | term STAR term { Syntax.mk_star $1 $3 }
+  | term STAR term { Syntax.mk_star [$1; $3] }
   | term OROR term { Syntax.mk_or $1 $3 }
   | term BVUDIV term { Z3.BitVector.mk_udiv z3_ctx $1 $3 }
   | term BVSDIV term { Z3.BitVector.mk_sdiv z3_ctx $1 $3 }

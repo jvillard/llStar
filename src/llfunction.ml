@@ -144,8 +144,8 @@ let statements_of_instr procs retv fun_env instr =
       let cond = ref(Syntax.mk_emp) in
       for i = 1 to (num_operands instr)/2 -1 do
 	let case_val = expr_of_llvalue (operand instr (i*2)) in
-	cond := Syntax.mk_star !cond
-	  (Z3.Boolean.mk_distinct z3_ctx [expr_val; case_val])
+	cond := Syntax.mk_star
+	  [!cond; Z3.Boolean.mk_distinct z3_ctx [expr_val; case_val]]
       done;
       let assume = mk_simple_asgn Syntax.mk_emp !cond in
       mk_br_block fun_env default_orig assume in
@@ -209,7 +209,7 @@ let statements_of_instr procs retv fun_env instr =
       ((C.TripleSet.choose asgn.C.asgn_spec).C.post)
       asgn.C.asgn_rets_formal
       asgn.C.asgn_rets in
-    fun_env.fun_alloca_pred <- Syntax.mk_star fun_env.fun_alloca_pred heap;
+    fun_env.fun_alloca_pred <- Syntax.mk_star [fun_env.fun_alloca_pred; heap];
     [C.Assignment_core asgn]
   (* misc instructions that cannot be used in constant expressions *)
   | Opcode.PHI ->
@@ -293,8 +293,7 @@ let statements_of_instr procs retv fun_env instr =
     let post = 
       if instr_opcode instr = Opcode.BitCast
       && classify_type (type_of instr) = TypeKind.Pointer then
-	Syntax.mk_star post
-	  (mk_bitcast id (expr_of_lltype (type_of instr)))
+	Syntax.mk_star [post; mk_bitcast id (expr_of_lltype (type_of instr))]
       else post in
     let pre = Syntax.mk_emp in
     let triple = { C.pre = pre; post = post; modifies = [] } in
@@ -320,11 +319,7 @@ let make_phi_blocks fun_env =
       let lab_src = value_id (value_of_block b) in
       let lab = lab_src^"_to_"^lab_target in
       let label_node = C.Label_stmt_core lab in
-      let equalities =
-	List.fold_left
-	  (fun f (x,v) ->
-	    Syntax.mk_star f (Z3.Boolean.mk_eq z3_ctx x v))
-	  Syntax.mk_emp l in
+      let equalities = Syntax.mk_star (List.map (uncurry (Z3.Boolean.mk_eq z3_ctx)) l) in
       let rets = List.map fst l in
       let triple = { C.pre = Syntax.mk_emp; post = equalities; modifies = [] } in
       let spec = C.TripleSet.singleton triple in
