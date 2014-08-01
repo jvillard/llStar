@@ -23,6 +23,10 @@ rewrite gep_array:
   eltptr(i64 ?p,lltype [i64 ?n x lltype ?at],lljump ?j)
   -> eltptr(i64 ?p,pointer_type(lltype ?at),lljump ?j)
 ;
+rewrite pointer_gepn:
+  eltptr(i64 ?p,pointer_type(lltype i8), jump(i64 ?n, jump_end()))
+  -> bvadd(i64 ?p, i64 ?n)
+;
 rewrite gep_end:
   eltptr(i64 ?y,lltype ?t, jump_end())
   -> i64 ?y
