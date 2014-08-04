@@ -90,6 +90,7 @@ let lookup_op op args =
 %token <string> LIDENTIFIER
 %token <string> PGIDENTIFIER
 %token <string> PLIDENTIFIER
+%token <string> POLYSORT_IDENTIFIER
 %token <string> PUREIDENTIFIER
 %token <string> STRING_CONSTANT
 %token <string> TPIDENTIFIER
@@ -239,6 +240,7 @@ sort:
   | L_BRACKET term CROSS sort R_BRACKET { array_sort $4 }
   | sort STAR { pointer_sort }
   | IDENTIFIER { Z3.Sort.mk_uninterpreted_s z3_ctx $1 }
+  | POLYSORT_IDENTIFIER { Z3.Sort.mk_uninterpreted_s z3_ctx $1 }
   | sort RIGHTARROW sort { Z3.Z3Array.mk_sort z3_ctx $1 $3 }
   | L_PAREN sort R_PAREN { $2 }
 ;

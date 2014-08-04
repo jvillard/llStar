@@ -12,6 +12,6 @@ rewrite ite_bool_false:
   -> not (bool ?s)
 ;
 
-rewrite not_equal[s]:
-  not (s ?x = s ?y) -> s ?x != s ?y
+rewrite not_equal:
+  not ('a ?x = 'a ?y) -> 'a ?x != 'a ?y
 ;

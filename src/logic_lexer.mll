@@ -120,6 +120,7 @@ let  newline = ('\013' | '\010' | "\010\013")
 let  at_identifier = '@' (simple_id_char | ':')*
 
 let identifier = alpha_char simple_id_char*
+let polysort_identifier = '\'' alpha_char simple_id_char*
 
 (* regexp taken from LLVM language reference manual *)
 let lllidentifier = '%' (['a'-'z''A'-'Z'] | '$' | '.' | '_')(['a'-'z''A'-'Z''0'-'9'] | '$' | '.' | '_')*
@@ -189,6 +190,7 @@ rule token = parse
   | vpidentifier as s { VPIDENTIFIER (strip_first_char s) }
   | pureidentifier as s { PUREIDENTIFIER (strip_first_char s) }
   | identifier as s { kwd_or_else (IDENTIFIER s) s }
+  | polysort_identifier as s { kwd_or_else (POLYSORT_IDENTIFIER s) s }
   | '#' (string_char_no_sharp* as s) '#' { IDENTIFIER s }
   (* Lexing integers and strings according to SMT-LIB 2.0. *)
   | integer as s { INTEGER s }

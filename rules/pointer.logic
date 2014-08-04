@@ -89,10 +89,10 @@ if
  bool ?f * malloced(i64 ?mb,i64 ?n) |  bool ?l |- i64 ?n = i64 ?m * bool ?r
 ;
 
-rule nobacktrack ptr_same_root_same_type[s]:
- bool ?f | bool ?l * pointer(i64 ?x, s ?v) |- pointer(i64 ?x, s ?w) * bool ?r
+rule nobacktrack ptr_same_root_same_type:
+ bool ?f | bool ?l * pointer(i64 ?x, 'a ?v) |- pointer(i64 ?x, 'a ?w) * bool ?r
 if
- bool ?f * pointer(i64 ?x, s ?v) | bool ?l |- s ?w = s ?v * bool ?r
+ bool ?f * pointer(i64 ?x, 'a ?v) | bool ?l |- 'a ?w = 'a ?v * bool ?r
 ;
 
 rule nobacktrack remove_pad:
@@ -110,8 +110,8 @@ if
   If we have an assumption of a pointer
   for null then we have a contradiction.
  */
-rule inconsistent nobacktrack pointer_nil_contradiction[s]:
-  bool ?f | bool ?l * pointer(NULL(), s ?v) |- bool ?r
+rule inconsistent nobacktrack pointer_nil_contradiction:
+  bool ?f | bool ?l * pointer(NULL(), 'a ?v) |- bool ?r
 if
 ;
 
@@ -138,16 +138,16 @@ if
 ;
 */
 
-rule nobacktrack pointer_not_null[s]:
-  bool ?f | bool ?l * pointer(i64 ?x, s ?v) |- i64 ?x!=NULL() * bool ?r
+rule nobacktrack pointer_not_null:
+  bool ?f | bool ?l * pointer(i64 ?x, 'a ?v) |- i64 ?x!=NULL() * bool ?r
 if
-  bool ?f | bool ?l * pointer(i64 ?x, s ?v) |- bool ?r
+  bool ?f | bool ?l * pointer(i64 ?x, 'a ?v) |- bool ?r
 ;
 
-rule nobacktrack pointer_different[s,t]:
-  bool ?f | bool ?l * pointer(i64 ?x, s ?v) * pointer(i64 ?y, t ?vv) |- i64 ?x!=i64 ?y * bool ?r
+rule nobacktrack pointer_different:
+  bool ?f | bool ?l * pointer(i64 ?x, 'a ?v) * pointer(i64 ?y, 'b ?vv) |- i64 ?x!=i64 ?y * bool ?r
 if
-  bool ?f | bool ?l * pointer(i64 ?x, s ?v) * pointer(i64 ?y, t ?vv) |- bool ?r
+  bool ?f | bool ?l * pointer(i64 ?x, 'a ?v) * pointer(i64 ?y, 'b ?vv) |- bool ?r
 ;
 
 /*
@@ -232,14 +232,14 @@ equiv merge_array_array:
  <=> pointer(?x,array_type(bvadd.64(?s,?s2),?t),array_merge(?v,?s,?w))
 */
 
-rule remove_array[s]:
- bool ?f | bool ?l * array(i64 ?x, i64 ?m, (i64 -> s) ?v)
- |- array(i64 ?x, i64 ?n, (i64 -> s) ?w) * bool ?r
+rule remove_array:
+ bool ?f | bool ?l * array(i64 ?x, i64 ?m, 'a ?v)
+ |- array(i64 ?x, i64 ?n, 'a ?w) * bool ?r
 with
   purecheck i64 ?m = i64 ?n
 if
- array(i64 ?x, i64 ?m, (i64 -> s) ?v) * bool ?f | bool ?l
- |- (i64 -> s) ?v = (i64 -> s) ?w * bool ?r
+ array(i64 ?x, i64 ?m, 'a ?v) * bool ?f | bool ?l
+ |- 'a ?v = 'a ?w * bool ?r
 ;
 
 rule array_remove_same_size_l[s]:

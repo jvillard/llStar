@@ -84,7 +84,7 @@ if
 ;
 
 rewrite at_label_eq:
- !at(label _a, here(label _b)) -> label _a = label _b
+ !at(label ?a, here(label ?b)) -> label ?a = label ?b
 ;
 
 rule nobacktrack inline_at_labels2:
@@ -118,27 +118,27 @@ if
            bool ?fr
 ;
 
-rule nobacktrack pointsto_in_at[s]:
+rule nobacktrack pointsto_in_at:
  bool ?f | here(label ?l) *
-           !at(label ?l, pointer(i64 ?x, s ?y) * bool ?p) *
+           !at(label ?l, pointer(i64 ?x, 'a ?y) * bool ?p) *
            bool ?fl
            |-
-           pointer(i64 ?x, s ?z) *
+           pointer(i64 ?x, 'a ?z) *
            bool ?fr
 if
- bool ?f * pointer(i64 ?x, s ?y) |
+ bool ?f * pointer(i64 ?x, 'a ?y) |
            here(label _ll) *
            !at(label _ll, bool ?p) *
-           !at(label ?l, pointer(i64 ?x, s ?y) * here(label _ll)) *
+           !at(label ?l, pointer(i64 ?x, 'a ?y) * here(label _ll)) *
            bool ?fl
            |-
-           s ?y = s ?z *
+           'a ?y = 'a ?z *
            bool ?fr
 ;
 
-rule nobacktrack pointsto_outside_at[s]:
- bool ?f | pointer(i64 ?x, s ?y) *
-           !at(label ?l, pointer(i64 ?x, s ?y) * bool ?p) *
+rule nobacktrack pointsto_outside_at:
+ bool ?f | pointer(i64 ?x, 'a ?y) *
+           !at(label ?l, pointer(i64 ?x, 'a ?y) * bool ?p) *
            bool ?fl
            |-
            here(label ?l) *
@@ -189,13 +189,13 @@ if
            bool ?fr
 ;
 
-rule nobacktrack equal_fresh[s]:
- bool ?f | bool ?fl |- (s ?a = s ^u) * bool ?fr
+rule nobacktrack equal_fresh:
+ bool ?f | bool ?fl |- ('a ?a = 'a ^u) * bool ?fr
 with
- fresh s ^u in bool ?fl;
- fresh s ^u in bool ?f
+ fresh 'a ^u in bool ?fl;
+ fresh 'a ^u in bool ?f
 if
- bool ?f | bool ?fl * s ?a = s ^u |- bool ?fr
+ bool ?f | bool ?fl * 'a ?a = 'a ^u |- bool ?fr
 ;
 
 rule nobacktrack equal_label:
