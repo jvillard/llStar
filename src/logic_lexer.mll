@@ -56,7 +56,6 @@ let kwd_or_else =
     "abstraction", ABSRULE;
     "bool", BOOL;
     "emp", EMP;
-    "equiv", EQUIVRULE;
     "fresh", FRESH;
     "False", FALSE;
     "function", FUNCTION;

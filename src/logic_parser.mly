@@ -124,7 +124,6 @@ let lookup_op op args =
 %token EMP
 %token EOF
 %token EQUALS
-%token EQUIVRULE
 %token FALSE
 %token FRESH
 %token FUNCTION
@@ -349,16 +348,6 @@ rewrite_rule:
       rrs >>= Rulegen.polymorphic_rule $3 }
 ;
 
-equiv_rule:
-  | EQUIVRULE rule_flags IDENTIFIER sort_vars struct_vars COLON
-      term BIMP term SEMICOLON
-      { let seqs = CalculusOps.mk_equiv_rule $3 (fst $2) (snd $2) $7 $9 in
-        let srs = match $5 with
-          | None -> seqs
-          | Some (st,i) -> seqs >>= (Rulegen.struct_rule st i) in
-        srs >>= Rulegen.polymorphic_rule $4 }
-;
-
 rule_flag:
   | NO_BACKTRACK { (None,Calculus.rule_no_backtrack) }
   | ABDUCT { (None,Calculus.rule_abduct) }
@@ -462,7 +451,6 @@ import_entry:
 normal_entry:
   | procedure { [ParserAst.Procedure $1] }
   | sequent_rule { List.map (fun x -> ParserAst.CalculusRule x) $1 }
-  | equiv_rule { List.map (fun x -> ParserAst.CalculusRule x) $1 }
   | rewrite_rule { List.map (fun x -> ParserAst.CalculusRule x) $1 }
   | pred_decl { [] }
   | func_decl { [] }
