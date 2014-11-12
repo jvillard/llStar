@@ -368,12 +368,29 @@ let body_of_function procs retv f =
   let lnsl = lnsl@phi_cfg in
   List.flatten (List.map snd lnsl)
 
+let empty_proc_of_llfun f =
+  { C.proc_name = value_id f
+  ; proc_spec =
+      if Llvm.is_declaration f then (
+	Format.fprintf Debug.logf "WARNING: unknown function %s, assuming spec {emp}{emp}" (value_id f);
+	C.TripleSet.singleton
+	  { C.pre = Syntax.mk_emp; post = Syntax.mk_emp; modifies = []}
+      ) else C.TripleSet.create 0
+  ; proc_ok = true
+  ; proc_body = None
+  ; proc_args = List.map expr_of_llvalue (Array.to_list (params f))
+  ; proc_rets = (match classify_type (type_of f) with
+  | TypeKind.Void -> []
+  | _ -> [Syntax.mk_plvar (sort_of_lltype (type_of f)) "ret"])
+  ; proc_rules = { C.calculus = []; abstraction = [] }}
+
+
 let add_body_of_llfunction procs f =
   let fid = value_id f in
   Format.fprintf Debug.logf "Translating proc %s@\n" fid;
   let proc =
     try List.find (fun p -> p.C.proc_name = fid) procs
-    with Not_found -> implement_this ("spec for proc "^fid^ " not found") in
+    with Not_found -> empty_proc_of_llfun f in
   if Llvm.is_declaration f then proc
   else
     let retv =

@@ -1,6 +1,7 @@
 LLSRC=$(wildcard *.ll)
 CSRC=$(wildcard *.c)
 TESTS=$(LLSRC:=.test) $(CSRC:=.test)
+ABDUCTS=$(LLSRC:=.abduct) $(CSRC:=.abduct)
 
 LLVM_AS=llvm-as
 CC=clang -O2
@@ -23,8 +24,16 @@ $(TESTS): %.test: %.bc
 	@rm -rf $*.out && mkdir $*.out
 	@echo "$(LLSTAR) $?"
 	@cd $*.out;\
-	  OCAMLRUNPARAM=pb \
+	  OCAMLRUNPARAM=b \
 	    ../$(LLSTAR) ../$? > stdout 2> stderr \
+	  || echo "  $* gives exit code $$?"
+
+$(ABDUCTS): %.abduct: %.bc
+	@rm -rf $*.out && mkdir $*.out
+	@echo "$(LLSTAR) $?"
+	@cd $*.out;\
+	  OCAMLRUNPARAM=b \
+	    ../$(LLSTAR) -abduct ../$? > stdout 2> stderr \
 	  || echo "  $* gives exit code $$?"
 
 test: $(TESTS)
