@@ -10,128 +10,142 @@ import "pointer.logic";
  ***************************************/
 
 
-rule node_not_nil:
-  sllnode(?s,NULL(),?y) | |-
+rule nobacktrack lseg_ne_not_nil:
+  lseg_ne(lltype ?s,NULL(),i64 ?y) | |-
 if
+;
 
-rule lseg_ne_not_nil:
-  lseg_ne(?s,NULL(),?y) | |-
+rule nobacktrack lseg_not_nil:
+  lseg(lltype ?s,NULL(),i64 ?y) | |-
 if
+  | i64 ?y=NULL() |-
+;
 
-rule lseg_not_nil:
-  lseg(?s,NULL(),?y) | |-
-if
-  | ?y=NULL() |-
-
-
-rule node_not_nil:
-  sllnode(?s,?x,?y) | |- ?x!=NULL()
+rule nobacktrack node_not_nil:
+  sllnode(lltype ?s,i64 ?x,i64 ?y) | |- i64 ?x != NULL()
 if
   | |-
+;
 
-rule node_not_eq:
-  sllnode(?s,?x,?y) * sllnode(?s,?x,?w) | |-
+rule nobacktrack node_not_eq:
+  sllnode(lltype ?s,i64 ?x,i64 ?y) * sllnode(lltype ?s,i64 ?x,i64 ?w) | |-
 if
-
+;
 
 /*************************************
  * Simple subtraction rules 
  *************************************/
 
-rule node_equal:
-  | sllnode(?s,?i,?n) |- sllnode(?s,?i,?n2)
+rule nobacktrack node_equal:
+  | sllnode(lltype ?s,?i,?n) |- sllnode(lltype ?s,?i,?n2)
 if
-  sllnode(?s,?i,?n) | |- ?n = ?n2
+  sllnode(lltype ?s,?i,?n) | |- ?n = ?n2
+;
 
-rule lseg_ne_unroll_node_exists:
-  | lseg_ne(?s,?i,?j) |- sllnode(?s,?i,?n)
+rule nobacktrack lseg_ne_unroll_node_exists:
+  | lseg_ne(lltype ?s,?i,?j) |- sllnode(lltype ?s,?i,?n)
 if
-  | sllnode(?s,?i,_v) * lseg(?s,_v,?j) |- sllnode(?s,?i,?n)
+  | sllnode(lltype ?s,?i,_v) * lseg(lltype ?s,_v,?j) |- sllnode(lltype ?s,?i,?n)
+;
 
-rule lseg_ne_unroll_first_exists :
-| lseg_ne(?s,?x,?y) |- pointer(?x,?w,?Z)
+rule nobacktrack lseg_ne_unroll_first_exists :
+| lseg_ne(lltype ?s,i64 ?x,i64 ?y) |- pointer(i64 ?x,i64 ?w,i64 ?z)
 if
-| sllnode(?s,?x,_fooz) * lseg(?s,_fooz,?y)  |- pointer(?x,?w,?Z)
+| sllnode(lltype ?s,i64 ?x,_fooz) * lseg(lltype ?s,_fooz,i64 ?y)  |- pointer(i64 ?x,i64 ?w,i64 ?z)
+;
 
-rule lseg_ne_unroll_offset_exists :
-| lseg_ne(?s,?x,?y) |- pointer(bvadd.64(?x,?offset),?w,?Z)
+rule nobacktrack lseg_ne_unroll_offset_exists :
+| lseg_ne(lltype ?s,i64 ?x,i64 ?y) |- pointer(bvadd.64(i64 ?x,?offset),i64 ?w,i64 ?z)
 if
-| sllnode(?s,?x,_fooz) * lseg(?s,_fooz,?y)  |- pointer(bvadd.64(?x,?offset),?w,?Z)
+| sllnode(lltype ?s,i64 ?x,_fooz) * lseg(lltype ?s,_fooz,i64 ?y)  |- pointer(bvadd.64(i64 ?x,?offset),i64 ?w,i64 ?z)
 
+;
 
-rule lseg_ne_lseg_ne_match :
-  lseg_ne(?s,?z,?w) | lseg_ne(?s,?x,?y) |- lseg_ne(?s,?x,?z)
+rule nobacktrack lseg_ne_lseg_ne_match :
+  lseg_ne(lltype ?s,i64 ?z,i64 ?w) | lseg_ne(lltype ?s,i64 ?x,i64 ?y) |- lseg_ne(lltype ?s,i64 ?x,i64 ?z)
 if
-  lseg_ne(?s,?x,?y) | |- lseg(?s,?y,?z)
+  lseg_ne(lltype ?s,i64 ?x,i64 ?y) | |- lseg(lltype ?s,i64 ?y,i64 ?z)
+;
 
-rule lseg_ne_node_match :
-  sllnode(?s,?z,?w) | lseg_ne(?s,?x,?y) |- lseg_ne(?s,?x,?z)
+rule nobacktrack lseg_ne_node_match :
+  sllnode(lltype ?s,i64 ?z,i64 ?w) | lseg_ne(lltype ?s,i64 ?x,i64 ?y) |- lseg_ne(lltype ?s,i64 ?x,i64 ?z)
 if
-  lseg_ne(?s,?x,?y) | |- lseg(?s,?y,?z)
+  lseg_ne(lltype ?s,i64 ?x,i64 ?y) | |- lseg(lltype ?s,i64 ?y,i64 ?z)
+;
 
-rule lseg_ne_pointer_match :
-  pointer(?z,?f,?w) | lseg_ne(?s,?x,?y) |- lseg_ne(?s,?x,?z)
+rule nobacktrack lseg_ne_pointer_match :
+  pointer(i64 ?z,?f,i64 ?w) | lseg_ne(lltype ?s,i64 ?x,i64 ?y) |- lseg_ne(lltype ?s,i64 ?x,i64 ?z)
 if
-  lseg_ne(?s,?x,?y) | |- lseg(?s,?y,?z)
+  lseg_ne(lltype ?s,i64 ?x,i64 ?y) | |- lseg(lltype ?s,i64 ?y,i64 ?z)
+;
 
-rule lseg_nil_match :
-  | lseg_ne(?s,?x,?y) |- lseg_ne(?s,?x,?z)
+rule nobacktrack lseg_nil_match :
+  | lseg_ne(lltype ?s,i64 ?x,i64 ?y) |- lseg_ne(lltype ?s,i64 ?x,i64 ?z)
 if
-  lseg_ne(?s,?x,?y) | |- lseg(?s,?y,?z) * ?z = NULL()
+  lseg_ne(lltype ?s,i64 ?x,i64 ?y) | |- lseg(lltype ?s,i64 ?y,i64 ?z) * i64 ?z = NULL()
 
+;
 
-rule nl_lseg_ne_exact :
-  | sllnode(?s,?x,?y) |- lseg_ne(?s,?x,?y)
+rule nobacktrack nl_lseg_ne_exact :
+  | sllnode(lltype ?s,i64 ?x,i64 ?y) |- lseg_ne(lltype ?s,i64 ?x,i64 ?y)
 if
-  sllnode(?s,?x,?y) | |- 
+  sllnode(lltype ?s,i64 ?x,i64 ?y) | |- 
+;
 
-rule nl_lseg_ne_match :
-  | sllnode(?s,?x,?y) |- lseg_ne(?s,?x,?z)
+rule nobacktrack nl_lseg_ne_match :
+  | sllnode(lltype ?s,i64 ?x,i64 ?y) |- lseg_ne(lltype ?s,i64 ?x,i64 ?z)
 if
-  sllnode(?s,?x,?y) | |- lseg(?s,?y,?z)
+  sllnode(lltype ?s,i64 ?x,i64 ?y) | |- lseg(lltype ?s,i64 ?y,i64 ?z)
+;
 
 
 
-rule lseg_left :
-  | lseg(?s,?x,?y) |- 
+
+rule nobacktrack lseg_left :
+  | lseg(lltype ?s,i64 ?x,i64 ?y) |- 
 if
-  | lseg_ne(?s,?x,?y) |- ;
-  | ?x=?y |- 
+  | lseg_ne(lltype ?s,i64 ?x,i64 ?y) |- ;
+  | i64 ?x=i64 ?y |- 
+;
 
-
-rule lseg_right :
-  | |- lseg(?s,?x,?y) 
+rule nobacktrack lseg_right :
+  | |- lseg(lltype ?s,i64 ?x,i64 ?y) 
 if
-  | |- lseg_ne(?s,?x,?y) 
+  | |- lseg_ne(lltype ?s,i64 ?x,i64 ?y) 
 or
-  | |- ?x=?y 
-
+  | |- i64 ?x = i64 ?y 
+;
 
 /*************************************
  * rules for contradictions 
  *************************************/
-rule lseg_ne_pointer_contradiction:
-lseg_ne(?s,?x,?t) * pointer(?x,?sz,?z) | |- 
+rule nobacktrack lseg_ne_pointer_contradiction:
+lseg_ne(lltype ?s,i64 ?x,?t) * pointer(i64 ?x,?sz,i64 ?z) | |- 
 if
+;
 
-rule lseg_ne_node_contradiction :
-lseg_ne(?s,?x,?t) * sllnode(?ss,?x,?z) | |- 
+rule nobacktrack lseg_ne_node_contradiction :
+lseg_ne(lltype ?s,i64 ?x,?t) * sllnode(lltype ?ss,i64 ?x,i64 ?z) | |- 
 if
+;
 
-rule lseg_ne_lseg_ne_contr :
-lseg_ne(?s,?x,?t) * lseg_ne(?ss,?x,?z) | |-
+rule nobacktrack lseg_ne_lseg_ne_contr :
+lseg_ne(lltype ?s,i64 ?x,?t) * lseg_ne(lltype ?ss,i64 ?x,i64 ?z) | |-
 if
+;
 
-rule lseg_ne_lseg_ne_contr :
- | |- lseg_ne(?s,?x,?t) * lseg_ne(?ss,?x,?z)
+rule nobacktrack lseg_ne_lseg_ne_contr :
+ | |- lseg_ne(lltype ?s,i64 ?x,?t) * lseg_ne(lltype ?ss,i64 ?x,i64 ?z)
 if
  | |- x!=x 
-
+;
 
 /* this helps with pointer arithmetic */
-rule node_no_overflow:
-  | sllnode(?s,?x,?n) |-
+/*
+rule nobacktrack node_no_overflow:
+  | sllnode(lltype ?s,i64 ?x,?n) |-
 without
-  !bvugt(bvadd.64(?x, sizeof(named_type(?s))),?x)
+  !bvugt(bvadd.64(i64 ?x, sizeof(lltype ?s)),i64 ?x)
 if
-  | !bvugt(bvadd.64(?x, sizeof(named_type(?s))),?x) * sllnode(?s,?x,?n) |-
+  | !bvugt(bvadd.64(i64 ?x, sizeof(lltype ?s)),i64 ?x) * sllnode(lltype ?s,i64 ?x,?n) |-
+*/

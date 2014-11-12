@@ -48,11 +48,17 @@ rewrite unfold_struct{st, i}:
 
 rule bitcast_hint[s]:
   bool ?f | bool ?l *
-    !bitcast(i64 ?x,pointer_type(lltype s)) * array(i64 ?x,i64 ?n, (i64 -> i8) ?v) |- bool ?r
+    !bitcast(i64 ?x,pointer_type(lltype s),i64 ?y) * array(i64 ?x,i64 ?n, (i64 -> i8) ?v) |- bool ?r
 with
   purecheck sizeof(lltype s) = i64 ?n
 if
   bool ?f | bool ?l * pointer(i64 ?x, s _v) |- bool ?r
+;
+
+rule bitcast:
+  bool ?f | bool ?l * !bitcast(i64 ?x, lltype ?t, i64 ?y) |- bool ?r
+if
+  bool ?f | bool ?l * i64 ?x = i64 ?y |- bool ?r
 ;
 
 /*
