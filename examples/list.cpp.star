@@ -1,3 +1,7 @@
+import "llvm.logic";
+import "lseg.logic";
+
+nodedecl: "struct.node"("1") = sllnode
 _Z8traverseP4node:
   {lseg("struct.node",@parameter0:,NULL())}
   {lseg("struct.node",@parameter0:,NULL())}

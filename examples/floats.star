@@ -1,1 +1,5 @@
 import "llvm.logic";
+
+addf:
+  {}
+  {}

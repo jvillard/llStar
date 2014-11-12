@@ -1,8 +1,0 @@
-import "../../../rules/llvm.logic";
- 
-/*
-equiv bitcast_node_hint:
-  ?x |-> [ i64 16 x i8 ] ?v
-  * !bitcast(i64 ?x, type pointer_type(%node))
-  <=> ?x |-> %node _v
-*/

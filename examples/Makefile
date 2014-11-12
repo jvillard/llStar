@@ -1,7 +1,8 @@
 LLSRC=$(wildcard *.ll)
 CSRC=$(wildcard *.c)
-TESTS=$(LLSRC:=.test) $(CSRC:=.test)
-ABDUCTS=$(LLSRC:=.abduct) $(CSRC:=.abduct)
+F95SRC=$(wildcard *.f95)
+TESTS=$(LLSRC:=.test) $(CSRC:=.test) $(F95SRC:=.test)
+ABDUCTS=$(LLSRC:=.abduct) $(CSRC:=.abduct) $(F95SRC:=.abduct)
 
 LLVM_AS=llvm-as
 CC=clang -O2
@@ -19,6 +20,13 @@ all: test
 
 %.c.O0.ll: %.c
 	$(CC) -emit-llvm -O0 -S -o $@ $?
+
+%.f95.bc: %.f95
+	gfortran-4.6 $? -S -g -o $@.ll -O1 -fplugin=/home/jvillard/softs/dragonegg-3.4.src/dragonegg.so -fplugin-arg-dragonegg-emit-ir
+	$(LLVM_AS) -f -o $@ $@.ll
+
+%.f95.O1.ll: %.f95
+	gfortran-4.6 $? -S -o $@ -O1 -fplugin=/home/jvillard/softs/dragonegg-3.4.src/dragonegg.so -fplugin-arg-dragonegg-emit-ir
 
 $(TESTS): %.test: %.bc
 	@rm -rf $*.out && mkdir $*.out

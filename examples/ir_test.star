@@ -1,3 +1,5 @@
+import "llvm.logic";
+
 test_ret:
   {}{i32 $ret_v1 = i32 42}
 

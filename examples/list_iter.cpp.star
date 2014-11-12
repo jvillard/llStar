@@ -1,3 +1,6 @@
+import "llvm.logic";
+import "lseg.logic";
+
 _Z4multSt4listIiSaIiEE:
   {lseg("node",@parameter0:,NULL())}
   {lseg("node",@parameter0:,NULL())}

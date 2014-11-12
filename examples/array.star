@@ -1,3 +1,4 @@
+import "llvm.logic";
 import "stdlib.spec";
 
 assert_in_bounds:
