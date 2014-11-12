@@ -128,10 +128,12 @@ let declare_struct_types_in_llmodule m =
 		     constr_sym struct_recog elts_syms elts_sorts indices]) in
   let (s, c) = List.split (List.map one_struct stl) in
   prerr_endline "all structs: done";
-  let sorts =
-    if s = [] then []
-    else if List.length s = 1 then [Z3.Datatype.mk_sort z3_ctx (List.hd s) (List.hd c)]
-    else Z3.Datatype.mk_sorts z3_ctx s c in
+  (* FIXME: understand how to do mutually recursive sorts in Z3 *)
+  (* let sorts = *)
+  (*   if s = [] then [] *)
+  (*   else if List.length s = 1 then [Z3.Datatype.mk_sort z3_ctx (List.hd s) (List.hd c)] *)
+  (*   else Z3.Datatype.mk_sorts z3_ctx s c in *)
+  let sorts = List.map2
   prerr_endline "sorts done";
   List.iter2 (fun st so ->
     fprintf logf "Adding struct %s with sort %s@?@\n" (Llvm.string_of_lltype st) (Z3.Sort.to_string so);
